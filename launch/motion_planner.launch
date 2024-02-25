@@ -6,10 +6,10 @@
     <!-- Namespace - all topics, services and parameters will be remapped using this namespace as a prefix (eg.: "/waypoint_flier_simple/odom_uav_in" to "/uav1/waypoint_flier_simple/odom_uav_in") -->
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="motion_planning_python" type="sweeping_generator.py" name="sweeping_generator" output="screen">
+    <node pkg="motion_planning_python" type="motion_planner.py" name="motion_planner" output="screen">
 
         <!-- ROS parameters config file -->
-      <rosparam file="$(find motion_planning_python)/config/sweeping_generator.yaml" />
+      <rosparam file="$(find motion_planning_python)/config/motion_planner.yaml" />
 
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
 

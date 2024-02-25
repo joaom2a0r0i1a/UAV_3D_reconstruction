@@ -2,6 +2,8 @@
 
 import rospy
 import numpy
+#import rrt_star
+import rrt_star_2d
 
 from mrs_msgs.msg import ControlManagerDiagnostics,Reference
 from mrs_msgs.srv import PathSrv,PathSrvRequest
@@ -13,7 +15,7 @@ class Node:
 
     def __init__(self):
 
-        rospy.init_node("sweeping_generator", anonymous=True)
+        rospy.init_node("motion_planner", anonymous=True)
 
         ## | --------------------- load parameters -------------------- |
 
@@ -28,7 +30,7 @@ class Node:
 
         self.timer_main_rate = rospy.get_param("~timer_main/rate")
 
-        rospy.loginfo('[SweepingGenerator]: initialized')
+        rospy.loginfo('[motion_planner]: initialized')
 
         ## | ----------------------- subscribers ---------------------- |
 
@@ -60,40 +62,48 @@ class Node:
 
     def planPath(self, step_size):
 
-        rospy.loginfo('[SweepingGenerator]: planning path')
+        rospy.loginfo('[motion_planner]: planning path')
 
-        # https://ctu-mrs.github.io/mrs_msgs/srv/PathSrv.html
-        # -> https://ctu-mrs.github.io/mrs_msgs/msg/Path.html
+        # Define start and goal points
+        #start = [self.center_x, self.center_y, self.center_z]
+        #goal = [self.center_x + 4, self.center_y + 4, self.center_z + 4]  # Example goal point
+
+        start = [self.center_x, self.center_y]
+        goal = [self.center_x+6, self.center_y+4]
+
+        max_iterations = 1000
+        #step_size = 0.3
+        radius = 1
+
+        dim_x = self.dimensions_x
+        dim_y = self.dimensions_y
+        #dim_z = self.dimensions_y
+
+        # Define obstacles
+        obstacles = []  # Fill in with obstacles if needed
+
+        # Call RRT* algorithm to generate path
+        #tree, path = rrt_star.rrt_star(start, goal, obstacles, dim_x, dim_y, dim_z, max_iter=max_iterations, step_size=step_size, radius=radius)
+        tree, path = rrt_star_2d.rrt_star(start, goal, obstacles,  dim_x, dim_y, max_iter=max_iterations, step_size=step_size, radius=radius)
+        
+        # Convert path to a ROS message
         path_msg = PathSrvRequest()
-
         path_msg.path.header.frame_id = self.frame_id
         path_msg.path.header.stamp = rospy.Time.now()
-
         path_msg.path.fly_now = True
-
         path_msg.path.use_heading = True
+        #path_msg.path.stop_at_waypoints = True
 
-        sign = 1.0
+        for point in path:
+            reference = Reference()
+            reference.position.x = point[0]
+            reference.position.y = point[1]
+            #reference.position.z = point[2] # For 3D
+            reference.position.z = self.center_z # For 2D
+            reference.heading = 0.0  # Adjust heading if needed
+            path_msg.path.points.append(reference)
+            #print(f"Reference: {reference}, Point: {point}")
 
-        # fill in the path with a sweeping pattern
-        for i in numpy.arange(-self.dimensions_x/2.0, self.dimensions_x/2.0, step_size):
-
-            for j in numpy.arange(-self.dimensions_y/2.0, self.dimensions_y/2.0, step_size):
-
-                # https://ctu-mrs.github.io/mrs_msgs/msg/Reference.html
-                point = Reference()
-
-                point.position.x = self.center_x + i
-                point.position.y = self.center_y + j*sign
-                point.position.z = self.center_z
-                point.heading = 0.0
-
-                path_msg.path.points.append(point)
-
-            if sign > 0.0:
-                sign = -1.0
-            else:
-                sign = 1.0
 
         return path_msg
 
@@ -108,7 +118,7 @@ class Node:
         if not self.is_initialized:
             return
 
-        rospy.loginfo_once('[SweepingGenerator]: getting ControlManager diagnostics')
+        rospy.loginfo_once('[motion_planner]: getting ControlManager diagnostics')
 
         self.sub_control_manager_diag = msg
 
@@ -122,20 +132,21 @@ class Node:
             return Vec1Response(False, "not initialized")
 
         # set the step size based on the service data
-        step_size = req.goal
+        #step_size = req.goal
+        step_size = 0.3
 
         path_msg = self.planPath(step_size)
 
         try:
             response = self.sc_path.call(path_msg)
         except:
-            rospy.logerr('[SweepingGenerator]: path service not callable')
+            rospy.logerr('[motion_planner]: path service not callable')
             pass
 
         if response.success:
-            rospy.loginfo('[SweepingGenerator]: path set')
+            rospy.loginfo('[motion_planner]: path set')
         else:
-            rospy.loginfo('[SweepingGenerator]: path setting failed, message: {}'.format(response.message))
+            rospy.loginfo('[motion_planner]: path setting failed, message: {}'.format(response.message))
 
         return Vec1Response(True, "starting")
 
@@ -150,13 +161,13 @@ class Node:
         if not self.is_initialized:
             return
 
-        rospy.loginfo_once('[SweepingGenerator]: main timer spinning')
+        rospy.loginfo_once('[motion_planner]: main timer spinning')
 
         if isinstance(self.sub_control_manager_diag, ControlManagerDiagnostics):
             if self.sub_control_manager_diag.tracker_status.have_goal:
-                rospy.loginfo('[SweepingGenerator]: tracker has goal')
+                rospy.loginfo('[motion_planner]: tracker has goal')
             else:
-                rospy.loginfo('[SweepingGenerator]: waiting for command')
+                rospy.loginfo('[motion_planner]: waiting for command')
 
     # #} end of timerMain()
 
