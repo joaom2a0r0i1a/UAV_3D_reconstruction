@@ -6,7 +6,7 @@ timer_main:
 center:
   x: 0.0 # [m]
   y: 0.0 # [m]
-  z: 2.0 # [m]
+  z: 0.0 # [m]
 
 dimensions:
   x: 20.0 # [m]
