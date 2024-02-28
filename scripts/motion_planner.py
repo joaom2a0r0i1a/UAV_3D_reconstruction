@@ -3,7 +3,9 @@
 import rospy
 import numpy
 #import rrt_star
-import rrt_star_2d
+#import rrt_star_yaw
+#import rrt_star_2d
+import rrt_star_2d_yaw
 
 from mrs_msgs.msg import ControlManagerDiagnostics,Reference
 from mrs_msgs.srv import PathSrv,PathSrvRequest
@@ -65,26 +67,36 @@ class Node:
         rospy.loginfo('[motion_planner]: planning path')
 
         # Define start and goal points
+        # 2D
+        #start = [self.center_x+20, self.center_y]
+        #goal = [self.center_x+27, self.center_y+4]
+
+        # 2D with yaw
+        start = [self.center_x+20, self.center_y, 0]
+        goal = [self.center_x+27, self.center_y+4, 0]
+
+        # 3D
         #start = [self.center_x, self.center_y, self.center_z]
-        #goal = [self.center_x + 4, self.center_y + 4, self.center_z + 4]  # Example goal point
+        #goal = [self.center_x + 4, self.center_y + 4, self.center_z + 4] 
 
-        start = [self.center_x, self.center_y]
-        goal = [self.center_x+6, self.center_y+4]
+        # 3D with yaw
+        #start = [self.center_x, self.center_y, self.center_z, 0]
+        #goal = [self.center_x + 4, self.center_y + 4, self.center_z + 4, 0]
 
+        # Parameter Setup
         max_iterations = 1000
         #step_size = 0.3
         radius = 1
-
         dim_x = self.dimensions_x
         dim_y = self.dimensions_y
         #dim_z = self.dimensions_y
 
         # Define obstacles
-        obstacles = []  # Fill in with obstacles if needed
+        obstacles = [] 
 
         # Call RRT* algorithm to generate path
         #tree, path = rrt_star.rrt_star(start, goal, obstacles, dim_x, dim_y, dim_z, max_iter=max_iterations, step_size=step_size, radius=radius)
-        tree, path = rrt_star_2d.rrt_star(start, goal, obstacles,  dim_x, dim_y, max_iter=max_iterations, step_size=step_size, radius=radius)
+        tree, path = rrt_star_2d_yaw.rrt_star(start, goal, obstacles,  dim_x, dim_y, max_iter=max_iterations, step_size=step_size, radius=radius)
         
         # Convert path to a ROS message
         path_msg = PathSrvRequest()
@@ -94,13 +106,14 @@ class Node:
         path_msg.path.use_heading = True
         #path_msg.path.stop_at_waypoints = True
 
+        # Follow Reference
         for point in path:
             reference = Reference()
             reference.position.x = point[0]
             reference.position.y = point[1]
-            #reference.position.z = point[2] # For 3D
+            #reference.position.z = point[3] # For 3D with yaw
             reference.position.z = self.center_z # For 2D
-            reference.heading = 0.0  # Adjust heading if needed
+            reference.heading = point[2]  # Adjust heading if needed
             path_msg.path.points.append(reference)
             #print(f"Reference: {reference}, Point: {point}")
 
