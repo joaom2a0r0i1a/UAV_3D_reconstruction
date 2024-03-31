@@ -1,27 +1,47 @@
 import numpy as np
 import random
+import math
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 class Node:
-    def __init__(self, point):
+    def __init__(self, point, step_size):
         self.point = np.array(point)
         self.parent = None
         self.cost = 0
+        self.sphere_radius = 0.5*step_size
+        self.sphere_positions = []
 
-def rrt_star(start, goal, obstacles, dim_x=10, dim_y=10, max_iter=1000, step_size=0.1, radius=2, tolerance=0.3):
-    tree = [Node(start)]
+    def add_sphere(self, position):
+        self.sphere_positions.append(position)
+
+    def is_inside_sphere(self, point):
+        for sphere_position in self.sphere_positions:
+            distance = math.sqrt((point[0] - sphere_position[0]) ** 2 + (point[1] - sphere_position[1]) ** 2 + (point[2] - sphere_position[2]) ** 2) 
+            if distance <= self.sphere_radius:
+                return True
+        return False
+
+def rrt_star(start, goal, obstacles, dim_x=10, dim_y=10, dim_z=10, max_iter=1000, step_size=0.1, radius=2, tolerance=0.3):
+    tree = [Node(start, step_size)]
+    tree[-1].add_sphere(start)
     goal_reached_nodes = []  # Keep track of nodes that reach the goal
     path = None
     
     for _ in range(max_iter):
-        rand_point = sample_space(dim_x,dim_y)
-        nearest_node = find_nearest(tree, rand_point)
-        new_node = steer(nearest_node, rand_point, step_size)
+        new_node = None
+        while new_node is None or tree[-1].is_inside_sphere(new_node.point) or collides(new_node.point, obstacles):
+            rand_point = sample_space(dim_x,dim_y,dim_z)
+            nearest_node = find_nearest(tree, rand_point)
+            new_node = steer(nearest_node, rand_point, step_size)
         
         if not collides(new_node.point, obstacles):  # Pass point instead of Node object
             nearby_nodes = find_nearby(tree, new_node, radius)
             new_node = choose_parent(new_node, nearby_nodes)
             tree.append(new_node)
+            tree[-1].sphere_positions = tree[-2].sphere_positions
+            tree[-2].sphere_positions = []
+            tree[-1].add_sphere(new_node.point)
             rewire(tree, new_node, nearby_nodes, radius)
             
             if np.linalg.norm(new_node.point - goal) <= tolerance:  # Adjusted condition
@@ -34,10 +54,11 @@ def rrt_star(start, goal, obstacles, dim_x=10, dim_y=10, max_iter=1000, step_siz
     
     return tree, path
 
-def sample_space(dim_x,dim_y):
+def sample_space(dim_x,dim_y,dim_z):
     rand_x = random.random() * dim_x #* 2 * dim_x - dim_x
     rand_y = random.random() * dim_y #* 2 * dim_y - dim_y
-    return np.array([rand_x,rand_y])
+    rand_z = random.random() * dim_z #* 2 * dim_z - dim_z
+    return np.array([rand_x,rand_y,rand_z])
 
 def find_nearest(tree, point):
     distances = [np.linalg.norm(node.point - point) for node in tree]
@@ -47,7 +68,7 @@ def find_nearest(tree, point):
 def steer(from_node, to_point, step_size):
     direction = (to_point - from_node.point) / np.linalg.norm(to_point - from_node.point)
     new_point = from_node.point + step_size * direction
-    return Node(new_point)
+    return Node(new_point, step_size)
 
 def collides(point, obstacles):  # Only point is passed
     for obstacle in obstacles:
@@ -87,37 +108,41 @@ def backtrack(node):
     path.reverse()
     return path
 
-def plot_tree(tree, start, goal, obstacles, path=None):
-    plt.figure()
-    # Plot tree edges
+def plot_tree_3d(tree, start, goal, obstacles, path=None):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
     for node in tree:
         if node.parent:
-            plt.plot([node.point[0], node.parent.point[0]],[node.point[1], node.parent.point[1]], 'k-', linewidth=0.5)
-    # Plot obstacles
+            ax.plot([node.point[0], node.parent.point[0]], [node.point[1], node.parent.point[1]], [node.point[2], node.parent.point[2]], 'k-', linewidth=0.5)
     for obstacle in obstacles:
-        circle = plt.Circle(obstacle['point'], obstacle['radius'], color='r')
-        plt.gca().add_patch(circle)
-    # Plot start and goal points
-    plt.scatter(start[0], start[1], color='g', marker='o', label='Start')
-    plt.scatter(goal[0], goal[1], color='b', marker='o', label='Goal')
-    # Plot final path (if provided)
+        ax.scatter(obstacle['point'][0], obstacle['point'][1], obstacle['point'][2], color='r', marker='o')
+        u = np.linspace(0, 2 * np.pi, 100)
+        v = np.linspace(0, np.pi, 100)
+        x = obstacle['radius'] * np.outer(np.cos(u), np.sin(v)) + obstacle['point'][0]
+        y = obstacle['radius'] * np.outer(np.sin(u), np.sin(v)) + obstacle['point'][1]
+        z = obstacle['radius'] * np.outer(np.ones(np.size(u)), np.cos(v)) + obstacle['point'][2]
+        ax.plot_wireframe(x, y, z, color="r", alpha=0.2)
+    ax.scatter(start[0], start[1], start[2], color='g', marker='o', label='Start')
+    ax.scatter(goal[0], goal[1], goal[2], color='b', marker='o', label='Goal')
     if path:
-        plt.plot([p[0] for p in path], [p[1] for p in path], 'b-', linewidth=2, label='Path')
-    # Labels and formatting
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.title('RRT*')
-    plt.legend()
-    plt.axis('equal')
+        path = np.array(path)
+        ax.plot(path[:, 0], path[:, 1], path[:, 2], 'b-', linewidth=2, label='Path')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.set_title('RRT* in 3D')
+    ax.legend()
     plt.show()
 
-'''
+
+
 # Example usage
-start = np.array([1, 1])
-goal = np.array([9, 9])
+start = np.array([1, 1, 1])
+goal = np.array([7, 7, 7])
 dim_x = 10
 dim_y = 10
-obstacles = [{'point': np.array([5, 5]), 'radius': 1}]
-tree, path = rrt_star(start, goal, obstacles, dim_x=dim_x, dim_y=dim_y, step_size=0.5, radius=2)
-plot_tree(tree, start, goal, obstacles, path)
-'''
+dim_z = 10
+obstacles = [{'point': np.array([5, 5, 5]), 'radius': 1}]
+tree, path = rrt_star(start, goal, obstacles, dim_x=dim_x, dim_y=dim_y, dim_z=dim_z, step_size=2, radius=3)
+plot_tree_3d(tree, start, goal, obstacles, path)
+

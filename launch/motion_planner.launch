@@ -11,11 +11,24 @@
         <!-- ROS parameters config file -->
       <rosparam file="$(find motion_planning_python)/config/motion_planner.yaml" />
 
+        <!-- Publishers -->
+      <remap from="~visualization_marker_out" to="visualization_marker_out" />
+
+        <!-- Subscribers -->
+      <remap from="~constraints_in" to="control_manager/current_constraints" />
+      <remap from="~uav_state_in" to="estimation_manager/uav_state" />
+      <!--remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" /-->
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
 
-      <remap from="~path_out" to="trajectory_generation/path" />
+        <!-- Services clients-->
+      <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
+      <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
+      <!--remap from="~path_out" to="trajectory_generation/path" /-->
 
+        <!-- Services servers-->
       <remap from="~start_in" to="~start" />
+      <!--remap from="~path_in" to="~path" /-->
+      <!--remap from="~get_path_in" to="~get_path" /-->
 
     </node>
 

@@ -30,7 +30,7 @@ def rrt_star(start, goal, obstacles, dim_x=10, dim_y=10, max_iter=1000, step_siz
                 # Backtrack with the node having the smallest cost among those that reached the goal
                 goal_reached_nodes.append(new_node)
                 min_cost_node = min(goal_reached_nodes, key=lambda node: node.cost)
-                path = backtrack(min_cost_node)
+                path, next_best_node = backtrack_path_node(min_cost_node)
                 
                 # Calculate yaw angles for each node based on the path
                 for i in range(len(path)-1):
@@ -52,8 +52,11 @@ def find_nearest(tree, point):
     return tree[nearest_index]
 
 def steer(from_node, to_point, step_size):
-    direction = (to_point - from_node.point[:2]) / np.linalg.norm(to_point - from_node.point[:2])
-    new_point = from_node.point[:2] + step_size * direction
+    if np.linalg.norm(to_point - from_node.point[:2]) < step_size:
+        new_point = to_point
+    else:
+        direction = (to_point - from_node.point[:2]) / np.linalg.norm(to_point - from_node.point[:2])
+        new_point = from_node.point[:2] + step_size * direction
     return Node(np.concatenate([new_point, from_node.point[2:]]))  # Preserve yaw angle
 
 def collides(point, obstacles):
@@ -87,13 +90,18 @@ def rewire(tree, new_node, nearby_nodes, radius):
             node.parent = new_node
             node.cost = new_node.cost + np.linalg.norm(node.point[:2] - new_node.point[:2])
 
-def backtrack(node):
+def backtrack_path_node(node):
     path = []
+    next_best_node = node
     while node:
         path.append(node.point)
         node = node.parent
+        if node:
+            if node.parent: # Exclude root node
+                if node.cost < next_best_node.cost:
+                    next_best_node = node
     path.reverse()
-    return path
+    return path, next_best_node
 
 def calculate_yaw_angle(node1, node2):
     dx = node2.point[0] - node1.point[0]

@@ -1,5 +1,7 @@
 import numpy as np
+import random
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
 
 class Node:
@@ -8,15 +10,16 @@ class Node:
         self.parent = None
         self.cost = 0
 
-def rrt_star(start, goal, obstacles, max_iter=1000, step_size=0.1, radius=0.5):
+def rrt_star(start, goal, obstacles, max_iter=1000, step_size=0.1, radius=0.5, tolerance=0.5):
     tree = [Node(start)]
-    goal_reached_nodes = []  # Keep track of nodes that reach the goal
     
-    fig, ax = plt.subplots()
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
-    ax.set_title('RRT*')
-    ax.axis('equal')
+    ax.set_zlabel('Z')
+    ax.set_title('RRT* in 3D')
+    ax.legend()
     
     def update(frame):
         nonlocal tree
@@ -30,9 +33,9 @@ def rrt_star(start, goal, obstacles, max_iter=1000, step_size=0.1, radius=0.5):
             tree.append(new_node)
             rewire(tree, new_node, nearby_nodes, radius)
             ax.clear()
-            plot_tree(ax, tree, start, goal, obstacles)
+            plot_tree_3d(ax, tree, start, goal, obstacles)
             
-            if np.linalg.norm(new_node.point - goal) <= step_size:  # Adjusted condition
+            if np.linalg.norm(new_node.point - goal) <= tolerance:  # Adjusted condition
                 print("Goal reached!")
 
                 # Backtrack with the node having the smallest cost among those that reached the goal
@@ -43,11 +46,14 @@ def rrt_star(start, goal, obstacles, max_iter=1000, step_size=0.1, radius=0.5):
                 plot_tree(ax, tree, start, goal, obstacles, path)  # Plot path
                 return tree, path
     
-    ani = FuncAnimation(fig, update, frames=1, blit=False)
+    ani = FuncAnimation(fig, update, frames=400, blit=False)
+    
+    # Save the animation as a GIF
+    ani.save('rrt_star_3D_animation.gif', writer='imagemagick', fps=1000)
     plt.show()
 
 def sample_space():
-    return np.random.rand(2) * 10  # Random point in a 2D space
+    return np.random.rand(3) * 10  # Random point in a 3D space
 
 def find_nearest(tree, point):
     distances = [np.linalg.norm(node.point - point) for node in tree]
@@ -97,24 +103,26 @@ def backtrack(node):
     path.reverse()
     return path
 
-def plot_tree(ax, tree, start, goal, obstacles, path=None):
-    # Plot tree edges
+def plot_tree_3d(ax, tree, start, goal, obstacles, path=None):
     for node in tree:
         if node.parent:
-            ax.plot([node.point[0], node.parent.point[0]],[node.point[1], node.parent.point[1]], 'k-', linewidth=0.5)
-    # Plot obstacles
+            ax.plot([node.point[0], node.parent.point[0]], [node.point[1], node.parent.point[1]], [node.point[2], node.parent.point[2]], 'k-', linewidth=0.5)
     for obstacle in obstacles:
-        circle = plt.Circle(obstacle['point'], obstacle['radius'], color='r')
-        ax.add_patch(circle)
-    # Plot start and goal points
-    ax.scatter(start[0], start[1], color='g', marker='o', label='Start')
-    ax.scatter(goal[0], goal[1], color='b', marker='o', label='Goal')
-    # Plot final path (if provided)
+        ax.scatter(obstacle['point'][0], obstacle['point'][1], obstacle['point'][2], color='r', marker='o')
+        u = np.linspace(0, 2 * np.pi, 100)
+        v = np.linspace(0, np.pi, 100)
+        x = obstacle['radius'] * np.outer(np.cos(u), np.sin(v)) + obstacle['point'][0]
+        y = obstacle['radius'] * np.outer(np.sin(u), np.sin(v)) + obstacle['point'][1]
+        z = obstacle['radius'] * np.outer(np.ones(np.size(u)), np.cos(v)) + obstacle['point'][2]
+        ax.plot_wireframe(x, y, z, color="r", alpha=0.2)
+    ax.scatter(start[0], start[1], start[2], color='g', marker='o', label='Start')
+    ax.scatter(goal[0], goal[1], goal[2], color='b', marker='o', label='Goal')
     if path:
-        ax.plot([p[0] for p in path], [p[1] for p in path], 'b-', linewidth=2, label='Path')
+        path = np.array(path)
+        ax.plot(path[:, 0], path[:, 1], path[:, 2], 'b-', linewidth=2, label='Path')
 
 # Example usage
-start = np.array([1, 1])
-goal = np.array([9, 9])
-obstacles = [{'point': np.array([5, 5]), 'radius': 1}]
-rrt_star(start, goal, obstacles, step_size=0.2, radius=1)
+start = np.array([1, 1, 1])
+goal = np.array([3, 3, 2])
+obstacles = [{'point': np.array([5, 5, 5]), 'radius': 1}]
+rrt_star(start, goal, obstacles, step_size=0.5, radius=2)
