@@ -6,8 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CATKIN_DEPENDENCIES
   rospy
+  roscpp
   mrs_msgs
   visualization_msgs
+  voxblox_ros
   )
 
 find_package(catkin REQUIRED COMPONENTS
