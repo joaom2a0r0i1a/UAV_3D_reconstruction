@@ -1,8 +1,7 @@
-//#include <mav_trajectory_generation/timing.h>
+#include <eth_trajectory_generation/timing.h>
 #include <voxblox/integrator/integrator_utils.h>
 
 #include "gain_evaluator.h"
-
 
 //namespace mav_planning {
 
@@ -23,7 +22,6 @@ void GainEvaluator::setCameraExtrinsics(const voxblox::Transformation& T_C_B) {
   cam_model_.setExtrinsics(T_C_B);
 }
 
-/*
 void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer) {
   tsdf_layer_ = tsdf_layer;
   voxel_size_ = tsdf_layer_->voxel_size();
@@ -32,10 +30,11 @@ void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer)
   voxels_per_side_inv_ = 1.0 / voxels_per_side_;
 }
 
+/*
 double GainEvaluator::evaluateExplorationGainBircher(
     const mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  mav_trajectory_generation::timing::Timer timer_gain(
-      "exploration/exp_gain_bircher");
+  //mav_trajectory_generation::timing::Timer timer_gain(
+  //    "exploration/exp_gain_bircher");
 
   cam_model_.setBodyPose(voxblox::Transformation(
       pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
@@ -148,17 +147,16 @@ double GainEvaluator::evaluateExplorationGainBircher(
       }
     }
   }
-  timer_gain.Stop();
+  //timer_gain.Stop();
 
   // Divide percentages by the checked voxels.
   num_unknown /= checked_voxels;
 
   return num_unknown;
-}
+}*/
 
 voxblox::CameraModel& GainEvaluator::getCameraModel() { return cam_model_; }
 
 const voxblox::CameraModel& GainEvaluator::getCameraModel() const {
   return cam_model_;
 }
-*/
