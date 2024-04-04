@@ -3,6 +3,7 @@
 import rospy
 import numpy as np
 import minieigen as eig
+import voxblox
 
 #from rrt_star import rrt_star
 #from rrt_star import rrt_star_yaw
@@ -25,8 +26,7 @@ class Node:
 
     # #{ __init__(self)
 
-    def __init__(self):
-
+    def __init__(self):        
         rospy.init_node("motion_planner", anonymous=True)
 
         ## | --------------------- load parameters -------------------- |
@@ -147,23 +147,22 @@ class Node:
 
             j += 1
 
-        # Convert path to a ROS message
+        path_msg = self.convert_to_ros_message(next_best_node)
+        return path_msg, best_branch
+
+    def convert_to_ros_message(self, node):
         path_msg = GetPathSrvRequest()
         path_msg.path.header.frame_id = "uav1/" + self.frame_id
         path_msg.path.header.stamp = rospy.Time.now()
         path_msg.path.fly_now = True
         path_msg.path.use_heading = True
-        #path_msg.path.stop_at_waypoints = True
-
-        # Follow Reference
         reference = Reference()
-        reference.position.x = next_best_node.point[0]
-        reference.position.y = next_best_node.point[1]
+        reference.position.x = node.point[0]
+        reference.position.y = node.point[1]
         reference.position.z = self.center_z
         reference.heading = 0 
         path_msg.path.points.append(reference)
-
-        return path_msg, best_branch
+        return path_msg
 
     def visualize_node(self, pos, id, namespace):
         n = Marker()

@@ -30,11 +30,11 @@ void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer)
   voxels_per_side_inv_ = 1.0 / voxels_per_side_;
 }
 
-/*
+
 double GainEvaluator::evaluateExplorationGainBircher(
-    const mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  //mav_trajectory_generation::timing::Timer timer_gain(
-  //    "exploration/exp_gain_bircher");
+    const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
+  eth_trajectory_generation::timing::Timer timer_gain(
+      "exploration/exp_gain_bircher");
 
   cam_model_.setBodyPose(voxblox::Transformation(
       pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
@@ -147,13 +147,13 @@ double GainEvaluator::evaluateExplorationGainBircher(
       }
     }
   }
-  //timer_gain.Stop();
+  timer_gain.Stop();
 
   // Divide percentages by the checked voxels.
-  num_unknown /= checked_voxels;
+  //num_unknown /= checked_voxels;
 
   return num_unknown;
-}*/
+}
 
 voxblox::CameraModel& GainEvaluator::getCameraModel() { return cam_model_; }
 

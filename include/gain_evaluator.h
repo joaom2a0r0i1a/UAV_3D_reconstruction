@@ -34,8 +34,8 @@ class GainEvaluator {
 
   // Use raycasting to discard occluded voxels, Bircher-style
   // implementation.
-  //double evaluateExplorationGainBircher(
-  //    const mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  double evaluateExplorationGainBircher(
+      const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;

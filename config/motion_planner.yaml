@@ -11,3 +11,9 @@ center:
 dimensions:
   x: 40.0 # [m]
   y: 20.0 # [m]
+
+rrt:
+  num_nodes: 15
+  radius: 2.0 # [m]
+  step_size: 1.0 # [m]
+  tolerance: 0.5 # [m]

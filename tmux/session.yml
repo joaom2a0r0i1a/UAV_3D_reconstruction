@@ -19,7 +19,7 @@ windows:
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-rangefinder --enable-mobius-camera-front"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 -3.0 --enable-realsense-front --enable-velodyne use_gpu:=True update_rate:=1"
-        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 -3.0 --enable-rangefinder --enable-realsense-front"
+        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0 --enable-rangefinder --enable-realsense-front"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn " --f450 --help"
         - waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME
   - status:
@@ -46,6 +46,8 @@ windows:
   - motion_planner:
       layout: tiled
       panes:
+        #- waitForControl; roslaunch motion_planning_python motion_planner_cpp.launch
+        #- 'history -s rosservice call /$UAV_NAME/planner/start 3.0'
         - waitForControl; roslaunch motion_planning_python motion_planner.launch
         - 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
   - voxblox:
