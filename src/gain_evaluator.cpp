@@ -7,15 +7,15 @@
 
 GainEvaluator::GainEvaluator() {}
 
+double getVerticalFoV(double horizontal_fov, int width, int height){
+  double aspect_ratio = width/height;
+  double vertical_fov = 2 * std::atan(std::tan(horizontal_fov / 2) / aspect_ratio);
+  return vertical_fov;
+}
+
 void GainEvaluator::setCameraModelParametersFoV(double horizontal_fov, double vertical_fov,
                                                 double min_distance, double max_distance) {
   cam_model_.setIntrinsicsFromFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
-}
-
-void GainEvaluator::setCameraModelParametersFocalLength(
-    const Eigen::Vector2d& resolution, double focal_length, double min_distance,
-    double max_distance) {
-  cam_model_.setIntrinsicsFromFocalLength(resolution.cast<float>(), focal_length, min_distance, max_distance);
 }
 
 void GainEvaluator::setCameraExtrinsics(const voxblox::Transformation& T_C_B) {

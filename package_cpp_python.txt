@@ -1,9 +1,3 @@
-cmake_minimum_required(VERSION 3.15.0)
-project(motion_planning_python)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 ## --------------------------------------------------------------
 ##                             C++
 ## --------------------------------------------------------------
@@ -29,7 +23,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   MotionPlanner
-  #CameraParameters
+  CameraParameters
   Planner
   Rrt_Star
   )
@@ -57,9 +51,9 @@ include_directories(
 add_library(MotionPlanner 
   src/gain_evaluator.cpp
   )
-#add_library(CameraParameters 
-#  src/camera_parameters.cpp
-#  )
+add_library(CameraParameters 
+  src/camera_parameters.cpp
+  )
 add_library(Planner 
   src/planner.cpp
   )
@@ -71,9 +65,9 @@ add_library(Rrt_Star
 add_dependencies(MotionPlanner 
   ${catkin_EXPORTED_TARGETS} 
   ${${PROJECT_NAME}_EXPORTED_TARGETS})
-#add_dependencies(CameraParameters 
-#  ${catkin_EXPORTED_TARGETS} 
-#  ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(CameraParameters 
+  ${catkin_EXPORTED_TARGETS} 
+  ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(Planner 
   ${catkin_EXPORTED_TARGETS} 
   ${${PROJECT_NAME}_EXPORTED_TARGETS})
@@ -85,9 +79,9 @@ add_dependencies(Rrt_Star
 target_link_libraries(MotionPlanner
   ${catkin_LIBRARIES}
   )
-#target_link_libraries(CameraParameters
-#  ${catkin_LIBRARIES}
-#  )
+target_link_libraries(CameraParameters
+  ${catkin_LIBRARIES}
+  )
 target_link_libraries(Planner
   ${catkin_LIBRARIES}
   )
@@ -96,23 +90,23 @@ target_link_libraries(Planner
   )
 
  # Add executable for camera_parameters.cpp
-#add_executable(camera_parameters src/camera_parameters.cpp)
+add_executable(camera_parameters src/camera_parameters.cpp)
 add_executable(planner src/planner.cpp)
 
  # Link executable against required libraries
-#target_link_libraries(camera_parameters
-#  ${catkin_LIBRARIES}
-#  MotionPlanner
-#  #CameraParameters
-#  Planner
-#  Rrt_Star
-#)
+target_link_libraries(camera_parameters
+  ${catkin_LIBRARIES}
+  MotionPlanner
+  CameraParameters
+  Planner
+  Rrt_Star
+)
 
  # Link executable against required libraries
 target_link_libraries(planner
   ${catkin_LIBRARIES}
   MotionPlanner
-  #CameraParameters
+  CameraParameters
   Planner
   Rrt_Star
 )
@@ -133,3 +127,57 @@ install(DIRECTORY config
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+## --------------------------------------------------------------
+##                             Python
+## --------------------------------------------------------------
+
+set(CATKIN_DEPENDENCIES
+  rospy
+  mrs_msgs
+  visualization_msgs
+  voxblox_ros
+  )
+
+find_package(catkin REQUIRED COMPONENTS
+  ${CATKIN_DEPENDENCIES}
+  )
+
+catkin_package(
+  CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
+  )
+
+## --------------------------------------------------------------
+## |                           Install                          |
+## --------------------------------------------------------------
+
+install(DIRECTORY launch config
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  )
+
+install(DIRECTORY scripts/
+  USE_SOURCE_PERMISSIONS
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
+
+install(DIRECTORY scripts
+  USE_SOURCE_PERMISSIONS
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  )

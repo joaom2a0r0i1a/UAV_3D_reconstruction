@@ -2,10 +2,10 @@
 #define VOXBLOX_PLANNING_GAIN_EVALUATOR_H_
 
 #include <eth_mav_msgs/eigen_mav_msgs.h>
-//#include <mav_planning_common/utils.h>
-
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/utils/camera_model.h>
+
+#include <cmath>
 
 //namespace mav_planning {
 
@@ -13,13 +13,12 @@ class GainEvaluator {
  public:
   GainEvaluator();
 
+  // Function to find vertical FoV.  
+  double getVerticalFoV(double horizontal_fov, int width, int height);
+
   // Functions to set up the internal camera model.
   void setCameraModelParametersFoV(double horizontal_fov, double vertical_fov,
                                    double min_distance, double max_distance);
-  void setCameraModelParametersFocalLength(const Eigen::Vector2d& resolution,
-                                           double focal_length,
-                                           double min_distance,
-                                           double max_distance);
   void setCameraExtrinsics(const voxblox::Transformation& T_C_B);
 
   // Bind the TSDF layer to one OWNED BY ANOTHER OBJECT. It is up to the user

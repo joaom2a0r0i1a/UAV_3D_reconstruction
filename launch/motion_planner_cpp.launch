@@ -23,7 +23,7 @@
         <!-- Services clients-->
       <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
       <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
-      <!--remap from="~path_out" to="trajectory_generation/path" /-->
+      <remap from="~path_out" to="trajectory_generation/path" />
 
         <!-- Services servers-->
       <remap from="~start_in" to="~start" />

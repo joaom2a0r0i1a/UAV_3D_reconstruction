@@ -46,10 +46,10 @@ windows:
   - motion_planner:
       layout: tiled
       panes:
-        #- waitForControl; roslaunch motion_planning_python motion_planner_cpp.launch
-        #- 'history -s rosservice call /$UAV_NAME/planner/start 3.0'
-        - waitForControl; roslaunch motion_planning_python motion_planner.launch
-        - 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
+        - waitForControl; roslaunch motion_planning_python motion_planner_cpp.launch
+        - 'history -s rosservice call /$UAV_NAME/planner/start 3.0'
+        #- waitForControl; roslaunch motion_planning_python motion_planner.launch
+        #- 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
   - voxblox:
       layout: tiled
       panes:

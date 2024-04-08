@@ -17,3 +17,11 @@ rrt:
   radius: 2.0 # [m]
   step_size: 1.0 # [m]
   tolerance: 0.5 # [m]
+
+camera:
+  h_fov: 1.211259 # [rad]
+  width: 1280
+  height: 720
+  min_distance: 0.3 # [m]
+  max_distance: 12 # [m]
+

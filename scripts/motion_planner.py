@@ -3,7 +3,7 @@
 import rospy
 import numpy as np
 import minieigen as eig
-import voxblox
+import voxblox_wrapper as voxblox
 
 #from rrt_star import rrt_star
 #from rrt_star import rrt_star_yaw
