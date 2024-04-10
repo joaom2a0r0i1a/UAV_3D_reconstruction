@@ -12,9 +12,8 @@
 #include <mrs_msgs/Vec1.h>
 
 #include <mrs_lib/param_loader.h>
-#include <mrs_lib/subscribe_handler.h>
-#include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
+//#include <mrs_lib/subscribe_handler.h>
+//#include <mrs_lib/service_client_handler.h>
 #include <mrs_lib/transformer.h>
 
 #include <voxblox/core/tsdf_map.h>
@@ -42,6 +41,9 @@ public:
     Planner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
 
         ns = "uav1";
+
+        // Initialize the member variable
+        last_control_msg = nullptr;
 
         /* Parameter loading */
         mrs_lib::ParamLoader param_loader(nh_private_, "planner");
@@ -75,9 +77,6 @@ public:
         // Timer
         param_loader.loadParam("timer_main/rate", timer_main_rate);
 
-        // Set Goal 
-        goal = {24, 5, 0};
-
         // Get vertical FoV and setup camera
         vertical_fov = gain_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
         gain_evaluator.setCameraModelParametersFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
@@ -100,29 +99,15 @@ public:
         pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
 
         /* Subscribers */
-
-        mrs_lib::SubscribeHandlerOptions shopts;
-        shopts.nh                 = nh_private_;
-        shopts.node_name          = "planner";
-        shopts.no_message_timeout = mrs_lib::no_timeout;
-        shopts.threadsafe         = true;
-        shopts.autostart          = true;
-        shopts.queue_size         = 10;
-        shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
-
-        //sub_uav_state = nh_private_.subscribe("uav_state_in", 10, &Planner::callbackUavState, this);
-        //sub_control_manager_diag = nh_private_.subscribe("control_manager_diag_in", 10, &Planner::callbackControlManagerDiagnostics, this);
-        sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &Planner::callbackUavState, this);
-        sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &Planner::callbackControlManagerDiagnostics, this);
+        sub_uav_state = nh_private_.subscribe("uav_state_in", 10, &Planner::callbackUavState, this);
+        sub_control_manager_diag = nh_private_.subscribe("control_manager_diag_in", 10, &Planner::callbackControlManagerDiagnostics, this);
 
         /* Service Servers */
         ss_start = nh_private_.advertiseService("start_in", &Planner::callbackStart, this);
 
         /* Service Clients */
-        //sc_trajectory_generation = nh_private_.serviceClient<mrs_msgs::GetPathSrv>("trajectory_generation_out");
-        //sc_trajectory_reference = nh_private_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("trajectory_reference_out");
-        sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
-        sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
+        sc_trajectory_generation = nh_private_.serviceClient<mrs_msgs::GetPathSrv>("trajectory_generation_out");
+        sc_trajectory_reference = nh_private_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("trajectory_reference_out");
 
         /* Timer */
         timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &Planner::timerMain, this);
@@ -260,19 +245,78 @@ public:
             return true;
         }
 
-        if (!ready_to_plan_) {
-            std::stringstream ss;
-            ss << "not ready to plan, missing data";
+        ROS_INFO("[planner]: planning path");
 
-            ROS_ERROR_STREAM_THROTTLE(0.5, "[planner]: " << ss.str());
+        Eigen::Vector3d goal = {24, 20, 0};
 
-            res.success = false;
-            res.message = ss.str();
-            return true;
+        while ((goal.head(2) - pose.head(2)).norm() > tolerance) {
+            ros::spinOnce();
+            if (last_control_msg != nullptr) {
+                if (control_manager_diag.tracker_status.have_goal) {
+                    ros::Duration(2).sleep();
+                } else {
+                    rh(goal);
+
+                    mrs_msgs::GetPathSrv srv_get_path;
+
+                    srv_get_path.request.path.header.frame_id = "uav1/" + frame_id;
+                    srv_get_path.request.path.header.stamp = ros::Time::now();
+                    srv_get_path.request.path.fly_now = false;
+                    srv_get_path.request.path.use_heading = true;
+
+                    mrs_msgs::Reference reference;
+
+                    reference.position.x = next_best_node->point[0];
+                    reference.position.y = next_best_node->point[1];
+                    reference.position.z = center_z;
+                    reference.heading = next_best_node->point[2];
+                    srv_get_path.request.path.points.push_back(reference);
+
+                    bool success = sc_trajectory_generation.call(srv_get_path);
+
+                    if (!success) {
+                        ROS_ERROR("[planner]: service call for trajectory failed");
+                        res.success = false;
+                        res.message = "Failed to call path service";
+                        return false;
+                    } else {
+                        if (!srv_get_path.response.success) {
+                            ROS_ERROR("[planner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
+                            res.success = false;
+                            res.message = "Path service returned failure";
+                            return false;
+                        }
+                    }
+
+                    mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
+                    srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
+                    srv_trajectory_reference.request.trajectory.fly_now = true;
+
+                    bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
+
+                    if (!success_trajectory) {
+                        ROS_ERROR("[planner]: service call for trajectory reference failed");
+                        res.success = false;
+                        res.message = "Failed to call trajectory service";
+                        return false;
+                    } else {
+                        if (!srv_trajectory_reference.response.success) {
+                            ROS_ERROR("[planner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
+                            res.success = false;
+                            res.message = "Trajectory service returned failure";
+                            return false;
+                        }
+                    }
+
+                }
+
+                tree.clear();
+                best_branch.clear();
+
+                ros::Duration(timer_main_rate).sleep();
+                last_control_msg = nullptr;
+            }
         }
-
-        interrupted_ = false;
-        changeState(STATE_PLANNING);
 
         res.success = true;
         res.message = "starting";
@@ -286,6 +330,7 @@ public:
         }
         ROS_INFO_ONCE("[planner]: getting ControlManager diagnostics");
         control_manager_diag = *msg;
+        last_control_msg = msg;
     }
 
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
@@ -302,102 +347,13 @@ public:
             return;
         }
 
-        /* prerequsities //{ */
-
-        const bool got_control_manager_diag = sub_control_manager_diag.hasMsg() && (ros::Time::now() - sub_control_manager_diag.lastMsgTime()).toSec() < 2.0;
-        const bool got_uav_state = sub_uav_state.hasMsg() && (ros::Time::now() - sub_uav_state.lastMsgTime()).toSec() < 2.0;
-
-        if (!got_control_manager_diag || !got_uav_state) {
-            ROS_INFO_THROTTLE(1.0, "[planner]: waiting for data: ControlManager diag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
-            return;
-        } else {
-            ready_to_plan_ = true;
-        }
-
         ROS_INFO_ONCE("[planner]: main timer spinning");
 
-        switch (state_) {
-            case STATE_IDLE: {break;}
-            case STATE_PLANNING: {
-                if ((goal.head(2) - pose.head(2)).norm() < tolerance) {
-                    ROS_INFO("[planner]: Goal Reached.");
-                    changeState(STATE_IDLE);
-                    break;
-                }
-                //mrs_lib::ScopeTimer timer = mrs_lib::ScopeTimer("timerMain - STATE_PLANNING", ros::Duration(_scope_timer_duration_), _scope_timer_enabled_);
-                rh(goal);
-
-                mrs_msgs::GetPathSrv srv_get_path;
-
-                srv_get_path.request.path.header.frame_id = "uav1/" + frame_id;
-                srv_get_path.request.path.header.stamp = ros::Time::now();
-                srv_get_path.request.path.fly_now = false;
-                srv_get_path.request.path.use_heading = true;
-
-                mrs_msgs::Reference reference;
-
-                reference.position.x = next_best_node->point[0];
-                reference.position.y = next_best_node->point[1];
-                reference.position.z = center_z;
-                reference.heading = next_best_node->point[2];
-                srv_get_path.request.path.points.push_back(reference);
-
-                bool success = sc_trajectory_generation.call(srv_get_path);
-
-                if (!success) {
-                    ROS_ERROR("[planner]: service call for trajectory failed");
-                    changeState(STATE_IDLE);
-                    return;
-                } else {
-                    if (!srv_get_path.response.success) {
-                        ROS_ERROR("[planner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                        changeState(STATE_IDLE);
-                        return;
-                    }
-                }
-
-                mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
-                srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
-                srv_trajectory_reference.request.trajectory.fly_now = true;
-
-                bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
-
-                if (!success_trajectory) {
-                    ROS_ERROR("[planner]: service call for trajectory reference failed");
-                    changeState(STATE_IDLE);
-                    return;
-                } else {
-                    if (!srv_trajectory_reference.response.success) {
-                        ROS_ERROR("[planner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                        changeState(STATE_IDLE);
-                        return;
-                    }
-                }
-
-                tree.clear();
-                best_branch.clear();
-
-                changeState(STATE_MOVING);
-                break;
-                
-            }
-            case STATE_MOVING: {
-                if (control_manager_diag.tracker_status.have_goal) {
-                    ROS_INFO("[planner]: tracker has goal");
-                } else {
-                    ROS_INFO("[planner]: waiting for command");
-                    changeState(STATE_PLANNING);
-                }
-                break;
-            }
-
-            default: {
-                if (control_manager_diag.tracker_status.have_goal) {
-                    ROS_INFO("[planner]: tracker has goal");
-                } else {
-                    ROS_INFO("[planner]: waiting for command");
-                }
-                break;
+        if (last_control_msg != nullptr) {
+            if (control_manager_diag.tracker_status.have_goal) {
+                ROS_INFO("[planner]: tracker has goal");
+            } else {
+                ROS_INFO("[planner]: waiting for command");
             }
         }
     }
@@ -610,7 +566,6 @@ private:
     double center_z;
     double dimensions_x;
     double dimensions_y;
-    Eigen::Vector3d goal;
 
     // Tree Parameters
     int num_nodes;
@@ -645,11 +600,11 @@ private:
     Eigen::Vector3d pose;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
+    mrs_msgs::ControlManagerDiagnostics::ConstPtr last_control_msg;
 
     // State variables
     std::atomic<State_t> state_;
     std::atomic<bool>    interrupted_ = false;
-    std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -660,10 +615,8 @@ private:
     GainEvaluator gain_evaluator;
 
     // Subscribers
-    mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
-    mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    //ros::Subscriber sub_control_manager_diag;
-    //ros::Subscriber sub_uav_state;
+    ros::Subscriber sub_control_manager_diag;
+    ros::Subscriber sub_uav_state;
 
     // Publishers
     ros::Publisher pub_markers;
@@ -672,10 +625,8 @@ private:
     ros::ServiceServer ss_start;
 
     // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
-    mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
-    //ros::ServiceClient sc_trajectory_generation;
-    //ros::ServiceClient sc_trajectory_reference;
+    ros::ServiceClient sc_trajectory_generation;
+    ros::ServiceClient sc_trajectory_reference;
 
     // Timers
     ros::Timer timer_main;

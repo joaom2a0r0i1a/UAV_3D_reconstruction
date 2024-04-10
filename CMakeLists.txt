@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.15.0)
 project(motion_planning_python)
 
+# Enable parallel build
+set(CMAKE_BUILD_PARALLEL_LEVEL 4)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -15,6 +18,7 @@ set(CATKIN_DEPENDENCIES
   visualization_msgs
   trajectory_generation
   voxblox_ros
+  minkindr_conversions
   )
   
 find_package(catkin REQUIRED COMPONENTS

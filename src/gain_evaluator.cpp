@@ -7,8 +7,8 @@
 
 GainEvaluator::GainEvaluator() {}
 
-double getVerticalFoV(double horizontal_fov, int width, int height){
-  double aspect_ratio = width/height;
+double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y){
+  double aspect_ratio = resolution_x/resolution_y;
   double vertical_fov = 2 * std::atan(std::tan(horizontal_fov / 2) / aspect_ratio);
   return vertical_fov;
 }
@@ -16,6 +16,13 @@ double getVerticalFoV(double horizontal_fov, int width, int height){
 void GainEvaluator::setCameraModelParametersFoV(double horizontal_fov, double vertical_fov,
                                                 double min_distance, double max_distance) {
   cam_model_.setIntrinsicsFromFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
+}
+
+void GainEvaluator::setCameraModelParametersFocalLength(
+    const Eigen::Vector2d& resolution, double focal_length, double min_distance,
+    double max_distance) {
+  cam_model_.setIntrinsicsFromFocalLength(
+      resolution.cast<float>(), focal_length, min_distance, max_distance);
 }
 
 void GainEvaluator::setCameraExtrinsics(const voxblox::Transformation& T_C_B) {
@@ -31,13 +38,10 @@ void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer)
 }
 
 
-double GainEvaluator::evaluateExplorationGainBircher(
-    const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  eth_trajectory_generation::timing::Timer timer_gain(
-      "exploration/exp_gain_bircher");
+double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
+  eth_trajectory_generation::timing::Timer timer_gain("gain_evaluator");
 
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+  cam_model_.setBodyPose(voxblox::Transformation(pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
 
   // Get the boundaries of the current view.
   Eigen::Vector3f aabb_min, aabb_max;
@@ -60,10 +64,8 @@ double GainEvaluator::evaluateExplorationGainBircher(
   int voxel_index = 0;
   Eigen::Vector3f pos = aabb_min.cast<float>();
   for (pos.x() = aabb_min.x(); pos.x() < aabb_max.x(); pos.x() += voxel_size_) {
-    for (pos.y() = aabb_min.y(); pos.y() < aabb_max.y();
-         pos.y() += voxel_size_) {
-      for (pos.z() = aabb_min.z(); pos.z() < aabb_max.z();
-           pos.z() += voxel_size_) {
+    for (pos.y() = aabb_min.y(); pos.y() < aabb_max.y(); pos.y() += voxel_size_) {
+      for (pos.z() = aabb_min.z(); pos.z() < aabb_max.z(); pos.z() += voxel_size_) {
         if (!cam_model_.isPointInView(pos)) {
           continue;
         }
@@ -76,15 +78,10 @@ double GainEvaluator::evaluateExplorationGainBircher(
 
         // Get the block + voxel index of this voxel by projecting it into
         // the voxel grid and then computing from the global index.
-        // This is a truncating cast, which is I think what we want in this
-        // case.
-        voxblox::GlobalIndex global_voxel_idx =
-            (voxel_size_inv_ * pos).cast<voxblox::LongIndexElement>();
-        voxblox::BlockIndex block_index =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                       voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index = voxblox::getLocalFromGlobalVoxelIndex(
-            global_voxel_idx, voxels_per_side_);
+        // This is a truncating cast.
+        voxblox::GlobalIndex global_voxel_idx = (voxel_size_inv_ * pos).cast<voxblox::LongIndexElement>();
+        voxblox::BlockIndex block_index = voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_inv_);
+        voxblox::VoxelIndex voxel_index = voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_);
 
         // Check if this voxel is occluded.
         const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
@@ -100,25 +97,17 @@ double GainEvaluator::evaluateExplorationGainBircher(
         // voxel we're checking (ok if it's occupied, still not an occlusion).
         bool ray_occluded = false;
         for (int i = 0; i < global_voxel_indices.size() - 1; i++) {
-          const voxblox::GlobalIndex& global_voxel_idx =
-              global_voxel_indices[i];
-          voxblox::BlockIndex block_index_ray =
-              voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                         voxels_per_side_inv_);
-          voxblox::VoxelIndex voxel_index_ray =
-              voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                    voxels_per_side_);
+          const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices[i];
+          voxblox::BlockIndex block_index_ray = voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_inv_);
+          voxblox::VoxelIndex voxel_index_ray = voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_);
 
           // Otherwise look up this voxel and add it to checked.
-          const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-              tsdf_layer_->getBlockPtrByIndex(block_index_ray);
+          const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr = tsdf_layer_->getBlockPtrByIndex(block_index_ray);
           if (block_ptr) {
             // If this block exists, get the voxel.
-            const voxblox::TsdfVoxel& voxel =
-                block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
+            const voxblox::TsdfVoxel& voxel = block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
             if (voxel.weight > 1e-1 && voxel.distance <= 0.0) {
-              // This is an occupied voxel! Mark all the stuff behind
-              // it as occluded.
+              // This is an occupied voxel! Mark all the stuff behind it as occluded.
               ray_occluded = true;
               break;
             }
@@ -128,11 +117,9 @@ double GainEvaluator::evaluateExplorationGainBircher(
           num_occluded++;
         } else {
           // If it's not occluded, ACTUALLY look up this voxel.
-          const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-              tsdf_layer_->getBlockPtrByIndex(block_index);
+          const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr = tsdf_layer_->getBlockPtrByIndex(block_index);
           if (block_ptr) {
-            const voxblox::TsdfVoxel& voxel =
-                block_ptr->getVoxelByCoordinates(pos);
+            const voxblox::TsdfVoxel& voxel = block_ptr->getVoxelByCoordinates(pos);
             if (voxel.weight <= 1e-1) {
               num_unknown++;
             } else if (voxel.distance >= 0.0) {

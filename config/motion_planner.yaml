@@ -1,5 +1,8 @@
 frame_id: "world_origin"
 
+body:
+  frame_id: "fcu"
+
 timer_main:
   rate: 1.0 # [Hz]
 
@@ -19,9 +22,13 @@ rrt:
   tolerance: 0.5 # [m]
 
 camera:
+  frame_id: "rgbd/aligned_depth_to_color_optical"
   h_fov: 1.211259 # [rad]
   width: 1280
   height: 720
   min_distance: 0.3 # [m]
   max_distance: 12 # [m]
+
+path:
+  uav_radius: 1 # [m]
 

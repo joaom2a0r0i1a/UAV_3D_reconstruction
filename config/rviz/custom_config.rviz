@@ -267,7 +267,7 @@ Visualization Manager:
           Enabled: true
           Name: VoxbloxMesh
           Queue Size: 10
-          Topic: /voxblox_node/mesh
+          Topic: /uav1/voxblox_node/mesh
           Unreliable: false
           Value: true
       Enabled: true
@@ -577,9 +577,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.31039851903915405
+      Pitch: 0.3253985047340393
       Target Frame: uav1/fcu
-      Yaw: 5.5322065353393555
+      Yaw: 1.1240208148956299
     Saved: ~
 Window Geometry:
   Displays:
@@ -597,7 +597,7 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 2121
-  X: 194
-  Y: 788
+  X: 231
+  Y: 824
   realsense_camera:
     collapsed: false

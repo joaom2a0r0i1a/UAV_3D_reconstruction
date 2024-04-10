@@ -6,7 +6,7 @@
 
 namespace rrt_star {
 
-Node::Node(const Eigen::Vector3d& p) : point(p), parent(nullptr), cost(0) {}
+Node::Node(const Eigen::Vector3d& p) : point(p), parent(nullptr), cost(0), gain(0) {}
 
 Eigen::Vector2d sampleSpace(double dim_x, double dim_y) {
     static std::random_device rd;

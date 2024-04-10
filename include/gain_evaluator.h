@@ -14,11 +14,15 @@ class GainEvaluator {
   GainEvaluator();
 
   // Function to find vertical FoV.  
-  double getVerticalFoV(double horizontal_fov, int width, int height);
+  double getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y);
 
   // Functions to set up the internal camera model.
   void setCameraModelParametersFoV(double horizontal_fov, double vertical_fov,
                                    double min_distance, double max_distance);
+  void setCameraModelParametersFocalLength(const Eigen::Vector2d& resolution,
+        double focal_length,
+        double min_distance,
+        double max_distance);
   void setCameraExtrinsics(const voxblox::Transformation& T_C_B);
 
   // Bind the TSDF layer to one OWNED BY ANOTHER OBJECT. It is up to the user
@@ -33,8 +37,7 @@ class GainEvaluator {
 
   // Use raycasting to discard occluded voxels, Bircher-style
   // implementation.
-  double evaluateExplorationGainBircher(
-      const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;

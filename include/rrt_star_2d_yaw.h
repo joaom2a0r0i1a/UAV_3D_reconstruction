@@ -11,6 +11,7 @@ struct Node {
     Eigen::Vector3d point;
     Node* parent;
     double cost;
+    double gain;
 
     Node(const Eigen::Vector3d& p);
 };
