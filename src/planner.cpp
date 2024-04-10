@@ -75,8 +75,9 @@ public:
         // Timer
         param_loader.loadParam("timer_main/rate", timer_main_rate);
 
-        // Set Goal 
+        // Set Goal and yaw samples
         goal = {24, 5, 0};
+        num_yaw_samples = 8;
 
         // Get vertical FoV and setup camera
         vertical_fov = gain_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
@@ -92,6 +93,8 @@ public:
         transformer_->setDefaultPrefix(ns);
         transformer_->retryLookupNewest(true);
 
+        get_T_C_B = false;
+
         // Setup Collision Avoidance
         voxblox_server_.setTraversabilityRadius(uav_radius);
         voxblox_server_.publishTraversable();
@@ -100,7 +103,6 @@ public:
         pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
 
         /* Subscribers */
-
         mrs_lib::SubscribeHandlerOptions shopts;
         shopts.nh                 = nh_private_;
         shopts.node_name          = "planner";
@@ -110,17 +112,15 @@ public:
         shopts.queue_size         = 10;
         shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
-        //sub_uav_state = nh_private_.subscribe("uav_state_in", 10, &Planner::callbackUavState, this);
-        //sub_control_manager_diag = nh_private_.subscribe("control_manager_diag_in", 10, &Planner::callbackControlManagerDiagnostics, this);
         sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &Planner::callbackUavState, this);
         sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &Planner::callbackControlManagerDiagnostics, this);
+        //sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &Planner::callbackTrackerCmd, this);
+        sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
         /* Service Servers */
         ss_start = nh_private_.advertiseService("start_in", &Planner::callbackStart, this);
 
         /* Service Clients */
-        //sc_trajectory_generation = nh_private_.serviceClient<mrs_msgs::GetPathSrv>("trajectory_generation_out");
-        //sc_trajectory_reference = nh_private_.serviceClient<mrs_msgs::TrajectoryReferenceSrv>("trajectory_reference_out");
         sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
         sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
 
@@ -163,7 +163,7 @@ public:
         return true;
     }*/
 
-    void updateTransformations() {
+    void GetTransformation() {
         // C stand for Camera, B stand for Body, W stand for World
 
         // From body to camera
@@ -175,6 +175,17 @@ public:
 
         T_C_B_message = Message_C_B.value();
         T_B_C_message = transformer_->inverse(T_C_B_message);
+        //T_C_B Translation: [-0.011500, -0.089000, -0.155000]
+        //T_C_B Rotation: [0.500000, -0.500000, 0.500000, 0.500000]
+
+        /*T_C_B_message.transform.translation.x = -0.011500;
+        T_C_B_message.transform.translation.y = -0.089000;
+        T_C_B_message.transform.translation.z = -0.155000;
+
+        T_C_B_message.transform.rotation.x = 0.500000;
+        T_C_B_message.transform.rotation.y = -0.500000;
+        T_C_B_message.transform.rotation.z = 0.500000;
+        T_C_B_message.transform.rotation.w = 0.500000;*/
 
         // Transform into matrix for Voxblox
         tf::transformMsgToKindr(T_C_B_message.transform, &T_C_B);
@@ -194,7 +205,7 @@ public:
         tf::transformMsgToKindr(T_C_W_message.transform, &T_C_W);
         tf::transformMsgToKindr(T_W_C_message.transform, &T_W_C);
 
-        gain_evaluator.setCameraExtrinsics(T_C_B);
+        //gain_evaluator.setCameraExtrinsics(T_C_B);
     }
 
     void rh(const Eigen::Vector3d& goal) {
@@ -214,6 +225,27 @@ public:
 
             std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
             new_node = rrt_star::chooseParent(new_node, nearby_nodes);
+
+            /*double best_gain = 0;
+            double gain;
+            double best_yaw;
+            for (int k = 0; k < num_yaw_samples; ++k) {
+                double yaw = k * 2 * M_PI / num_yaw_samples;
+                trajectory_point.position_W = new_node->point.head(2);
+                trajectory_point.setFromYaw(yaw);
+                gain = gain_evaluator.computeGain(trajectory_point);
+                if (gain > best_gain) {
+                    best_gain = gain;
+                    best_yaw = yaw;
+                }
+            }
+            new_node->gain = best_gain;
+            new_node->point[2] = best_yaw;*/
+
+            trajectory_point.position_W = new_node->point.head(2);
+            trajectory_point.setFromYaw(new_node->point[2]);
+            new_node->gain = gain_evaluator.computeGain(trajectory_point);
+
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
             rrt_star::rewire(tree, new_node, nearby_nodes, radius);
@@ -232,11 +264,34 @@ public:
             visualize_node(new_node->point.head(2), ns);
             std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
             new_node = rrt_star::chooseParent(new_node, nearby_nodes);
+
+            /*double best_gain = 0;
+            double gain;
+            double best_yaw;
+            for (int k = 0; k < num_yaw_samples; ++k) {
+                double yaw = k * 2 * M_PI / num_yaw_samples;
+                trajectory_point.position_W = new_node->point.head(2);
+                trajectory_point.setFromYaw(yaw);
+                gain = gain_evaluator.computeGain(trajectory_point);
+                if (gain > best_gain) {
+                    best_gain = gain;
+                    best_yaw = yaw;
+                }
+            }
+            new_node->gain = best_gain;
+            new_node->point[2] = best_yaw;*/
+
+            trajectory_point.position_W = new_node->point.head(2);
+            trajectory_point.setFromYaw(new_node->point[2]);
+            new_node->gain = gain_evaluator.computeGain(trajectory_point);
+            
+            ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
+
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
             rrt_star::rewire(tree, new_node, nearby_nodes, radius);
             
-            if (j == N_max - 1) {
+            /*if (j == N_max - 1) {
                 std::vector<double> distances;
                 distances.reserve(tree.size());
                 for (const auto& node : tree) {
@@ -248,10 +303,49 @@ public:
                 std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(min_cost_node);
                 visualize_path(min_cost_node, ns);
                 prev_best_branch = best_branch;
-            }
+            }*/
+            
+            /*if (j == N_max - 1) {
+                double max_gain = -std::numeric_limits<double>::infinity();
+                rrt_star::Node* best_node = nullptr;
+
+                // Iterate over all nodes in the tree to find the node with the highest gain.
+                for (const auto& node : tree) {
+                    if (node->gain > max_gain) {
+                        max_gain = node->gain;
+                        best_node = node;
+                    }
+                }
+                
+                // If a node with the highest gain is found, backtrack to get the best branch.
+                if (best_node) {
+                    std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(best_node);
+                    visualize_path(best_node, ns);
+                    prev_best_branch = best_branch;
+                }
+            }*/
+
         }
 
     }
+
+    /*void computeGainFromsampledYaw(rrt_star::Node* new_node, int num_yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
+        double best_gain = 0;
+        double gain;
+        double best_yaw;
+        for (int k = 0; k < num_yaw_samples; ++k) {
+            double yaw = k * 2 * M_PI / num_yaw_samples;
+            trajectory_point.position_W = new_node->point.head(2);
+            trajectory_point.setFromYaw(yaw);
+            gain = gain_evaluator.computeGain(trajectory_point);
+            if (gain > best_gain) {
+                best_gain = gain;
+                best_yaw = yaw;
+            }
+        }
+        new_node->gain = best_gain;
+        new_node->point[2] = best_yaw;
+    }*/
 
     bool callbackStart(mrs_msgs::Vec1::Request& req, mrs_msgs::Vec1::Response& res) {
         if (!is_initialized) {
@@ -297,6 +391,14 @@ public:
         pose = {uav_state.pose.position.x, uav_state.pose.position.y, 0.0};
     }
 
+    /*void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg) {
+        if (!is_initialized) {
+            return;
+        }
+        ROS_INFO_ONCE("[planner]: getting tracker cmd");
+        tracker_cmd = *msg;
+    }*/
+
     void timerMain(const ros::TimerEvent& event) {
         if (!is_initialized) {
             return;
@@ -316,6 +418,14 @@ public:
 
         ROS_INFO_ONCE("[planner]: main timer spinning");
 
+        if (!get_T_C_B) {
+            GetTransformation();
+            ROS_INFO("[planner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
+            ROS_INFO("[planner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
+            gain_evaluator.setCameraExtrinsics(T_C_B);
+            get_T_C_B = true;
+        }
+        
         switch (state_) {
             case STATE_IDLE: {break;}
             case STATE_PLANNING: {
@@ -324,7 +434,9 @@ public:
                     changeState(STATE_IDLE);
                     break;
                 }
-                //mrs_lib::ScopeTimer timer = mrs_lib::ScopeTimer("timerMain - STATE_PLANNING", ros::Duration(_scope_timer_duration_), _scope_timer_enabled_);
+                //updateTransformations();
+                
+                //gain_evaluator.setCameraExtrinsics(T_C_B);
                 rh(goal);
 
                 mrs_msgs::GetPathSrv srv_get_path;
@@ -589,6 +701,7 @@ private:
 
     // Transformer
     std::unique_ptr<mrs_lib::Transformer> transformer_;
+    bool get_T_C_B;
     
     // Transformations
     geometry_msgs::TransformStamped T_C_B_message;
@@ -617,6 +730,7 @@ private:
     double radius;
     double step_size;
     double tolerance;
+    int num_yaw_samples;
 
     // Timer Parameters
     double timer_main_rate;
@@ -639,12 +753,14 @@ private:
     std::vector<Eigen::Vector3d> prev_best_branch;
     std::vector<Eigen::Vector3d> best_branch;
     rrt_star::Node* next_best_node;
+    eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 
     // UAV variables
     bool is_initialized = false;
     Eigen::Vector3d pose;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
+    //mrs_msgs::TrackerCommand tracker_cmd;
 
     // State variables
     std::atomic<State_t> state_;
@@ -662,6 +778,8 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
+    //mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand> sub_tracker_cmd;
+    mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
     //ros::Subscriber sub_control_manager_diag;
     //ros::Subscriber sub_uav_state;
 

@@ -31,9 +31,9 @@
       <remap from="~visualization_marker_out" to="visualization_marker_out" />
 
         <!-- Subscribers -->
-      <!--remap from="~constraints_in" to="control_manager/current_constraints" /-->
+      <remap from="~constraints_in" to="control_manager/current_constraints" />
       <remap from="~uav_state_in" to="estimation_manager/uav_state" />
-      <!--remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" /-->
+      <remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" />
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
 
         <!-- Services clients-->

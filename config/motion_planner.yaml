@@ -23,6 +23,8 @@ rrt:
 
 camera:
   frame_id: "rgbd/aligned_depth_to_color_optical"
+  #frame_id: "rgbd/aligned_depth_to_color"
+  #frame_id: "rgbd/link"
   h_fov: 1.211259 # [rad]
   width: 1280
   height: 720
