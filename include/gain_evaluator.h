@@ -35,6 +35,10 @@ class GainEvaluator {
   //double evaluateExplorationGainVoxelCount(
   //    const mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  // Use raycasting to discard occluded voxels.
+  double evaluateExplorationGainWithRaycasting(
+      const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
   // Use raycasting to discard occluded voxels, Bircher-style
   // implementation.
   double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);

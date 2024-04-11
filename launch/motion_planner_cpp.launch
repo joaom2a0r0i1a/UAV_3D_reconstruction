@@ -2,6 +2,7 @@
   <arg name="voxel_size" default="0.2"/>
   <arg name="voxels_per_side" default="16" />
   <arg name="truncation_distance" default="1" />
+  <arg name="ray_length" default="5" />
 
   <!-- defines name of the namespace of the drone -->
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
@@ -26,6 +27,7 @@
       <param name="update_mesh_every_n_sec" value="0.0" />   
       <param name="publish_traversable" value="false" />
       <param name="publish_pointclouds" value="false" />
+      <param name="max_ray_length" value="$(arg ray_length)" />
 
         <!-- Publishers -->
       <remap from="~visualization_marker_out" to="visualization_marker_out" />

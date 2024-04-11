@@ -57,9 +57,8 @@ public:
         param_loader.loadParam("dimensions/y", dimensions_y);
 
         // RRT Tree
-        param_loader.loadParam("rrt/N_max", num_nodes);
+        param_loader.loadParam("rrt/N_max", N_max);
         param_loader.loadParam("rrt/N_termination", N_termination);
-        param_loader.loadParam("rrt/N_yaw_samples", num_yaw_samples);
         param_loader.loadParam("rrt/radius", radius);
         param_loader.loadParam("rrt/step_size", step_size);
         param_loader.loadParam("rrt/tolerance", tolerance);
@@ -79,6 +78,7 @@ public:
 
         // Set Goal and yaw samples
         goal = {24, 5, 0};
+        num_yaw_samples = 6;
 
         // Get vertical FoV and setup camera
         vertical_fov = gain_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
@@ -210,15 +210,20 @@ public:
     }
 
     void rh(const Eigen::Vector3d& goal) {
-        int N_max = num_nodes;
         double dim_x = dimensions_x;
         double dim_y = dimensions_y;
+
         rrt_star::Node root(pose);
+        visualize_node(root.point.head(2), ns);
         tree.push_back(&root);
+
         clearMarkers();
-        bool isFirstIteration = true;
-        // Push the nodes from the previous best branch into the tree
-        for (size_t i = 1; i < prev_best_branch.size(); ++i) {
+
+        best_gain = 0;
+        rrt_star::Node* best_node = nullptr;
+
+        // Push the nodes from the previous best branch into the tree, ignoring the previous and current root
+        for (size_t i = 2; i < prev_best_branch.size(); ++i) {
             const auto& node = prev_best_branch[i];
             rrt_star::Node* nearest_node = rrt_star::findNearest(tree, {prev_best_branch[i][0], prev_best_branch[i][1]});
             //rrt_star::Node* new_node = rrt_star::steer(nearest_node, {prev_best_branch[i][0], prev_best_branch[i][1]}, step_size);
@@ -228,7 +233,7 @@ public:
             std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
             new_node = rrt_star::chooseParent(new_node, nearby_nodes);
 
-            double best_gain = 0;
+            double max_gain = 0;
             double gain;
             double best_yaw;
             for (int k = 0; k < num_yaw_samples; ++k) {
@@ -237,44 +242,37 @@ public:
                 trajectory_point.setFromYaw(yaw);
                 gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
                 if (gain > best_gain) {
-                    best_gain = gain;
+                    max_gain = gain;
                     best_yaw = yaw;
                 }
             }
-            
-            if (isFirstIteration) {
-                isFirstIteration = false;
-                continue; // Skip first iteration
+            new_node->gain = max_gain;
+            new_node->point[2] = best_yaw;
+
+            if (new_node->gain > best_gain) {
+                best_gain = new_node->gain;
+                best_node = new_node;
             }
-            
-            /*trajectory_point.position_W = new_node->point.head(2);
-            trajectory_point.setFromYaw(new_node->point[2]);
-            new_node->gain = gain_evaluator.computeGain(trajectory_point);*/
-            
+
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
             rrt_star::rewire(tree, new_node, nearby_nodes, radius);
         }
 
-        for (size_t i = 0; i < tree.size(); ++i) {
-            std::cout << "Random Point: " << tree[i]->point << std::endl;
-        }
-        
         prev_best_branch.clear();
 
-        for (int j = 0; j < N_max; ++j) {
+        int j = 0;
+        while (j < N_max || best_gain == 0) {
             Eigen::Vector2d rand_point = rrt_star::sampleSpace(dim_x, dim_y);
-            //std::cout << "Random Point: " << rand_point << std::endl;
 
             rrt_star::Node* nearest_node = rrt_star::findNearest(tree, rand_point);
             rrt_star::Node* new_node = rrt_star::steer(nearest_node, rand_point, step_size);
-            //std::cout << "New Point: " << new_node->point << std::endl;
 
             visualize_node(new_node->point.head(2), ns);
             std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
             new_node = rrt_star::chooseParent(new_node, nearby_nodes);
 
-            double best_gain = 0;
+            double max_gain = 0;
             double gain;
             double best_yaw;
             for (int k = 0; k < num_yaw_samples; ++k) {
@@ -283,77 +281,56 @@ public:
                 trajectory_point.setFromYaw(yaw);
                 gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
                 if (gain > best_gain) {
-                    best_gain = gain;
+                    max_gain = gain;
                     best_yaw = yaw;
                 }
             }
-            new_node->gain = best_gain;
+            new_node->gain = max_gain;
             new_node->point[2] = best_yaw;
 
-            /*trajectory_point.position_W = new_node->point.head(2);
-            trajectory_point.setFromYaw(new_node->point[2]);
-            new_node->gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);*/
-            
-            ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
+            ROS_INFO("[planner]: Best Gain in Node: %f", new_node->gain);
 
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
             rrt_star::rewire(tree, new_node, nearby_nodes, radius);
-            
-            /*if (j == N_max - 1) {
-                std::vector<double> distances;
-                distances.reserve(tree.size());
-                for (const auto& node : tree) {
-                    distances.push_back((goal.head(2) - node->point.head(2)).norm());
-                }
-                auto min_it = std::min_element(distances.begin(), distances.end());
-                int min_index = std::distance(distances.begin(), min_it);
-                rrt_star::Node* min_cost_node = tree[min_index];
-                std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(min_cost_node);
-                visualize_path(min_cost_node, ns);
-                prev_best_branch = best_branch;
-            }*/
-            
-            if (j == N_max - 1) {
-                double max_gain = -std::numeric_limits<double>::infinity();
-                rrt_star::Node* best_node = nullptr;
 
-                // Iterate over all nodes in the tree to find the node with the highest gain.
-                for (const auto& node : tree) {
-                    if (node->gain > max_gain) {
-                        max_gain = node->gain;
-                        best_node = node;
-                    }
-                }
-                
-                // If a node with the highest gain is found, backtrack to get the best branch.
-                if (best_node) {
-                    std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(best_node);
-                    visualize_path(best_node, ns);
-                    prev_best_branch = best_branch;
-                }
+            if (new_node->gain > best_gain) {
+                best_gain = new_node->gain;
+                best_node = new_node;
             }
 
+            if (j > N_termination) {
+                changeState(STATE_IDLE);
+            }
+
+            ++j;
+        }
+
+        // If a node with the highest gain is found, backtrack to get the best branch.
+        if (best_node) {
+            std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(best_node);
+            visualize_path(best_node, ns);
+            prev_best_branch = best_branch;
         }
 
     }
 
-    /*void computeGainFromsampledYaw(rrt_star::Node* new_node, int num_yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
-        double best_gain = 0;
+    /*void computeGainFromsampledYaw(rrt_star::Node* node, int num_yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
+        double max_gain = 0;
         double gain;
         double best_yaw;
         for (int k = 0; k < num_yaw_samples; ++k) {
             double yaw = k * 2 * M_PI / num_yaw_samples;
-            trajectory_point.position_W = new_node->point.head(2);
+            trajectory_point.position_W = node->point.head(2);
             trajectory_point.setFromYaw(yaw);
-            gain = gain_evaluator.computeGain(trajectory_point);
+            gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
             if (gain > best_gain) {
-                best_gain = gain;
+                max_gain = gain;
                 best_yaw = yaw;
             }
         }
-        new_node->gain = best_gain;
-        new_node->point[2] = best_yaw;
+        node->gain = max_gain;
+        node->point[2] = best_yaw;
     }*/
 
     bool callbackStart(mrs_msgs::Vec1::Request& req, mrs_msgs::Vec1::Response& res) {
@@ -397,7 +374,7 @@ public:
         }
         ROS_INFO_ONCE("[planner]: getting UavState diagnostics");
         uav_state = *msg;
-        pose = {uav_state.pose.position.x, uav_state.pose.position.y, -3.0};
+        pose = {uav_state.pose.position.x, uav_state.pose.position.y, 0.0};
     }
 
     /*void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg) {
@@ -497,13 +474,13 @@ public:
 
                 tree.clear();
                 best_branch.clear();
-                ros::Duration(1.5).sleep();
 
                 changeState(STATE_MOVING);
                 break;
                 
             }
             case STATE_MOVING: {
+                ros::Duration(5).sleep();
                 if (control_manager_diag.tracker_status.have_goal) {
                     ROS_INFO("[planner]: tracker has goal");
                 } else {
@@ -736,7 +713,7 @@ private:
     Eigen::Vector3d goal;
 
     // Tree Parameters
-    int num_nodes;
+    int N_max;
     int N_termination;
     double radius;
     double step_size;
@@ -757,6 +734,7 @@ private:
     // Planner Parameters
     double uav_radius;
     std::atomic<int> replanning_counter_ = 0;
+    double best_gain;
 
     // Tree variables
     std::vector<rrt_star::Node*> tree;
