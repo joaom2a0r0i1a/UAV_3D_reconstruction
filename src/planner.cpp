@@ -6,7 +6,6 @@
 #include <mrs_msgs/TrackerCommand.h>
 #include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
-//#include <mrs_msgs/PathSrv.h>
 #include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/Vec1.h>
@@ -23,6 +22,7 @@
 #include <voxblox_ros/tsdf_server.h>
 
 #include <minkindr_conversions/kindr_msg.h>
+#include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
 #include "rrt_star_2d_yaw.h"
@@ -85,9 +85,10 @@ public:
         gain_evaluator.setCameraModelParametersFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
 
         // Setup Voxblox
-        gain_evaluator.setTsdfLayer(voxblox_server_.getTsdfMapPtr()->getTsdfLayerPtr());
         tsdf_map_ = voxblox_server_.getTsdfMapPtr();
-
+        esdf_map_ = voxblox_server_.getEsdfMapPtr();
+        gain_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
+                
         // Setup Tf Transformer
         transformer_ = std::make_unique<mrs_lib::Transformer>("planner");
         transformer_->setDefaultFrame(frame_id);
@@ -155,10 +156,10 @@ public:
     const double kExcessMargin = 0.01;
         for (const eth_mav_msgs::EigenTrajectoryPoint& point : path) {
             if (point.acceleration_W.norm() > constraints_.a_max + kExcessMargin) {
-            return false;
+                return false;
             }
             if (point.velocity_W.norm() > constraints_.v_max + kExcessMargin) {
-            return false;
+                return false;
             }
         }
         return true;
@@ -241,6 +242,7 @@ public:
                     best_yaw = yaw;
                 }
             }
+
             
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -256,9 +258,9 @@ public:
             rrt_star::rewire(tree, new_node, nearby_nodes, radius);
         }
 
-        for (size_t i = 0; i < tree.size(); ++i) {
+        /*for (size_t i = 0; i < tree.size(); ++i) {
             std::cout << "Random Point: " << tree[i]->point << std::endl;
-        }
+        }*/
         
         prev_best_branch.clear();
 
@@ -273,6 +275,29 @@ public:
             visualize_node(new_node->point.head(2), ns);
             std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
             new_node = rrt_star::chooseParent(new_node, nearby_nodes);
+
+            eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment;
+
+            trajectory_point.position_W.head(2) = new_node->parent->point.head(2);
+            trajectory_point.position_W.z() = center_z;
+            trajectory_point.setFromYaw(new_node->parent->point[2]);
+            trajectory_segment.push_back(trajectory_point);
+
+            trajectory_point.position_W.head(2) = new_node->point.head(2);
+            trajectory_point.position_W.z() = center_z;
+            trajectory_point.setFromYaw(new_node->point[2]);
+            trajectory_segment.push_back(trajectory_point);
+
+            bool success = false;
+            //success = isPathCollisionFree(trajectory_segment);
+
+            /*if (!success) {
+                clear_node();
+                trajectory_segment.clear();
+                continue;
+            }*/
+
+            //computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
 
             double best_gain = 0;
             double gain;
@@ -289,6 +314,11 @@ public:
             }
             new_node->gain = best_gain;
             new_node->point[2] = best_yaw;
+
+            /*if (!success) {
+                clear_node();
+                continue;
+            }*/
 
             /*trajectory_point.position_W = new_node->point.head(2);
             trajectory_point.setFromYaw(new_node->point[2]);
@@ -338,13 +368,13 @@ public:
 
     }
 
-    /*void computeGainFromsampledYaw(rrt_star::Node* new_node, int num_yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
+    void computeGainFromsampledYaw(rrt_star::Node* node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
         double best_gain = 0;
         double gain;
         double best_yaw;
-        for (int k = 0; k < num_yaw_samples; ++k) {
-            double yaw = k * 2 * M_PI / num_yaw_samples;
-            trajectory_point.position_W = new_node->point.head(2);
+        for (int k = 0; k < yaw_samples; ++k) {
+            double yaw = k * 2 * M_PI / yaw_samples;
+            trajectory_point.position_W = node->point.head(2);
             trajectory_point.setFromYaw(yaw);
             gain = gain_evaluator.computeGain(trajectory_point);
             if (gain > best_gain) {
@@ -352,9 +382,9 @@ public:
                 best_yaw = yaw;
             }
         }
-        new_node->gain = best_gain;
-        new_node->point[2] = best_yaw;
-    }*/
+        node->gain = best_gain;
+        node->point[2] = best_yaw;
+    }
 
     bool callbackStart(mrs_msgs::Vec1::Request& req, mrs_msgs::Vec1::Response& res) {
         if (!is_initialized) {
@@ -669,6 +699,16 @@ public:
         }
     }
 
+    void clear_node() {
+        visualization_msgs::Marker clear_node;
+        clear_node.header.stamp = ros::Time::now();
+        clear_node.ns = "nodes";
+        clear_node.id = node_id_counter_;
+        clear_node.action = visualization_msgs::Marker::DELETE;
+        node_id_counter_--;
+        pub_markers.publish(clear_node);
+    }
+
     void clearMarkers() {
         // Clear nodes
         visualization_msgs::Marker clear_nodes;
@@ -706,7 +746,7 @@ private:
     voxblox::EsdfServer voxblox_server_;
 
     // Shortcut to Maps
-    //voxblox::EsdfMap::Ptr esdf_map_;
+    voxblox::EsdfMap::Ptr esdf_map_;
     voxblox::TsdfMap::Ptr tsdf_map_;
 
     // Transformer

@@ -34,8 +34,8 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 set(LIBRARIES
   MotionPlanner
   #CameraParameters
-  Planner
-  Rrt_Star
+  #Planner
+  #Rrt_Star
   )
 
   # Define Catkin package
@@ -60,16 +60,17 @@ include_directories(
  # Add library targets
 add_library(MotionPlanner 
   src/gain_evaluator.cpp
+  src/rrt_star_2d_yaw.cpp
   )
 #add_library(CameraParameters 
 #  src/camera_parameters.cpp
 #  )
-add_library(Planner 
-  src/planner.cpp
-  )
-add_library(Rrt_Star 
-  src/rrt_star_2d_yaw.cpp
-  )
+#add_library(Planner 
+#  src/planner.cpp
+#  )
+#add_library(Rrt_Star 
+#  src/rrt_star_2d_yaw.cpp
+#  )
 
  # Add dependencies for library targets
 add_dependencies(MotionPlanner 
@@ -78,12 +79,12 @@ add_dependencies(MotionPlanner
 #add_dependencies(CameraParameters 
 #  ${catkin_EXPORTED_TARGETS} 
 #  ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(Planner 
-  ${catkin_EXPORTED_TARGETS} 
-  ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(Rrt_Star 
-  ${catkin_EXPORTED_TARGETS} 
-  ${${PROJECT_NAME}_EXPORTED_TARGETS})
+#add_dependencies(Planner 
+#  ${catkin_EXPORTED_TARGETS} 
+#  ${${PROJECT_NAME}_EXPORTED_TARGETS})
+#add_dependencies(Rrt_Star 
+#  ${catkin_EXPORTED_TARGETS} 
+#  ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
 target_link_libraries(MotionPlanner
@@ -92,12 +93,12 @@ target_link_libraries(MotionPlanner
 #target_link_libraries(CameraParameters
 #  ${catkin_LIBRARIES}
 #  )
-target_link_libraries(Planner
-  ${catkin_LIBRARIES}
-  )
-  target_link_libraries(Rrt_Star
-  ${catkin_LIBRARIES}
-  )
+#target_link_libraries(Planner
+#  ${catkin_LIBRARIES}
+#  )
+#  target_link_libraries(Rrt_Star
+#  ${catkin_LIBRARIES}
+#  )
 
  # Add executable for camera_parameters.cpp
 #add_executable(camera_parameters src/camera_parameters.cpp)
@@ -117,8 +118,8 @@ target_link_libraries(planner
   ${catkin_LIBRARIES}
   MotionPlanner
   #CameraParameters
-  Planner
-  Rrt_Star
+  #Planner
+  #Rrt_Star
 )
 
  ## --------------------------------------------------------------

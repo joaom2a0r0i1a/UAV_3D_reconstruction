@@ -151,15 +151,15 @@ std::pair<std::vector<Node*>, std::vector<Eigen::Vector3d>> rrtStar(const Eigen:
     return {tree, path};
 }
 
-/*
+
 int main() {
     Eigen::Vector3d start(1, 1, 0);
     Eigen::Vector3d goal(9, 9, 0);
     double dim_x = 10;
     double dim_y = 10;
-    std::vector<std::pair<Vector2d, double>> obstacles = { {Vector2d(5, 5), 1} };
-    auto [tree, path] = rrtStar(start, goal, obstacles, dim_x, dim_y, 1000, 0.5, 2);
+    std::vector<std::pair<Eigen::Vector2d, double>> obstacles = { {Eigen::Vector2d(5, 5), 1} };
+    auto [tree, path] = rrtStar(start, goal, obstacles, dim_x, dim_y, 1000, 0.5, 2, 0.5);
     return 0;
-}*/
+}
 
 }  // namespace rrt_star
