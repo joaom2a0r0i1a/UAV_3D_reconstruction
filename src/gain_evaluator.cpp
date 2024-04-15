@@ -211,7 +211,7 @@ double GainEvaluator::evaluateExplorationGainWithRaycasting(
   //num_unknown /= checked_voxels;
 
   timer_gain.Stop();
-  return num_occupied;
+  return num_unknown;
 }
 
 
@@ -314,9 +314,9 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
   timer_gain.Stop();
 
   // Divide percentages by the checked voxels.
-  num_unknown /= checked_voxels;
+  //num_unknown /= checked_voxels;
 
-  return num_occupied;
+  return num_unknown;
 }
 
 voxblox::CameraModel& GainEvaluator::getCameraModel() { return cam_model_; }

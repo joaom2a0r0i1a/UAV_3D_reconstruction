@@ -5,13 +5,14 @@
 #include <cmath>
 #include <Eigen/Dense>
 
-namespace rrt_star {
+namespace rrt_star_2d {
 
 struct Node {
     Eigen::Vector3d point;
     Node* parent;
     double cost;
     double gain;
+    double score;
 
     Node(const Eigen::Vector3d& p);
 };

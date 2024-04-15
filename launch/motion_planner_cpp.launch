@@ -12,6 +12,9 @@
     <!-- Namespace - all topics, services and parameters will be remapped using this namespace as a prefix (eg.: "/waypoint_flier_simple/odom_uav_in" to "/uav1/waypoint_flier_simple/odom_uav_in") -->
   <group ns="$(arg UAV_NAME)">
 
+    <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_gazebo_static /tf_static uav1/voxblox_node/mesh -o my_data"/-->
+    <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="-a -o my_data"/-->
+
     <node pkg="motion_planning_python" type="planner" name="planner" output="screen">
 
         <!-- ROS parameters config file -->
@@ -20,6 +23,7 @@
         <!-- Voxblox Planner -->
       <!--remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" /-->
       <!--remap from="~tsdf_map_in" to="voxblox_node/tsdf_map_out" /-->
+      <remap from="~esdf_map_in" to="esdf_map" />
       <remap from="~tsdf_map_in" to="tsdf_map" />
       <param name="use_tf_transforms" value="false" />
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />

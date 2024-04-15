@@ -26,7 +26,7 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
-#include <rrt_star.h>
+#include <rrt_star_2d_yaw.h>
 #include <gain_evaluator.h>
 
 typedef enum
@@ -57,7 +57,6 @@ public:
         param_loader.loadParam("center/z", center_z);
         param_loader.loadParam("dimensions/x", dimensions_x);
         param_loader.loadParam("dimensions/y", dimensions_y);
-        param_loader.loadParam("dimensions/z", dimensions_z);
 
         // RRT Tree
         param_loader.loadParam("rrt/N_max", num_nodes);
@@ -76,7 +75,6 @@ public:
 
         // Planner
         param_loader.loadParam("path/uav_radius", uav_radius);
-        param_loader.loadParam("path/lambda", lambda);
 
         // Timer
         param_loader.loadParam("timer_main/rate", timer_main_rate);
@@ -120,6 +118,7 @@ public:
 
         sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &Planner::callbackUavState, this);
         sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &Planner::callbackControlManagerDiagnostics, this);
+        //sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &Planner::callbackTrackerCmd, this);
         sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
         /* Service Servers */
@@ -155,6 +154,19 @@ public:
         return true;
     }
 
+    /*bool isPathFeasible(const eth_mav_msgs::EigenTrajectoryPointVector& path) const {
+    const double kExcessMargin = 0.01;
+        for (const eth_mav_msgs::EigenTrajectoryPoint& point : path) {
+            if (point.acceleration_W.norm() > constraints_.a_max + kExcessMargin) {
+                return false;
+            }
+            if (point.velocity_W.norm() > constraints_.v_max + kExcessMargin) {
+                return false;
+            }
+        }
+        return true;
+    }*/
+
     void GetTransformation() {
         // C stand for Camera, B stand for Body, W stand for World
 
@@ -167,6 +179,17 @@ public:
 
         T_C_B_message = Message_C_B.value();
         T_B_C_message = transformer_->inverse(T_C_B_message);
+        //T_C_B Translation: [-0.011500, -0.089000, -0.155000]
+        //T_C_B Rotation: [0.500000, -0.500000, 0.500000, 0.500000]
+
+        /*T_C_B_message.transform.translation.x = -0.011500;
+        T_C_B_message.transform.translation.y = -0.089000;
+        T_C_B_message.transform.translation.z = -0.155000;
+
+        T_C_B_message.transform.rotation.x = 0.500000;
+        T_C_B_message.transform.rotation.y = -0.500000;
+        T_C_B_message.transform.rotation.z = 0.500000;
+        T_C_B_message.transform.rotation.w = 0.500000;*/
 
         // Transform into matrix for Voxblox
         tf::transformMsgToKindr(T_C_B_message.transform, &T_C_B);
@@ -201,7 +224,7 @@ public:
 
     void computeBoundingBox(const Eigen::Vector3d& lower_bound, const Eigen::Vector3d& upper_bound,
                         double& min_x, double& min_y, double& min_z,
-                        double& max_x, double& max_y, double& max_z, double& bounded_radius) const {
+                        double& max_x, double& max_y, double& max_z, double& radius) const {
         min_x = lower_bound.x();
         min_y = lower_bound.y();
         min_z = lower_bound.z();
@@ -210,14 +233,13 @@ public:
         max_y = upper_bound.y();
         max_z = upper_bound.z();
 
-        bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
+        radius = std::sqrt(std::pow(min_x - max_x, 2) + std::pow(min_y - max_y, 2) + std::pow(min_z - max_z, 2));
     }
 
     void rh(const Eigen::Vector3d& goal) {
         int N_max = num_nodes;
         double dim_x = dimensions_x;
         double dim_y = dimensions_y;
-        double dim_z = dimensions_z;
 
         rrt_star::Node root(pose);
         tree.push_back(&root);
@@ -231,27 +253,28 @@ public:
                                         << upper_bound_.transpose() << " size: "
                                         << (upper_bound_ - lower_bound_).transpose());
 
-        double min_x, min_y, min_z, max_x, max_y, max_z, bounded_radius; 
-        computeBoundingBox(lower_bound_, upper_bound_, min_x, min_y, min_z, max_x, max_y, max_z, bounded_radius);
+        double min_x, min_y, min_z, max_x, max_y, max_z, radius; 
+        computeBoundingBox(lower_bound_, upper_bound_, min_x, min_y, min_z, max_x, max_y, max_z, radius);
               
         // Push the nodes from the previous best branch into the tree
         for (size_t i = 1; i < prev_best_branch.size(); ++i) {
             const auto& node = prev_best_branch[i];
-            rrt_star::Node* nearest_node = rrt_star::findNearest(tree, {prev_best_branch[i][0], prev_best_branch[i][1], prev_best_branch[i][2]});
+            rrt_star::Node* nearest_node = rrt_star::findNearest(tree, {prev_best_branch[i][0], prev_best_branch[i][1]});
+            //rrt_star::Node* new_node = rrt_star::steer(nearest_node, {prev_best_branch[i][0], prev_best_branch[i][1]}, step_size);
             rrt_star::Node* new_node = new rrt_star::Node(node);
-            visualize_node(new_node->point, ns);
+            visualize_node(new_node->point.head(2), ns);
 
-            new_node->parent = nearest_node;
+            std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
+            new_node = rrt_star::chooseParent(new_node, nearby_nodes);
 
-            //std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
-            //new_node = rrt_star::chooseParent(new_node, nearby_nodes);
+            //computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
 
             double best_gain = 0;
             double gain;
             double best_yaw;
             for (int k = 0; k < num_yaw_samples; ++k) {
                 double yaw = k * 2 * M_PI / num_yaw_samples;
-                trajectory_point.position_W = new_node->point.head(3);
+                trajectory_point.position_W = new_node->point.head(2);
                 trajectory_point.setFromYaw(yaw);
                 gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
                 if (gain > best_gain) {
@@ -263,44 +286,48 @@ public:
             
             if (isFirstIteration) {
                 isFirstIteration = false;
-                continue; // Skip first iteration (root)
+                continue; // Skip first iteration
             }
-                       
+            
+            /*trajectory_point.position_W = new_node->point.head(2);
+            trajectory_point.setFromYaw(new_node->point[2]);
+            new_node->gain = gain_evaluator.computeGain(trajectory_point);*/
+            
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
-            //rrt_star::rewire(tree, new_node, nearby_nodes, radius);
-            delete new_node;
+            rrt_star::rewire(tree, new_node, nearby_nodes, radius);
         }
+
+        /*for (size_t i = 0; i < tree.size(); ++i) {
+            std::cout << "Random Point: " << tree[i]->point << std::endl;
+        }*/
         
         prev_best_branch.clear();
 
         int j = 0;
         best_gain_ = 0;
         while (j < N_max || best_gain_ == 0) {
-            Eigen::Vector3d rand_point = rrt_star::computeSamplingDimensions(bounded_radius);
-            rand_point += root.point.head(3);
-
-            //Eigen::Vector3d rand_point = rrt_star::sampleSpace(dim_x, dim_y, dim_z);
+            Eigen::Vector2d rand_point = rrt_star::sampleSpace(dim_x, dim_y);
+            //std::cout << "Random Point: " << rand_point << std::endl;
 
             rrt_star::Node* nearest_node = rrt_star::findNearest(tree, rand_point);
             rrt_star::Node* new_node = rrt_star::steer(nearest_node, rand_point, step_size);
-            visualize_node(new_node->point, ns);
+            //std::cout << "New Point: " << new_node->point << std::endl;
 
-            std::cout << "New Point: " << new_node->point << std::endl;
-            
-            new_node->parent = nearest_node;
-
-            //std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
-            //new_node = rrt_star::chooseParent(new_node, nearby_nodes);
+            visualize_node(new_node->point.head(2), ns);
+            std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
+            new_node = rrt_star::chooseParent(new_node, nearby_nodes);
 
             eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment;
 
-            trajectory_point.position_W.head(3) = new_node->parent->point.head(3);
-            trajectory_point.setFromYaw(new_node->parent->point[3]);
+            trajectory_point.position_W.head(2) = new_node->parent->point.head(2);
+            trajectory_point.position_W.z() = center_z;
+            trajectory_point.setFromYaw(new_node->parent->point[2]);
             trajectory_segment.push_back(trajectory_point);
 
-            trajectory_point.position_W.head(3) = new_node->point.head(3);
-            trajectory_point.setFromYaw(new_node->point[3]);
+            trajectory_point.position_W.head(2) = new_node->point.head(2);
+            trajectory_point.position_W.z() = center_z;
+            trajectory_point.setFromYaw(new_node->point[2]);
             trajectory_segment.push_back(trajectory_point);
 
             bool success_collision = false;
@@ -314,12 +341,14 @@ public:
 
             //trajectory_segment.clear();
 
+            //computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
+
             double best_gain = 0;
             double gain;
             double best_yaw;
             for (int k = 0; k < num_yaw_samples; ++k) {
                 double yaw = k * 2 * M_PI / num_yaw_samples;
-                trajectory_point.position_W = new_node->point.head(3);
+                trajectory_point.position_W = new_node->point.head(2);
                 trajectory_point.setFromYaw(yaw);
                 gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
                 if (gain > best_gain) {
@@ -328,7 +357,7 @@ public:
                 }
             }
             new_node->gain = best_gain;
-            new_node->point[3] = best_yaw;
+            new_node->point[2] = best_yaw;
             
             if (new_node->gain > best_gain_) {
                 best_gain_ = new_node->gain;
@@ -336,23 +365,23 @@ public:
 
             ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
 
-            new_node->cost = new_node->parent->cost + (new_node->point.head(3) - new_node->parent->point.head(3)).norm();
-            new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
-
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
-            //rrt_star::rewire(tree, new_node, nearby_nodes, radius);
-            delete new_node;
+            rrt_star::rewire(tree, new_node, nearby_nodes, radius);
 
             if (j == N_max - 1) {
                 double max_gain = -std::numeric_limits<double>::infinity();
                 rrt_star::Node* best_node = nullptr;
+
+                // Iterate over all nodes in the tree to find the node with the highest gain.
                 for (const auto& node : tree) {
                     if (node->gain > max_gain) {
                         max_gain = node->gain;
                         best_node = node;
                     }
                 }
+                
+                // If a node with the highest gain is found, backtrack to get the best branch.
                 if (best_node) {
                     std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(best_node);
                     visualize_path(best_node, ns);
@@ -362,7 +391,6 @@ public:
 
             if (j > N_termination) {
                 changeState(STATE_IDLE);
-                break;
             }
 
             ++j;
@@ -377,7 +405,7 @@ public:
         double best_yaw;
         for (int k = 0; k < yaw_samples; ++k) {
             double yaw = k * 2 * M_PI / yaw_samples;
-            trajectory_point.position_W = node->point.head(3);
+            trajectory_point.position_W = node->point.head(2);
             trajectory_point.setFromYaw(yaw);
             gain = gain_evaluator.computeGain(trajectory_point);
             if (gain > best_gain) {
@@ -386,7 +414,7 @@ public:
             }
         }
         node->gain = best_gain;
-        node->point[3] = best_yaw;
+        node->point[2] = best_yaw;
     }
 
     bool callbackStart(mrs_msgs::Vec1::Request& req, mrs_msgs::Vec1::Response& res) {
@@ -430,8 +458,16 @@ public:
         }
         ROS_INFO_ONCE("[planner]: getting UavState diagnostics");
         uav_state = *msg;
-        pose = {uav_state.pose.position.x, uav_state.pose.position.y, uav_state.pose.position.z, -3.0};
+        pose = {uav_state.pose.position.x, uav_state.pose.position.y, -3.0};
     }
+
+    /*void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg) {
+        if (!is_initialized) {
+            return;
+        }
+        ROS_INFO_ONCE("[planner]: getting tracker cmd");
+        tracker_cmd = *msg;
+    }*/
 
     void timerMain(const ros::TimerEvent& event) {
         if (!is_initialized) {
@@ -463,6 +499,12 @@ public:
         switch (state_) {
             case STATE_IDLE: {break;}
             case STATE_PLANNING: {
+                if ((goal.head(2) - pose.head(2)).norm() < tolerance) {
+                    ROS_INFO("[planner]: Goal Reached.");
+                    changeState(STATE_IDLE);
+                    break;
+                }
+
                 rh(goal);
 
                 mrs_msgs::GetPathSrv srv_get_path;
@@ -476,8 +518,8 @@ public:
 
                 reference.position.x = next_best_node->point[0];
                 reference.position.y = next_best_node->point[1];
-                reference.position.z = next_best_node->point[2];
-                reference.heading = next_best_node->point[3];
+                reference.position.z = center_z;
+                reference.heading = next_best_node->point[2];
                 srv_get_path.request.path.points.push_back(reference);
 
                 bool success = sc_trajectory_generation.call(srv_get_path);
@@ -566,7 +608,7 @@ public:
         state_ = new_state;
     }
 
-    void visualize_node(const Eigen::Vector4d& pos, const std::string& ns) {
+    void visualize_node(const Eigen::Vector3d& pos, const std::string& ns) {
         visualization_msgs::Marker n;
         n.header.stamp = ros::Time::now();
         n.header.seq = node_id_counter_;
@@ -577,7 +619,7 @@ public:
         n.action = visualization_msgs::Marker::ADD;
         n.pose.position.x = pos[0];
         n.pose.position.y = pos[1];
-        n.pose.position.z = pos[2];
+        n.pose.position.z = center_z;
 
         n.pose.orientation.x = 1;
         n.pose.orientation.y = 0;
@@ -611,13 +653,13 @@ public:
         e.action = visualization_msgs::Marker::ADD;
         e.pose.position.x = node->parent->point[0];
         e.pose.position.y = node->parent->point[1];
-        e.pose.position.z = node->parent->point[2];
+        e.pose.position.z = center_z;
 
         Eigen::Quaternion<double> q;
         Eigen::Vector3d init(1.0, 0.0, 0.0);
         Eigen::Vector3d dir(node->point[0] - node->parent->point[0],
-                            node->point[1] - node->parent->point[1],
-                            node->point[2] - node->parent->point[2]);
+                            node->point[1] - node->parent->point[1], 0);
+                            //node->point[2] - node->parent->point[2]);
         q.setFromTwoVectors(init, dir);
         q.normalize();
 
@@ -654,13 +696,13 @@ public:
             p.action = visualization_msgs::Marker::ADD;
             p.pose.position.x = node->parent->point[0];
             p.pose.position.y = node->parent->point[1];
-            p.pose.position.z = node->parent->point[2];
+            p.pose.position.z = center_z;//node->parent->point[2];
 
             Eigen::Quaternion<double> q;
             Eigen::Vector3d init(1.0, 0.0, 0.0);
             Eigen::Vector3d dir(node->point[0] - node->parent->point[0],
-                                node->point[1] - node->parent->point[1],
-                                node->point[2] - node->parent->point[2]);
+                                node->point[1] - node->parent->point[1], 0);
+                                //node->point[2] - node->parent->point[2]);
             q.setFromTwoVectors(init, dir);
             q.normalize();
             p.pose.orientation.x = q.x();
@@ -760,7 +802,6 @@ private:
     double center_z;
     double dimensions_x;
     double dimensions_y;
-    double dimensions_z;
     Eigen::Vector3d goal;
     double best_gain_;
 
@@ -785,7 +826,6 @@ private:
 
     // Planner Parameters
     double uav_radius;
-    double lambda;
     std::atomic<int> replanning_counter_ = 0;
 
     // Bounds Parameters
@@ -795,17 +835,18 @@ private:
 
     // Tree variables
     std::vector<rrt_star::Node*> tree;
-    std::vector<Eigen::Vector4d> path;
-    std::vector<Eigen::Vector4d> prev_best_branch;
-    std::vector<Eigen::Vector4d> best_branch;
+    std::vector<Eigen::Vector3d> path;
+    std::vector<Eigen::Vector3d> prev_best_branch;
+    std::vector<Eigen::Vector3d> best_branch;
     rrt_star::Node* next_best_node;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 
     // UAV variables
     bool is_initialized = false;
-    Eigen::Vector4d pose;
+    Eigen::Vector3d pose;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
+    //mrs_msgs::TrackerCommand tracker_cmd;
 
     // State variables
     std::atomic<State_t> state_;
@@ -823,6 +864,7 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
+    //mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand> sub_tracker_cmd;
     mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
 
     // Publishers

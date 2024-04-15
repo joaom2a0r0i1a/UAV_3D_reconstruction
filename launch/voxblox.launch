@@ -36,6 +36,7 @@
     <!--Voxblox Mapping-->
     <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr" clear_params="true">
       <remap from="pointcloud" to="/$(arg UAV_NAME)/rgbd/aligned_depth_to_color/points"/>
+      <remap from="~esdf_map_out" to="esdf_map" />
       <remap from="~tsdf_map_out" to="tsdf_map" />
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
       <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />

@@ -9,11 +9,12 @@ timer_main:
 center:
   x: 0.0 # [m]
   y: 0.0 # [m]
-  z: 2.0 # [m]
+  z: 1.0 # [m]
 
 dimensions:
   x: 40.0 # [m]
   y: 20.0 # [m]
+  z: 20.0 # [m]
 
 rrt:
   N_max: 15
@@ -36,4 +37,5 @@ camera:
 
 path:
   uav_radius: 1 # [m]
+  lambda: 0.5 # (tunning factor)
 

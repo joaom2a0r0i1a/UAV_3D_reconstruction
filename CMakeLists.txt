@@ -61,6 +61,7 @@ include_directories(
 add_library(MotionPlanner 
   src/gain_evaluator.cpp
   src/rrt_star_2d_yaw.cpp
+  src/rrt_star.cpp
   )
 #add_library(CameraParameters 
 #  src/camera_parameters.cpp
@@ -104,6 +105,10 @@ target_link_libraries(MotionPlanner
 #add_executable(camera_parameters src/camera_parameters.cpp)
 add_executable(planner src/planner.cpp)
 
+# Set compiler flags for debug mode
+set(CMAKE_C_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+
  # Link executable against required libraries
 #target_link_libraries(camera_parameters
 #  ${catkin_LIBRARIES}
@@ -120,6 +125,17 @@ target_link_libraries(planner
   #CameraParameters
   #Planner
   #Rrt_Star
+)
+
+# Specify the command to run Valgrind
+set(VALGRIND_COMMAND valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes)
+set(VALGRIND_OUTPUT_FILE "${CMAKE_BINARY_DIR}/valgrind_output.txt")
+
+# Create a custom target to run Valgrind
+add_custom_target(valgrind
+    COMMAND ${VALGRIND_COMMAND} $<TARGET_FILE:planner> > ${VALGRIND_OUTPUT_FILE} 2>&1
+    DEPENDS planner
+    COMMENT "Running Valgrind Memory Checker"
 )
 
  ## --------------------------------------------------------------
