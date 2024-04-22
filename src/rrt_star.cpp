@@ -20,6 +20,29 @@ Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z) {
     return Eigen::Vector3d(rand_x, rand_y, rand_z);
 }
 
+/*Eigen::Vector3d computeSamplingDimensions(double radius, const float& min_x, const float& min_y, 
+                                        const float& min_z, const float& max_x, const float& max_y, const float& max_z) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> dis(-radius, radius);
+
+    bool solutionFound = false;
+    double rand_x, rand_y, rand_z;
+    while (!solutionFound) {
+        rand_x = dis(gen);
+        rand_y = dis(gen);
+        rand_z = dis(gen);
+        if (Eigen::Vector3d(rand_x, rand_y, rand_z).norm() > radius) {
+            continue;
+        } else if (rand_x < min_x || rand_x > max_x || rand_y < min_y || rand_y > max_y || rand_z < min_z || rand_z > max_z) {
+            continue; 
+        }
+        solutionFound = true;
+    }
+
+    return Eigen::Vector3d(rand_x, rand_y, rand_z);
+}*/
+
 Eigen::Vector3d computeSamplingDimensions(double radius) {
     static std::random_device rd;
     static std::mt19937 gen(rd());
@@ -31,7 +54,12 @@ Eigen::Vector3d computeSamplingDimensions(double radius) {
         rand_x = dis(gen);
         rand_y = dis(gen);
         rand_z = dis(gen);
-        solutionFound = (Eigen::Vector3d(rand_x, rand_y, rand_z).norm() <= radius);
+        if (Eigen::Vector3d(rand_x, rand_y, rand_z).norm() > radius) {
+            continue;
+        } //else if (rand_x < -12 || rand_x > 12 || rand_y < -6 || rand_y > 6 || rand_z < 0.5 || rand_z > 12) {
+          //  continue; 
+        //}
+        solutionFound = true;
     }
 
     return Eigen::Vector3d(rand_x, rand_y, rand_z);
@@ -59,6 +87,21 @@ Node* steer(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize) {
         Eigen::Vector3d newPoint = fromNode->point.head<3>() + stepSize * direction;
         return new Node(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.z()));
     }
+}
+
+Node* steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize) {
+    double dist = (toPoint - fromNode->point.head<3>()).norm();
+    Node* new_node = nullptr;
+    if (dist < stepSize) {
+        new_node = new Node(Eigen::Vector4d(toPoint.x(), toPoint.y(), toPoint.z(), fromNode->point.z()));
+        new_node->parent = fromNode;
+    } else {
+        Eigen::Vector3d direction = (toPoint - fromNode->point.head<3>()).normalized();
+        Eigen::Vector3d newPoint = fromNode->point.head<3>() + stepSize * direction;
+        new_node = new Node(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.z()));
+        new_node->parent = fromNode;
+    }
+    return new_node;
 }
 
 bool collides(const std::vector<double>& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles) {

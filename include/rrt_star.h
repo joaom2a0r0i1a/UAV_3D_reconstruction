@@ -19,11 +19,16 @@ struct Node {
 
 Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z);
 
+//Eigen::Vector3d computeSamplingDimensions(double radius, const float& min_x, const float& min_y, 
+//                                        const float& min_z, const float& max_x, const float& max_y, const float& max_z);
+
 Eigen::Vector3d computeSamplingDimensions(double radius);
 
 Node* findNearest(std::vector<Node*>& tree, const Eigen::Vector3d& point);
 
 Node* steer(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize);
+
+Node* steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize);
 
 bool collides(const std::vector<double>& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles);
 

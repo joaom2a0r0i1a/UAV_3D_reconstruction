@@ -73,6 +73,7 @@
         "variant": "cpp",
         "forward_list": "cpp",
         "core": "cpp",
-        "future": "cpp"
+        "future": "cpp",
+        "*.ipp": "cpp"
     }
 }

@@ -29,19 +29,26 @@ class GainEvaluator {
   // to ensure the layer exists and does not go out of scope.
   void setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer);
 
-  // Evaluate the exploration gain by counting unknown voxels in frustum.
-  // Modulus is how much to subsample the queried view frustum. Modulus = 1:
-  // evaluate the full frustum.
-  //double evaluateExplorationGainVoxelCount(
-  //    const mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  // Set Boundaries
+  void setBounds(float& min_x, float& min_y, float& min_z,
+                float& max_x, float& max_y, float& max_z, float& gain_range);
 
-  // Use raycasting to discard occluded voxels.
+  // Initialize the neighbour voxels
+  void initialize_neighbour_voxels(float voxel_size);
+
+  // Check if it is a frontier voxel.
+  bool isFrontierVoxel(const Eigen::Vector3d& voxel);
+
+  // Use raycasting to discard occluded voxels and compute gain.
   double evaluateExplorationGainWithRaycasting(
       const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
-  // Use raycasting to discard occluded voxels, Bircher-style
-  // implementation.
+  // Use raycasting to discard occluded voxels, Bircher-style implementation.
   double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  // Use raycasting to discard occluded voxels and compute gain in neighbours.
+  double computeGainInNeighbours(
+    const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;
@@ -50,6 +57,15 @@ class GainEvaluator {
   // NON-OWNED pointer to the tsdf layer to use for evaluating exploration gain.
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
   voxblox::CameraModel cam_model_;
+
+  bool p_accurate_frontiers_;  // True: explicitely compute all frontier voxels (may degrade performance)
+  // false: estimate frontier voxels by checking only some neighbors (detection depends on previous views)
+  bool p_surface_frontiers_;  // true: count next to occupied, false: count next
+  Eigen::Vector3d neighbor_voxels_[26];
+
+  // Get map Bounds
+  float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;
+  float gain_range_; 
 
   // Cached parameters of the layer.
   float voxel_size_;

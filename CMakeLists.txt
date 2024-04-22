@@ -33,6 +33,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   MotionPlanner
+  Evaluate
   #CameraParameters
   #Planner
   #Rrt_Star
@@ -63,6 +64,9 @@ add_library(MotionPlanner
   src/rrt_star_2d_yaw.cpp
   src/rrt_star.cpp
   )
+  add_library(Evaluate 
+  src/evaluate/eval_voxblox_node.cpp
+  )
 #add_library(CameraParameters 
 #  src/camera_parameters.cpp
 #  )
@@ -77,6 +81,9 @@ add_library(MotionPlanner
 add_dependencies(MotionPlanner 
   ${catkin_EXPORTED_TARGETS} 
   ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(Evaluate 
+  ${catkin_EXPORTED_TARGETS} 
+  ${${PROJECT_NAME}_EXPORTED_TARGETS})
 #add_dependencies(CameraParameters 
 #  ${catkin_EXPORTED_TARGETS} 
 #  ${${PROJECT_NAME}_EXPORTED_TARGETS})
@@ -89,6 +96,9 @@ add_dependencies(MotionPlanner
 
  # Link libraries against required Catkin libraries
 target_link_libraries(MotionPlanner
+  ${catkin_LIBRARIES}
+  )
+target_link_libraries(Evaluate
   ${catkin_LIBRARIES}
   )
 #target_link_libraries(CameraParameters
@@ -122,6 +132,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
 target_link_libraries(planner
   ${catkin_LIBRARIES}
   MotionPlanner
+  Evaluate
   #CameraParameters
   #Planner
   #Rrt_Star

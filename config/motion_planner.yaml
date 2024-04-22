@@ -16,26 +16,38 @@ dimensions:
   y: 20.0 # [m]
   z: 20.0 # [m]
 
+bounded_box:
+  min_x: -12 # [m]
+  max_x: 12 # [m]
+  min_y: -7 # [m]
+  max_y: 7 # [m]
+  min_z: 0.5 # [m]
+  max_z: 12 # [m]
+  planner_range: 3 # [m]
+
 rrt:
-  N_max: 15
+  N_max: 30
   N_termination: 200
-  N_yaw_samples: 12
+  N_yaw_samples: 10
   radius: 2.0 # [m]
   step_size: 1.0 # [m]
   tolerance: 0.5 # [m]
 
 camera:
   #frame_id: "rgbd/aligned_depth_to_color_optical"
-  frame_id: "rgbd/aligned_depth_to_color"
+  frame_id: "rgbd_front_pitched/aligned_depth_to_color"
+  #frame_id: "rgbd/aligned_depth_to_color"
   #frame_id: "rgbd/link"
+  #frame_id: "velodyne_sensor"
   h_fov: 1.211259 # [rad]
+  #h_fov: 1.570796 # [rad]
   width: 1280
   height: 720
   min_distance: 0.3 # [m]
   #max_distance: 12 # [m]
-  max_distance: 5 # [m]
+  max_distance: 3 # [m]
 
 path:
-  uav_radius: 1 # [m]
-  lambda: 0.5 # (tunning factor)
+  uav_radius: 1.5 # [m]
+  lambda: 0.2 # (tunning factor)
 

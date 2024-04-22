@@ -32,11 +32,12 @@
 typedef enum
 {
   STATE_IDLE,
+  STATE_REACHED,
   STATE_PLANNING,
   STATE_MOVING,
 } State_t;
 
-const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING"};
+const std::string _state_names_[] = {"IDLE", "REACHED", "PLANNING", "MOVING"};
 
 class Planner {
 public:
@@ -59,6 +60,15 @@ public:
         param_loader.loadParam("dimensions/y", dimensions_y);
         param_loader.loadParam("dimensions/z", dimensions_z);
 
+        // Bounded Box
+        param_loader.loadParam("bounded_box/min_x", min_x);
+        param_loader.loadParam("bounded_box/max_x", max_x);
+        param_loader.loadParam("bounded_box/min_y", min_y);
+        param_loader.loadParam("bounded_box/max_y", max_y);
+        param_loader.loadParam("bounded_box/min_z", min_z);
+        param_loader.loadParam("bounded_box/max_z", max_z);
+        param_loader.loadParam("bounded_box/planner_range", planner_range);
+
         // RRT Tree
         param_loader.loadParam("rrt/N_max", num_nodes);
         param_loader.loadParam("rrt/N_termination", N_termination);
@@ -80,6 +90,9 @@ public:
 
         // Timer
         param_loader.loadParam("timer_main/rate", timer_main_rate);
+
+        // Initialize UAV as state IDLE
+        changeState(STATE_IDLE);
 
         // Set Goal and yaw samples
         goal = {24, 5, 0};
@@ -104,7 +117,11 @@ public:
         // Setup Collision Avoidance
         voxblox_server_.setTraversabilityRadius(uav_radius);
         voxblox_server_.publishTraversable();
-        
+
+        // Get Sampling Radius
+        bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
+        //gain_evaluator.setBounds(min_x, max_x, min_y, max_y, min_z, max_z, planner_range);
+       
         /* Publishers */
         pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
 
@@ -215,9 +232,9 @@ public:
 
     void rh(const Eigen::Vector3d& goal) {
         int N_max = num_nodes;
-        double dim_x = dimensions_x;
-        double dim_y = dimensions_y;
-        double dim_z = dimensions_z;
+        //double dim_x = dimensions_x;
+        //double dim_y = dimensions_y;
+        //double dim_z = dimensions_z;
 
         rrt_star::Node root(pose);
         tree.push_back(&root);
@@ -225,75 +242,115 @@ public:
 
         bool isFirstIteration = true;
 
-        computeMapBounds(&lower_bound_, &upper_bound_);
+        //computeMapBounds(&lower_bound_, &upper_bound_);
 
-        ROS_INFO_STREAM("Map bounds: " << lower_bound_.transpose() << " to "
-                                        << upper_bound_.transpose() << " size: "
-                                        << (upper_bound_ - lower_bound_).transpose());
+        //ROS_INFO_STREAM("Map bounds: " << lower_bound_.transpose() << " to "
+        //                                << upper_bound_.transpose() << " size: "
+        //                                << (upper_bound_ - lower_bound_).transpose());
 
-        double min_x, min_y, min_z, max_x, max_y, max_z, bounded_radius; 
-        computeBoundingBox(lower_bound_, upper_bound_, min_x, min_y, min_z, max_x, max_y, max_z, bounded_radius);
+        //double min_x, min_y, min_z, max_x, max_y, max_z, bounded_radius; 
+        //computeBoundingBox(lower_bound_, upper_bound_, min_x, min_y, min_z, max_x, max_y, max_z, bounded_radius);
+
+        //double bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
               
         // Push the nodes from the previous best branch into the tree
         for (size_t i = 1; i < prev_best_branch.size(); ++i) {
+             if (isFirstIteration) {
+                isFirstIteration = false;
+                continue; // Skip first iteration (root)
+            }
+            
             const auto& node = prev_best_branch[i];
-            rrt_star::Node* nearest_node = rrt_star::findNearest(tree, {prev_best_branch[i][0], prev_best_branch[i][1], prev_best_branch[i][2]});
-            rrt_star::Node* new_node = new rrt_star::Node(node);
-            visualize_node(new_node->point, ns);
 
-            new_node->parent = nearest_node;
+            rrt_star::Node* nearest_node_best = rrt_star::findNearest(tree, {prev_best_branch[i][0], prev_best_branch[i][1], prev_best_branch[i][2]});
+            rrt_star::Node* new_node_best = new rrt_star::Node(node);
+            //visualize_node(new_node_best->point, ns);
 
-            //std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
-            //new_node = rrt_star::chooseParent(new_node, nearby_nodes);
+            new_node_best->parent = nearest_node_best;
+
+            //std::vector<rrt_star::Node*> nearby_nodes_best = rrt_star::findNearby(tree, new_node_best, radius);
+            //new_node_best = rrt_star::chooseParent(new_node_best, nearby_nodes_best);
+
+            /*eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment_best;
+
+            trajectory_point.position_W.head(3) = new_node_best->parent->point.head(3);
+            trajectory_point.setFromYaw(new_node_best->parent->point[3]);
+            trajectory_segment_best.push_back(trajectory_point);
+
+            trajectory_point.position_W.head(3) = new_node_best->point.head(3);
+            trajectory_point.setFromYaw(new_node_best->point[3]);
+            trajectory_segment_best.push_back(trajectory_point);
+
+            bool success_collision_best = false;
+            success_collision_best = isPathCollisionFree(trajectory_segment_best);
+
+            if (!success_collision_best) {
+                //clear_node();
+                trajectory_segment_best.clear();
+                break;
+            }
+
+            trajectory_segment_best.clear();*/
+            visualize_node(new_node_best->point, ns);
 
             double best_gain = 0;
             double gain;
             double best_yaw;
             for (int k = 0; k < num_yaw_samples; ++k) {
                 double yaw = k * 2 * M_PI / num_yaw_samples;
-                trajectory_point.position_W = new_node->point.head(3);
+                trajectory_point.position_W = new_node_best->point.head(3);
                 trajectory_point.setFromYaw(yaw);
-                gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
+                gain = gain_evaluator.computeGain(trajectory_point);
                 if (gain > best_gain) {
                     best_gain = gain;
                     best_yaw = yaw;
                 }
             }
 
-            
-            if (isFirstIteration) {
-                isFirstIteration = false;
-                continue; // Skip first iteration (root)
-            }
-                       
-            tree.push_back(new_node);
-            visualize_edge(new_node, ns);
-            //rrt_star::rewire(tree, new_node, nearby_nodes, radius);
-            delete new_node;
+            new_node_best->cost = new_node_best->parent->cost + (new_node_best->point.head(3) - new_node_best->parent->point.head(3)).norm();
+            new_node_best->score = new_node_best->parent->score + new_node_best->gain * exp(-lambda * new_node_best->cost);
+                      
+            tree.push_back(new_node_best);
+            visualize_edge(new_node_best, ns);
+            //rrt_star::rewire(tree, new_node_best, nearby_nodes_best, radius);
+            //delete new_node;
         }
         
         prev_best_branch.clear();
 
         int j = 0;
         best_gain_ = 0;
+        collision_id_counter_ = 0;
         while (j < N_max || best_gain_ == 0) {
+            //Eigen::Vector3d rand_point = rrt_star::computeSamplingDimensions(bounded_radius, min_x, min_y, 
+            //                            min_z, max_x, max_y, max_z);
             Eigen::Vector3d rand_point = rrt_star::computeSamplingDimensions(bounded_radius);
             rand_point += root.point.head(3);
 
             //Eigen::Vector3d rand_point = rrt_star::sampleSpace(dim_x, dim_y, dim_z);
 
             rrt_star::Node* nearest_node = rrt_star::findNearest(tree, rand_point);
-            rrt_star::Node* new_node = rrt_star::steer(nearest_node, rand_point, step_size);
-            visualize_node(new_node->point, ns);
+            rrt_star::Node* new_node = rrt_star::steer_parent(nearest_node, rand_point, step_size);
+            //rrt_star::Node* new_node;
+            //std::cout << "New Point: " << new_node->point << std::endl;
+            if (new_node->point[0] < 11.5 && new_node->point[0] > -11.5 && new_node->point[1] > -7.5 && new_node->point[1] < 7.5 && new_node->point[2] > 0.5 && new_node->point[2] < 10) {
+                continue;
+            }
 
-            std::cout << "New Point: " << new_node->point << std::endl;
+            if (new_node->point[2] < 0.5) {
+                continue;
+            }
+
+            //visualize_node(new_node->point, ns);
+
+            //std::cout << "New Point: " << new_node->point << std::endl;
             
             new_node->parent = nearest_node;
 
             //std::vector<rrt_star::Node*> nearby_nodes = rrt_star::findNearby(tree, new_node, radius);
             //new_node = rrt_star::chooseParent(new_node, nearby_nodes);
 
-            eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment;
+            /*eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment;
 
             trajectory_point.position_W.head(3) = new_node->parent->point.head(3);
             trajectory_point.setFromYaw(new_node->parent->point[3]);
@@ -306,13 +363,16 @@ public:
             bool success_collision = false;
             success_collision = isPathCollisionFree(trajectory_segment);
 
-            /*if (!success_collision) {
-                clear_node();
+            if (!success_collision) {
+                //clear_node();
                 trajectory_segment.clear();
+                collision_id_counter_++;
                 continue;
-            }*/
+            }
 
-            //trajectory_segment.clear();
+            trajectory_segment.clear();*/
+            visualize_node(new_node->point, ns);
+            collision_id_counter_ = 0;
 
             double best_gain = 0;
             double gain;
@@ -321,7 +381,7 @@ public:
                 double yaw = k * 2 * M_PI / num_yaw_samples;
                 trajectory_point.position_W = new_node->point.head(3);
                 trajectory_point.setFromYaw(yaw);
-                gain = gain_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point);
+                gain = gain_evaluator.computeGain(trajectory_point);
                 if (gain > best_gain) {
                     best_gain = gain;
                     best_yaw = yaw;
@@ -334,39 +394,39 @@ public:
                 best_gain_ = new_node->gain;
             }
 
-            ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
+            //ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
 
             new_node->cost = new_node->parent->cost + (new_node->point.head(3) - new_node->parent->point.head(3)).norm();
             new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
 
+            ROS_INFO("[planner]: Best Score: %f", new_node->score);
+
             tree.push_back(new_node);
             visualize_edge(new_node, ns);
             //rrt_star::rewire(tree, new_node, nearby_nodes, radius);
-            delete new_node;
-
-            if (j == N_max - 1) {
-                double max_gain = -std::numeric_limits<double>::infinity();
-                rrt_star::Node* best_node = nullptr;
-                for (const auto& node : tree) {
-                    if (node->gain > max_gain) {
-                        max_gain = node->gain;
-                        best_node = node;
-                    }
-                }
-                if (best_node) {
-                    std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(best_node);
-                    visualize_path(best_node, ns);
-                    prev_best_branch = best_branch;
-                }
-            }
+            //delete new_node;
 
             if (j > N_termination) {
-                changeState(STATE_IDLE);
+                changeState(STATE_REACHED);
                 break;
             }
 
             ++j;
 
+        }
+
+        double max_score = -std::numeric_limits<double>::infinity();
+        rrt_star::Node* best_node = nullptr;
+        for (const auto& node : tree) {
+            if (node->score > max_score) {
+                max_score = node->score;
+                best_node = node;
+            }
+        }
+        if (best_node) {
+            std::tie(best_branch, next_best_node) = rrt_star::backtrackPathNode(best_node);
+            visualize_path(best_node, ns);
+            prev_best_branch = best_branch;
         }
 
     }
@@ -461,7 +521,15 @@ public:
         }
         
         switch (state_) {
-            case STATE_IDLE: {break;}
+            case STATE_IDLE: {
+                if (control_manager_diag.tracker_status.have_goal) {
+                    ROS_INFO("[planner]: tracker has goal");
+                } else {
+                    ROS_INFO("[planner]: waiting for command");
+                }
+                break;
+            }
+            case STATE_REACHED: {break;}
             case STATE_PLANNING: {
                 rh(goal);
 
@@ -484,12 +552,12 @@ public:
 
                 if (!success) {
                     ROS_ERROR("[planner]: service call for trajectory failed");
-                    changeState(STATE_IDLE);
+                    changeState(STATE_REACHED);
                     return;
                 } else {
                     if (!srv_get_path.response.success) {
                         ROS_ERROR("[planner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                        changeState(STATE_IDLE);
+                        changeState(STATE_REACHED);
                         return;
                     }
                 }
@@ -502,19 +570,19 @@ public:
 
                 if (!success_trajectory) {
                     ROS_ERROR("[planner]: service call for trajectory reference failed");
-                    changeState(STATE_IDLE);
+                    changeState(STATE_REACHED);
                     return;
                 } else {
                     if (!srv_trajectory_reference.response.success) {
                         ROS_ERROR("[planner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                        changeState(STATE_IDLE);
+                        changeState(STATE_REACHED);
                         return;
                     }
                 }
 
                 tree.clear();
                 best_branch.clear();
-                ros::Duration(1.5).sleep();
+                ros::Duration(5).sleep();
 
                 changeState(STATE_MOVING);
                 break;
@@ -544,7 +612,7 @@ public:
     void changeState(const State_t new_state) {
         const State_t old_state = state_;
 
-        if (interrupted_ && old_state == STATE_IDLE) {
+        if (interrupted_ && old_state == STATE_REACHED) {
             ROS_WARN("[planner]: Planning interrupted, not changing state.");
             return;
         }
@@ -553,7 +621,7 @@ public:
 
             case STATE_PLANNING: {
 
-                if (old_state == STATE_IDLE) {
+                if (old_state == STATE_REACHED) {
                     replanning_counter_ = 0;
                 }
             }
@@ -764,6 +832,16 @@ private:
     Eigen::Vector3d goal;
     double best_gain_;
 
+    // Bounded Box
+    float min_x;
+    float max_x;
+    float min_y;
+    float max_y;
+    float min_z;
+    float max_z;
+    float planner_range;
+    double bounded_radius;
+
     // Tree Parameters
     int num_nodes;
     int N_termination;
@@ -816,6 +894,7 @@ private:
     int node_id_counter_;
     int edge_id_counter_;
     int path_id_counter_;
+    int collision_id_counter_;
 
     // Instances
     GainEvaluator gain_evaluator;
