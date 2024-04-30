@@ -325,10 +325,10 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
 
   min_x_ = -11;
   max_x_ = 11;
-  min_y_ = -6;
-  max_y_ = 6;
+  min_y_ = -6.5;
+  max_y_ = 6.5;
   min_z_ = 0;
-  max_z_ = 9;
+  max_z_ = 11.5;
 
   //return std::max(aabb_min.z(), min_z_);
 
@@ -400,10 +400,10 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
           const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr = tsdf_layer_->getBlockPtrByIndex(block_index);
           if (block_ptr) {
             const voxblox::TsdfVoxel& voxel = block_ptr->getVoxelByCoordinates(pos);
-            //if (voxel.weight <= 1e-2) {
-            //  num_unknown++;
-            //} else if (voxel.distance >= 0.0) {
-            if (voxel.distance >= 0.0) {
+            if (voxel.weight <= 1e-2) {
+              num_unknown++;
+            } else if (voxel.distance >= 0.0) {
+            //if (voxel.distance >= 0.0) {
               num_free++;
             } else {
               num_occupied++;
@@ -423,6 +423,31 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
   return num_unknown;
 }
 
+void GainEvaluator::computeGainFromsampledYaw(const std::shared_ptr<rrt_star::Node>& node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
+    double best_gain = 0;
+    double gain;
+    double best_yaw;
+    for (int k = 0; k < yaw_samples; ++k) {
+        double yaw = k * 2 * M_PI / yaw_samples;
+        trajectory_point.position_W = node->point.head(3);
+        trajectory_point.setFromYaw(yaw);
+        gain = computeGain(trajectory_point);
+        if (gain > best_gain) {
+            best_gain = gain;
+            best_yaw = yaw;
+        }
+    }
+    node->gain = best_gain;
+    node->point[3] = best_yaw;
+}
+
+void GainEvaluator::computeCost(std::shared_ptr<rrt_star::Node>& new_node) {
+    new_node->cost = new_node->parent->cost + (new_node->point.head(3) - new_node->parent->point.head(3)).norm();
+}
+
+void GainEvaluator::computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda) {
+    new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
+}
 
 double GainEvaluator::computeGainInNeighbours(
     const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {

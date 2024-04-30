@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python
 
 # Python
@@ -13,8 +12,8 @@ import subprocess
 # ros
 import rospy
 from sensor_msgs.msg import PointCloud2
-from std_msgs.msg import String
-from std_srvs.srv import SetBool
+from std_msgs.msg import String, Bool
+from std_srvs.srv import SetBool, Trigger
 from voxblox_msgs.srv import FilePath
 
 
@@ -23,7 +22,7 @@ class EvalData(object):
         '''  Initialize ros node and read params '''
         # Parse parameters
         self.ns_planner = rospy.get_param('~ns_planner',
-                                          "/firefly/planner_node")
+                                          "/uav1/planner_node")
         self.planner_delay = rospy.get_param(
             '~delay', 0.0)  # Waiting time until the planner is launched
         self.evaluate = rospy.get_param(
@@ -35,10 +34,8 @@ class EvalData(object):
                                               5.0)  # Save rate in seconds
         self.time_limit = rospy.get_param(
             '~time_limit', 0.0)  # Maximum sim duration in minutes, 0 for inf
-        self.reset_unreal_cv_ros = rospy.get_param(
-            '~reset_unreal_cv_ros', True)  # On shutdown reset pose to 0
-        self.ns_unreal_cv_ros = rospy.get_param('~ns_unreal_cv_ros',
-                                                "/unreal/unreal_ros_client")
+        self.reset_ros = rospy.get_param(
+            '~reset_ros', True)  # On shutdown stops the planner
 
         self.eval_walltime_0 = None
         self.eval_rostime_0 = None
@@ -54,7 +51,7 @@ class EvalData(object):
                 sys.exit(-1)
 
             self.ns_voxblox = rospy.get_param('~ns_voxblox',
-                                              "/voxblox/voxblox_node")
+                                              "/uav1/voxblox_node")
 
             # Statistics
             self.eval_n_maps = 0
@@ -72,30 +69,30 @@ class EvalData(object):
                             self.eval_directory)
             os.mkdir(os.path.join(self.eval_directory, "voxblox_maps"))
             self.eval_data_file = open(
-                os.path.join(self.eval_directory, "voxblox_data.csv"), 'wb')
+                os.path.join(self.eval_directory, "voxblox_data.csv"), 'w')
             self.eval_writer = csv.writer(self.eval_data_file,
                                           delimiter=',',
                                           quotechar='|',
                                           quoting=csv.QUOTE_MINIMAL,
                                           lineterminator='\n')
             self.eval_writer.writerow(
-                ['MapName', 'RosTime', 'WallTime', 'NPointclouds', 'CPUTime'])
+                ['MapName', 'RosTime', 'WallTime', 'NPointclouds'])#, 'CPUTime'])
             self.eval_writer.writerow(
-                ['Unit', 'seconds', 'seconds', '-', 'seconds'])
+                ['Unit', 'seconds', 'seconds', '-'])#, 'seconds'])
             self.eval_log_file = open(
                 os.path.join(self.eval_directory, "data_log.txt"), 'a')
 
             # Subscribers, Services
-            self.ue_out_sub = rospy.Subscriber("ue_out_in",
+            self.points_sub = rospy.Subscriber("points",
                                                PointCloud2,
-                                               self.ue_out_callback,
+                                               self.points_callback,
                                                queue_size=10)
-            self.collision_sub = rospy.Subscriber("collision",
-                                                  String,
-                                                  self.collision_callback,
-                                                  queue_size=10)
-            self.cpu_time_srv = rospy.ServiceProxy(
-                self.ns_planner + "/get_cpu_time", SetBool)
+            #self.collision_sub = rospy.Subscriber("collision",
+            #                                      String,
+            #                                      self.collision_callback,
+            #                                      queue_size=10)
+            #self.cpu_time_srv = rospy.ServiceProxy(
+            #    self.ns_planner + "/get_cpu_time", SetBool) # ERROR HEREEEEE
 
             # Finish
             self.writelog("Data folder created at '%s'." % self.eval_directory)
@@ -103,17 +100,17 @@ class EvalData(object):
             self.eval_voxblox_service = rospy.ServiceProxy(
                 self.ns_voxblox + "/save_map", FilePath)
             rospy.on_shutdown(self.eval_finish)
-            self.collided = False
+            #self.collided = False
 
         self.launch_simulation()
 
     def launch_simulation(self):
         rospy.loginfo(
-            "Experiment setup: waiting for unreal MAV simulation to setup...")
-        # Wait for unreal simulation to setup
+            "Experiment setup: waiting for MAV simulation to setup...")
+        # Wait for simulation to setup
         if self.startup_timeout > 0.0:
             try:
-                rospy.wait_for_message("unreal_simulation_ready", String,
+                rospy.wait_for_message("simulation_ready", Bool,
                                        self.startup_timeout)
             except rospy.ROSException:
                 self.stop_experiment(
@@ -121,22 +118,22 @@ class EvalData(object):
                     str(self.startup_timeout) + "s).")
                 return
         else:
-            rospy.wait_for_message("unreal_simulation_ready", String)
-        rospy.loginfo("Waiting for unreal MAV simulation to setup... done.")
+            rospy.wait_for_message("simulation_ready", Bool)
+        rospy.loginfo("Waiting for MAV simulation to setup... done.")
 
         # Launch planner (by service, every planner needs to advertise this
         # service when ready)
         rospy.loginfo("Waiting for planner to be ready...")
         if self.startup_timeout > 0.0:
             try:
-                rospy.wait_for_service(self.ns_planner + "/toggle_running",
+                rospy.wait_for_service(self.ns_planner + "/start",
                                        self.startup_timeout)
             except rospy.ROSException:
                 self.stop_experiment("Planner startup failed (timeout after " +
                                      str(self.startup_timeout) + "s).")
                 return
         else:
-            rospy.wait_for_service(self.ns_planner + "/toggle_running")
+            rospy.wait_for_service(self.ns_planner + "/start")
 
         if self.planner_delay > 0:
             rospy.loginfo(
@@ -146,8 +143,8 @@ class EvalData(object):
         else:
             rospy.loginfo("Waiting for planner to be ready... done.")
         run_planner_srv = rospy.ServiceProxy(
-            self.ns_planner + "/toggle_running", SetBool)
-        run_planner_srv(True)
+            self.ns_planner + "/start", Trigger)
+        run_planner_srv()
 
         # Setup first measurements
         self.eval_walltime_0 = time.time()
@@ -198,15 +195,15 @@ class EvalData(object):
             time_real = time.time() - self.eval_walltime_0
             time_ros = rospy.get_time() - self.eval_rostime_0
             map_name = "{0:05d}".format(self.eval_n_maps)
-            try:
-                cpu = self.cpu_time_srv(True)
-            except:
-                # Usually this means the planner died
-                self.stop_experiment("Planner Node died (cpu srv failed).")
-                return
+            #try:
+            #    cpu = self.cpu_time_srv(True)
+            #except:
+            #    # Usually this means the planner died
+            #    self.stop_experiment("Planner Node died (cpu srv failed).")
+            #    return
             self.eval_writer.writerow([
-                map_name, time_ros, time_real, self.eval_n_pointclouds,
-                float(cpu.message)
+                map_name, time_ros, time_real, self.eval_n_pointclouds#,
+                #float(cpu.message)
             ])
             self.eval_voxblox_service(
                 os.path.join(self.eval_directory, "voxblox_maps",
@@ -240,7 +237,7 @@ class EvalData(object):
             datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S] ") + text +
             "\n")
 
-    def ue_out_callback(self, _):
+    def points_callback(self, _):
         if self.evaluate:
             self.eval_n_pointclouds += 1
 
@@ -250,13 +247,12 @@ class EvalData(object):
         reason = "Stopping the experiment: " + reason
         if self.evaluate:
             self.writelog(reason)
-        if self.reset_unreal_cv_ros:
+        if self.reset_ros:
             try:
-                # If unreal is running, this will reset it, otherwise map is
-                # already in initial state
+                # Stops the planner
                 terminate_srv = rospy.ServiceProxy(
-                    self.ns_unreal_cv_ros + "/terminate_with_reset", SetBool)
-                terminate_srv(True)
+                    self.ns_planner + "/stop", Trigger)
+                terminate_srv()
             except:
                 pass
         width = len(reason) + 4
@@ -264,10 +260,10 @@ class EvalData(object):
                       "*" * width)
         rospy.signal_shutdown(reason)
 
-    def collision_callback(self, _):
-        if not self.collided:
-            self.collided = True
-            self.stop_experiment("Collision detected!")
+    #def collision_callback(self, _):
+    #    if not self.collided:
+    #        self.collided = True
+    #        self.stop_experiment("Collision detected!")
 
 
 if __name__ == '__main__':

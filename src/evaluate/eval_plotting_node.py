@@ -63,7 +63,7 @@ class EvalPlotting(object):
 
         # Setup
         self.eval_log_file = None
-        rospy.wait_for_service(self.ns_voxblox + "/evaluate")
+        rospy.wait_for_service(self.ns_voxblox + "/evaluate")  
         self.eval_voxblox_srv = rospy.ServiceProxy(
             self.ns_voxblox + "/evaluate", Empty)
 
@@ -332,7 +332,7 @@ class EvalPlotting(object):
         data_file.close()
 
         # Create plot
-        rospy.loginfo("Creating graph 'SeriesOverview'")
+        '''rospy.loginfo("Creating graph 'SeriesOverview'")
         x = means['RosTime']
         unit = "s"
         if x[-1] >= 300:
@@ -347,7 +347,7 @@ class EvalPlotting(object):
         cpu_use[-1] = cpu_use[-2]
         cpu_use = np.repeat(cpu_use, 2)
         cpu_std[-1] = cpu_std[-2]
-        cpu_std = np.repeat(cpu_std, 2)
+        cpu_std = np.repeat(cpu_std, 2)'''
 
         # Plot ends of data series for unequal lengths
         early_stops = []
@@ -452,7 +452,7 @@ class EvalPlotting(object):
 
         x = np.repeat(x, 2)
         x = np.concatenate((np.array([0]), x[:-1]))
-        axes[2, 1].plot(x, cpu_use, 'k-')
+        '''axes[2, 1].plot(x, cpu_use, 'k-')
         axes[2, 1].fill_between(x,
                                 cpu_use - cpu_std,
                                 cpu_use + cpu_std,
@@ -462,7 +462,8 @@ class EvalPlotting(object):
                         [cpu_use[i * 2 + 1] for i in early_stops],
                         'kx',
                         markersize=9,
-                        markeredgewidth=2)
+                        markeredgewidth=2)'''
+        axes[2, 1].plot(x, x, 'k-')
         axes[2, 1].set_ylabel('Simulated CPU usage [cores]')
         axes[2, 1].set_xlabel("Simulated Time [%s]" % unit)
         axes[2, 1].set_ylim(bottom=0)
@@ -510,12 +511,12 @@ class EvalPlotting(object):
         truncated = np.array(data['OutsideTruncation'])
         pointclouds = np.cumsum(np.array(data['NPointclouds'], dtype=float))
         ros_time = np.array(data['RosTime'], dtype=float)
-        cpu_time = np.array(data['CPUTime'], dtype=float)
+        '''cpu_time = np.array(data['CPUTime'], dtype=float)
         cpu_use = np.zeros(np.shape(cpu_time))
         for i in range(len(cpu_time) - 1):
             cpu_use[i] = (cpu_time[i + 1]) / (ros_time[i + 1] - ros_time[i])
         cpu_use[-1] = cpu_use[-2]
-        cpu_use = np.repeat(cpu_use, 2)
+        cpu_use = np.repeat(cpu_use, 2)'''
 
         fig, axes = plt.subplots(3, 2)
         axes[0, 0].plot(x, meanerr, 'b-')
@@ -552,7 +553,8 @@ class EvalPlotting(object):
 
         x = np.repeat(x, 2)
         x = np.concatenate((np.array([0]), x[:-1]))
-        axes[2, 1].plot(x, cpu_use, 'k-')
+        #axes[2, 1].plot(x, cpu_use, 'k-')
+        axes[2, 1].plot(x, x, 'k-')
         axes[2, 1].set_ylabel('Simulated CPU usage [cores]')
         axes[2, 1].set_xlabel("Simulated Time [%s]" % unit)
         axes[2, 1].set_ylim(bottom=0)
@@ -673,11 +675,11 @@ class EvalPlotting(object):
 
         x = np.array([])
         ros_time = np.array(data['RosTime'], dtype=float)
-        cpu_times = [
+        '''cpu_times = [
             np.array(data['Total'], dtype=float), y_select + y_expand +
             y_gain + y_cost + y_value + y_next + y_upTE + y_upTG
         ]  # Total, Planning
-        cpu_use = [np.array([])] * len(cpu_times)
+        cpu_use = [np.array([])] * len(cpu_times
         i = 0
         averaging_threshold = 2.0  # seconds, for smoothing
         t_curr = ros_time[0]
@@ -696,18 +698,19 @@ class EvalPlotting(object):
             else:
                 t_curr = t_curr + ros_time[i]
                 for j in range(len(cpu_times)):
-                    cpu_curr[j] = cpu_curr[j] + cpu_times[j][i]
+                    cpu_curr[j] = cpu_curr[j] + cpu_times[j][i]'''
 
         if unit == "min":
             x = np.true_divide(x, 60)
 
-        axes[2].plot(x, cpu_use[0], 'k-')
+        '''axes[2].plot(x, cpu_use[0], 'k-')
         axes[2].plot(x, cpu_use[1], linestyle='-', color='#5492E7')
         axes[2].plot(np.array([0, x[-1]]),
                      np.array([1, 1]),
                      linestyle='-',
                      color='0.7',
-                     alpha=0.8)
+                     alpha=0.8)'''
+        axes[2].plot(x, x, 'k-')
         axes[2].set_xlim(left=0, right=x[-1])
         axes[2].set_ylim(bottom=0)
         axes[2].set_ylabel('CPU Usage [cores]')

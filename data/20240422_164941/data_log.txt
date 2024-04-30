@@ -1,0 +1,10 @@
+[2024-04-22 16:49:41] Data folder created at '/home/joaomendes/workspace1/src/motion_planning_python/data/20240422_164941'.
+[2024-04-22 16:50:06] Succesfully started the simulation.
+[2024-04-22 16:50:09] Dumped the parameter server into 'rosparams.yaml'.
+[2024-04-22 16:50:09] Registered 'tmp_bag_2024-04-22-16-49-38.bag.active' as bag for this simulation.
+[FLAG] Rosbag: tmp_bag_2024-04-22-16-49-38
+[2024-04-22 17:25:32] Finished the simulation, 31/31 maps created.
+[2024-04-23 20:49:50] Evaluated 31 voxblox maps. Fields: 'MeanError', 'StdDevError', 'RMSE', 'UnknownVoxels', 'OutsideTruncation', 'Volume'.
+[FLAG] Evaluated
+[2024-04-23 20:49:50] Created 31 color and error meshes.
+[2024-04-23 20:49:54] Created graph 'SimulationOverview'.

@@ -20,6 +20,7 @@
   <depend>trajectory_generation</depend>
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
+  <depend>std_srvs</depend>
 
   <export>
   </export>

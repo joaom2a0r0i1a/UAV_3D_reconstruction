@@ -11,10 +11,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 ##                             C++
 ## --------------------------------------------------------------
 
+#add_compile_options("-g")
+#add_compile_options("-O0")
+
 set(CATKIN_DEPENDENCIES
+  rospy
   roscpp
   mrs_msgs
   mrs_lib
+  std_srvs
   visualization_msgs
   trajectory_generation
   voxblox_ros
@@ -32,8 +37,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
  # Define libraries
 set(LIBRARIES
-  MotionPlanner
-  Evaluate
+  NBVPlanner
   #CameraParameters
   #Planner
   #Rrt_Star
@@ -59,13 +63,11 @@ include_directories(
   )
 
  # Add library targets
-add_library(MotionPlanner 
+add_library(NBVPlanner 
   src/gain_evaluator.cpp
-  src/rrt_star_2d_yaw.cpp
-  src/rrt_star.cpp
-  )
-  add_library(Evaluate 
-  src/evaluate/eval_voxblox_node.cpp
+  src/rrt/rrt_star_2d_yaw.cpp
+  src/rrt/rrt_star.cpp
+  src/planner.cpp
   )
 #add_library(CameraParameters 
 #  src/camera_parameters.cpp
@@ -78,10 +80,7 @@ add_library(MotionPlanner
 #  )
 
  # Add dependencies for library targets
-add_dependencies(MotionPlanner 
-  ${catkin_EXPORTED_TARGETS} 
-  ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(Evaluate 
+add_dependencies(NBVPlanner 
   ${catkin_EXPORTED_TARGETS} 
   ${${PROJECT_NAME}_EXPORTED_TARGETS})
 #add_dependencies(CameraParameters 
@@ -95,10 +94,7 @@ add_dependencies(Evaluate
 #  ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
-target_link_libraries(MotionPlanner
-  ${catkin_LIBRARIES}
-  )
-target_link_libraries(Evaluate
+target_link_libraries(NBVPlanner
   ${catkin_LIBRARIES}
   )
 #target_link_libraries(CameraParameters
@@ -113,7 +109,8 @@ target_link_libraries(Evaluate
 
  # Add executable for camera_parameters.cpp
 #add_executable(camera_parameters src/camera_parameters.cpp)
-add_executable(planner src/planner.cpp)
+add_executable(planner src/planner_node.cpp)
+add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
 
 # Set compiler flags for debug mode
 set(CMAKE_C_FLAGS_DEBUG "-g")
@@ -122,7 +119,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
  # Link executable against required libraries
 #target_link_libraries(camera_parameters
 #  ${catkin_LIBRARIES}
-#  MotionPlanner
+#  NBVPlanner
 #  #CameraParameters
 #  Planner
 #  Rrt_Star
@@ -131,11 +128,13 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g")
  # Link executable against required libraries
 target_link_libraries(planner
   ${catkin_LIBRARIES}
-  MotionPlanner
-  Evaluate
+  NBVPlanner
   #CameraParameters
   #Planner
   #Rrt_Star
+)
+target_link_libraries(eval_voxblox_node
+  ${catkin_LIBRARIES}
 )
 
 # Specify the command to run Valgrind

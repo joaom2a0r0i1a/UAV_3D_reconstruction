@@ -6,7 +6,9 @@
                 "${workspaceFolder}/**",
                 "/opt/ros/noetic/include",
                 "/usr/include/eigen3",
-                "/usr/include/pcl-1.10"
+                "/usr/include/pcl-1.10",
+                "/home/joaomendes/git/trajectory_generation/include",
+                "${workspaceFolder}/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

@@ -4,6 +4,7 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/utils/camera_model.h>
+#include <rrt_star.h>
 
 #include <cmath>
 
@@ -45,6 +46,12 @@ class GainEvaluator {
 
   // Use raycasting to discard occluded voxels, Bircher-style implementation.
   double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  void computeGainFromsampledYaw(const std::shared_ptr<rrt_star::Node>& node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point);
+
+  void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
+
+  void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
 
   // Use raycasting to discard occluded voxels and compute gain in neighbours.
   double computeGainInNeighbours(

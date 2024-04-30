@@ -35,14 +35,14 @@
     <param name="clear_voxblox_maps" value="$(arg clear_voxblox_maps)" />
   </node>
   
-	<node name="eval_voxblox_node" pkg="motion_planning_python" type="eval_voxblox_node" output="screen" >
-	  <param name="ground_truth_path" value="$(arg gt_file_path)" />
-	  <param name="create_meshes" value="$(arg create_meshes)" />
-	  <param name="error_histogram" value="$(arg error_histogram)" />
-	  <param name="evaluate" value="$(arg evaluate)" />
-	  <param name="evaluate_volume" value="$(arg evaluate_volume)" />
-	  <param name="truncation_distance" value="$(arg truncation_distance)" />
-	  <param name="mesh_every_n_steps" value="$(arg mesh_every_n_steps)" />
-	  <rosparam command="load" file="$(find motion_planning_python)/data/$(arg experiment_config)"/>
-	</node>
+    <node name="eval_voxblox_node" pkg="motion_planning_python" type="eval_voxblox_node" output="screen" >
+      <param name="ground_truth_path" value="$(arg gt_file_path)" />
+      <param name="create_meshes" value="$(arg create_meshes)" />
+      <param name="error_histogram" value="$(arg error_histogram)" />
+      <param name="evaluate" value="$(arg evaluate)" />
+      <param name="evaluate_volume" value="$(arg evaluate_volume)" />
+      <param name="truncation_distance" value="$(arg truncation_distance)" />
+      <param name="mesh_every_n_steps" value="$(arg mesh_every_n_steps)" />
+      <rosparam command="load" file="$(find motion_planning_python)/config/$(arg experiment_config)"/>
+    </node>
 </launch>
