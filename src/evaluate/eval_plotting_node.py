@@ -361,7 +361,7 @@ class EvalPlotting(object):
                 self.writelog("Early stop detected for '%s' at %.2fs." %
                               (names[i], float(dataset['RosTime'][length])))
 
-        fig, axes = plt.subplots(3, 2)
+        fig, axes = plt.subplots(2, 2)
         axes[0, 0].plot(x, means['MeanError'], 'b-')
         axes[0, 0].fill_between(x,
                                 means['MeanError'] - std_devs['MeanError'],
@@ -390,22 +390,6 @@ class EvalPlotting(object):
         axes[1, 0].set_ylabel('StdDevError [m]')
         axes[1, 0].set_ylim(bottom=0)
         axes[1, 0].set_xlim(left=0, right=x[-1])
-        axes[2, 0].plot(x, means['OutsideTruncation'], 'r-')
-        axes[2, 0].fill_between(
-            x,
-            means['OutsideTruncation'] - std_devs['OutsideTruncation'],
-            means['OutsideTruncation'] + std_devs['OutsideTruncation'],
-            facecolor='r',
-            alpha=.2)
-        axes[2, 0].plot([x[i] for i in early_stops],
-                        [means['OutsideTruncation'][i] for i in early_stops],
-                        'kx',
-                        markersize=9,
-                        markeredgewidth=2)
-        axes[2, 0].set_ylabel('Truncated Voxels [%]')
-        axes[2, 0].set_ylim(0, 1)
-        axes[2, 0].set_xlabel("Simulated Time [%s]" % unit)
-        axes[2, 0].set_xlim(left=0, right=x[-1])
 
         # Compensate unobservable voxels
         if np.max(means['UnknownVoxels']) > 0:
@@ -435,6 +419,7 @@ class EvalPlotting(object):
             axes[0, 1].set_ylabel('Explored Volume [m3]')
             axes[0, 1].set_ylim(0, 40 * 40 * 3)
         axes[0, 1].set_xlim(left=0, right=x[-1])
+        axes[0, 1].set_xlabel("Simulated Time [%s]" % unit)
         axes[1, 1].plot(x, means['NPointclouds'], 'k-')
         axes[1,
              1].fill_between(x,
@@ -449,25 +434,10 @@ class EvalPlotting(object):
                         markeredgewidth=2)
         axes[1, 1].set_ylabel('Processed Pointclouds [-]')
         axes[1, 1].set_xlim(left=0, right=x[-1])
+        axes[1, 1].set_xlabel("Simulated Time [%s]" % unit)
 
         x = np.repeat(x, 2)
         x = np.concatenate((np.array([0]), x[:-1]))
-        '''axes[2, 1].plot(x, cpu_use, 'k-')
-        axes[2, 1].fill_between(x,
-                                cpu_use - cpu_std,
-                                cpu_use + cpu_std,
-                                facecolor='k',
-                                alpha=.2)
-        axes[2, 1].plot([x[i * 2 + 1] for i in early_stops],
-                        [cpu_use[i * 2 + 1] for i in early_stops],
-                        'kx',
-                        markersize=9,
-                        markeredgewidth=2)'''
-        axes[2, 1].plot(x, x, 'k-')
-        axes[2, 1].set_ylabel('Simulated CPU usage [cores]')
-        axes[2, 1].set_xlabel("Simulated Time [%s]" % unit)
-        axes[2, 1].set_ylim(bottom=0)
-        axes[2, 1].set_xlim(left=0, right=x[-1])
         plt.suptitle("Experiment Series Overview (" + str(len(voxblox_data)) +
                      " experiments)\nMeans + Std. Deviations (shaded)")
         fig.set_size_inches(15, 10, forward=True)
@@ -506,8 +476,8 @@ class EvalPlotting(object):
         if x[-1] >= 300:
             unit = "min"
             x = np.divide(x, 60)
-        meanerr = np.array(data['MeanError'])
-        stddev = np.array(data['StdDevError'])
+        meanerr = np.array(data['MeanError'], dtype=float)
+        stddev = np.array(data['StdDevError'], dtype=float)
         truncated = np.array(data['OutsideTruncation'])
         pointclouds = np.cumsum(np.array(data['NPointclouds'], dtype=float))
         ros_time = np.array(data['RosTime'], dtype=float)
@@ -518,7 +488,7 @@ class EvalPlotting(object):
         cpu_use[-1] = cpu_use[-2]
         cpu_use = np.repeat(cpu_use, 2)'''
 
-        fig, axes = plt.subplots(3, 2)
+        fig, axes = plt.subplots(2, 2)
         axes[0, 0].plot(x, meanerr, 'b-')
         axes[0, 0].set_ylabel('MeanError [m]')
         axes[0, 0].set_ylim(bottom=0)
@@ -527,11 +497,7 @@ class EvalPlotting(object):
         axes[1, 0].set_ylabel('StdDevError [m]')
         axes[1, 0].set_ylim(bottom=0)
         axes[1, 0].set_xlim(left=0, right=x[-1])
-        axes[2, 0].plot(x, truncated, 'r-')
-        axes[2, 0].set_ylabel('Truncated Voxels [%]')
-        axes[2, 0].set_ylim(0, 1)
-        axes[2, 0].set_xlabel("Simulated Time [%s]" % unit)
-        axes[2, 0].set_xlim(left=0, right=x[-1])
+        axes[1, 0].set_xlabel("Simulated Time [%s]" % unit)
 
         unknown = np.array(data['UnknownVoxels'], dtype=float)
         if np.max(unknown) > 0:
@@ -550,15 +516,10 @@ class EvalPlotting(object):
         axes[1, 1].plot(x, pointclouds, 'k-')
         axes[1, 1].set_ylabel('Processed Pointclouds [-]')
         axes[1, 1].set_xlim(left=0, right=x[-1])
+        axes[1, 1].set_xlabel("Simulated Time [%s]" % unit)
 
         x = np.repeat(x, 2)
         x = np.concatenate((np.array([0]), x[:-1]))
-        #axes[2, 1].plot(x, cpu_use, 'k-')
-        axes[2, 1].plot(x, x, 'k-')
-        axes[2, 1].set_ylabel('Simulated CPU usage [cores]')
-        axes[2, 1].set_xlabel("Simulated Time [%s]" % unit)
-        axes[2, 1].set_ylim(bottom=0)
-        axes[2, 1].set_xlim(left=0, right=x[-1])
         plt.suptitle("Simulation Overview")
         fig.set_size_inches(15, 10, forward=True)
 

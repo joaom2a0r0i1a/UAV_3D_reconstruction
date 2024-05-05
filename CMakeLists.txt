@@ -65,51 +65,27 @@ include_directories(
  # Add library targets
 add_library(NBVPlanner 
   src/gain_evaluator.cpp
-  src/rrt/rrt_star_2d_yaw.cpp
-  src/rrt/rrt_star.cpp
-  src/planner.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  src/RRT/rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/NBV/NBVplanner.cpp
+  #src/NBV/NBVplanner_2D.cpp
   )
-#add_library(CameraParameters 
-#  src/camera_parameters.cpp
-#  )
-#add_library(Planner 
-#  src/planner.cpp
-#  )
-#add_library(Rrt_Star 
-#  src/rrt_star_2d_yaw.cpp
-#  )
 
  # Add dependencies for library targets
 add_dependencies(NBVPlanner 
   ${catkin_EXPORTED_TARGETS} 
   ${${PROJECT_NAME}_EXPORTED_TARGETS})
-#add_dependencies(CameraParameters 
-#  ${catkin_EXPORTED_TARGETS} 
-#  ${${PROJECT_NAME}_EXPORTED_TARGETS})
-#add_dependencies(Planner 
-#  ${catkin_EXPORTED_TARGETS} 
-#  ${${PROJECT_NAME}_EXPORTED_TARGETS})
-#add_dependencies(Rrt_Star 
-#  ${catkin_EXPORTED_TARGETS} 
-#  ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
 target_link_libraries(NBVPlanner
   ${catkin_LIBRARIES}
   )
-#target_link_libraries(CameraParameters
-#  ${catkin_LIBRARIES}
-#  )
-#target_link_libraries(Planner
-#  ${catkin_LIBRARIES}
-#  )
-#  target_link_libraries(Rrt_Star
-#  ${catkin_LIBRARIES}
-#  )
 
- # Add executable for camera_parameters.cpp
-#add_executable(camera_parameters src/camera_parameters.cpp)
-add_executable(planner src/planner_node.cpp)
+ # Add executable for NBVplanner_node.cpp
+add_executable(planner src/NBV/NBVplanner_node.cpp)
+#add_executable(planner_2D src/planner_node_2D.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
 
 # Set compiler flags for debug mode
@@ -117,22 +93,14 @@ set(CMAKE_C_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 
  # Link executable against required libraries
-#target_link_libraries(camera_parameters
-#  ${catkin_LIBRARIES}
-#  NBVPlanner
-#  #CameraParameters
-#  Planner
-#  Rrt_Star
-#)
-
- # Link executable against required libraries
 target_link_libraries(planner
   ${catkin_LIBRARIES}
   NBVPlanner
-  #CameraParameters
-  #Planner
-  #Rrt_Star
 )
+#target_link_libraries(planner_2D
+#  ${catkin_LIBRARIES}
+#  NBVPlanner
+#)
 target_link_libraries(eval_voxblox_node
   ${catkin_LIBRARIES}
 )

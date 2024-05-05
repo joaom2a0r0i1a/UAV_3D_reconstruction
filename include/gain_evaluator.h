@@ -4,7 +4,7 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/utils/camera_model.h>
-#include <rrt_star.h>
+#include <RRT/rrt_star.h>
 
 #include <cmath>
 

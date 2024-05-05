@@ -1,8 +1,8 @@
 # Experiment (Fire Station) specific parameters
 
 bounded_box:
-  min_x: -12 # [m]
-  max_x: 12 # [m]
+  min_x: -11.5 # [m]
+  max_x: 11.5 # [m]
   min_y: -7 # [m]
   max_y: 7 # [m]
   min_z: 0 # [m]

@@ -4,12 +4,12 @@ body:
   frame_id: "fcu"
 
 timer_main:
-  rate: 1.0 # [Hz]
+  rate: 4.0 # [Hz]
 
 center:
   x: 0.0 # [m]
   y: 0.0 # [m]
-  z: 1.0 # [m]
+  z: 13.0 # [m]
 
 dimensions:
   x: 40.0 # [m]
@@ -49,5 +49,5 @@ camera:
 
 path:
   uav_radius: 1.5 # [m]
-  lambda: 0.2 # (tunning factor)
+  lambda: 0.5 # (tunning factor)
 

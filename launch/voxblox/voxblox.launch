@@ -3,7 +3,7 @@
   <arg name="voxel_size" default="0.2"/>
   <arg name="voxels_per_side" default="16" />
   <arg name="truncation_distance" default="1" />
-  <arg name="method" default="fast"/>
+  <arg name="method" default="merged"/>
   <arg name="ray_length" default="5" />
 
   <!-- defines name of the namespace of the drone -->
