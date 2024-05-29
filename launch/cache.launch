@@ -1,0 +1,36 @@
+<launch>
+  <arg name="voxel_size" default="0.2"/>
+  <arg name="voxels_per_side" default="16" />
+  <arg name="truncation_distance" default="1" />
+  <arg name="ray_length" default="5" />
+
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+  <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
+
+  <group ns="$(arg UAV_NAME)">
+    <node pkg="cache_nodes" type="cached" name="cache_nodes" output="screen">
+      <rosparam file="$(find cache_nodes)/config/config.yaml" />
+      <remap from="cache_nodes/esdf_map_in" to="esdf_map" />
+      <remap from="cache_nodes/tsdf_map_in" to="tsdf_map" />
+      <param name="use_tf_transforms" value="false" />
+      <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+      <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+      <param name="update_mesh_every_n_sec" value="0.0" />
+      <param name="publish_traversable" value="false" />
+      <param name="publish_pointclouds" value="false" />
+      <param name="max_ray_length" value="$(arg ray_length)" />
+      <param name="world_frame" value="$(arg world_frame)" />
+      <!-- Publishers -->
+      <!-- Subscribers -->
+      <remap from="~tree_node_in" to="tree_node" />
+      <remap from="~uav_state_in" to="estimation_manager/uav_state" />
+      <!-- Services clients-->
+      <!--remap from="~reevaluate_out" to="planner_node/reevaluate" /-->
+      <!-- Service Servers -->
+      <remap from="~gp_query_in" to="~gp_query" />
+      <remap from="~best_node_in" to="~best_node" />
+      <!--remap from="~reevaluate_in" to="planner_node/reevaluate" /-->
+    </node>
+  </group>
+
+</launch>

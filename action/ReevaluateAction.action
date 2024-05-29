@@ -1,0 +1,8 @@
+# Define the goal
+geometry_msgs/Point[] point
+---
+# Define the result
+float64[] gain
+float64[] yaw
+---
+# Define a feedback message
