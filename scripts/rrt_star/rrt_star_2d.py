@@ -8,7 +8,7 @@ class Node:
         self.parent = None
         self.cost = 0
 
-def rrt_star(start, goal, obstacles, dim_x=10, dim_y=10, max_iter=1000, step_size=0.1, radius=2, tolerance=0.3):
+def rrt_star(start, goal, obstacles, dim_x=10, dim_y=10, max_iter=1000, step_size=0.1, radius=2, tolerance=0.2):
     tree = [Node(start)]
     goal_reached_nodes = []  # Keep track of nodes that reach the goal
     path = None
@@ -88,35 +88,37 @@ def backtrack(node):
     return path
 
 def plot_tree(tree, start, goal, obstacles, path=None):
-    plt.figure()
+    fig, ax = plt.subplots()
     # Plot tree edges
     for node in tree:
         if node.parent:
-            plt.plot([node.point[0], node.parent.point[0]],[node.point[1], node.parent.point[1]], 'k-', linewidth=0.5)
+            ax.plot([node.point[0], node.parent.point[0]], [node.point[1], node.parent.point[1]], 'k-', linewidth=0.5)
     # Plot obstacles
     for obstacle in obstacles:
         circle = plt.Circle(obstacle['point'], obstacle['radius'], color='r')
-        plt.gca().add_patch(circle)
+        ax.add_patch(circle)
     # Plot start and goal points
-    plt.scatter(start[0], start[1], color='g', marker='o', label='Start')
-    plt.scatter(goal[0], goal[1], color='b', marker='o', label='Goal')
+    ax.scatter(start[0], start[1], color='g', marker='o', label='Start')
+    ax.scatter(goal[0], goal[1], color='b', marker='o', label='Goal')
     # Plot final path (if provided)
     if path:
-        plt.plot([p[0] for p in path], [p[1] for p in path], 'b-', linewidth=2, label='Path')
+        ax.plot([p[0] for p in path], [p[1] for p in path], 'b-', linewidth=2, label='Path')
     # Labels and formatting
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.title('RRT*')
-    plt.legend()
-    plt.axis('equal')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_xlim(0, 11)
+    ax.set_ylim(0, 11)
+    ax.set_title('RRT*')
+    ax.legend(loc='lower right')
+    ax.set_aspect('equal', 'box')
     plt.show()
 
 
 # Example usage
 start = np.array([1, 1])
-goal = np.array([7, 7])
-dim_x = 10
-dim_y = 10
-obstacles = [{'point': np.array([5, 5]), 'radius': 1}]
-tree, path = rrt_star(start, goal, obstacles, dim_x=dim_x, dim_y=dim_y, step_size=0.5, radius=2)
-#plot_tree(tree, start, goal, obstacles, path)
+goal = np.array([10, 10])
+dim_x = 11
+dim_y = 11
+obstacles = [{'point': np.array([5, 5]), 'radius': 1}, {'point': np.array([7, 3]), 'radius': 0.5}, {'point': np.array([2, 8]), 'radius': 0.6}]
+tree, path = rrt_star(start, goal, obstacles, dim_x=dim_x, dim_y=dim_y, step_size=0.3, radius=1.5)
+plot_tree(tree, start, goal, obstacles, path)

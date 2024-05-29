@@ -87,13 +87,15 @@ public:
 
     void chooseParent(std::shared_ptr<Node>& point, const std::vector<std::shared_ptr<Node>>& nearbyNodes);
 
-    void rewire(std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
+    //void rewire(std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
 
-    //void rewire(const std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
+    void rewire(const std::shared_ptr<Node>& new_node, std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
 
     double calculateYawAngle(const std::shared_ptr<Node>& node1, const std::shared_ptr<Node>& node2);
 
     void backtrackPathNode(const std::shared_ptr<Node>& node, std::vector<Eigen::Vector4d>& path, std::shared_ptr<Node>& nextBestNode);
+
+    void backtrackPathAEP(const std::shared_ptr<Node>& node, std::vector<std::shared_ptr<Node>>& path);
 
     bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
                 const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles,

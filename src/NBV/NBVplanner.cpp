@@ -79,6 +79,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
+    pub_reference = nh_private_.advertise<mrs_msgs::Reference>("reference_out", 1);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
 
     /* Subscribers */
@@ -150,7 +151,7 @@ void NBVPlanner::NBV() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
     std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
+    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
 
     root->cost = 0;
     root->score = root->gain;
@@ -218,6 +219,8 @@ void NBVPlanner::NBV() {
                 best_score_ = new_node_best->score;
                 best_node = new_node_best;
             }
+
+            ROS_INFO("[planner]: Best Score BB: %f", new_node_best->score);
 
             RRTStar.addKDTreeNode(new_node_best);
             //tree.push_back(new_node_best);
@@ -306,6 +309,9 @@ void NBVPlanner::NBV() {
 
         if (j > N_termination) {
             ROS_INFO("[planner]: NBV Terminated");
+            RRTStar.clearKDTree();
+            best_branch.clear();
+            clearMarkers();
             changeState(STATE_STOPPED);
             break;
         }
@@ -456,8 +462,9 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             reference.position.y = next_best_node->point[1];
             reference.position.z = next_best_node->point[2];
             reference.heading = next_best_node->point[3];
-            srv_get_path.request.path.points.push_back(reference);
+            pub_reference.publish(reference);
 
+            srv_get_path.request.path.points.push_back(reference);
             bool success = sc_trajectory_generation.call(srv_get_path);
 
             if (!success) {

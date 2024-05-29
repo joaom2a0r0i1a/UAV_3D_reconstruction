@@ -44,6 +44,8 @@ class GainEvaluator {
   double evaluateExplorationGainWithRaycasting(
       const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  bool isRayIntersectingBoundingBox(const voxblox::Point& start, const voxblox::Point& end);
+
   // Use raycasting to discard occluded voxels, Bircher-style implementation.
   double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 

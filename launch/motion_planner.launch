@@ -8,11 +8,11 @@
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <node pkg="motion_planning_python" type="planner" name="planner_node" output="screen"> 
-    <!--launch-prefix="valgrind -(-)tool=callgrind -(-)callgrind-out-file=callgrind.out"-->
-    <!--launch-prefix="debug_roslaunch"-->
+    <node pkg="motion_planning_python" type="NBV" name="planner_node" output="screen">
+      <!--launch-prefix="valgrind -(-)tool=callgrind -(-)callgrind-out-file=callgrind.out"-->
+      <!--launch-prefix="debug_roslaunch"-->
       <rosparam file="$(find motion_planning_python)/config/motion_planner.yaml" />
-        <!-- Voxblox Planner -->
+      <!-- Voxblox Planner -->
       <!--remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" /-->
       <!--remap from="~tsdf_map_in" to="voxblox_node/tsdf_map_out" /-->
       <remap from="~esdf_map_in" to="esdf_map" />
@@ -20,23 +20,24 @@
       <param name="use_tf_transforms" value="false" />
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
       <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
-      <param name="update_mesh_every_n_sec" value="0.0" />   
+      <param name="update_mesh_every_n_sec" value="0.0" />
       <param name="publish_traversable" value="false" />
       <param name="publish_pointclouds" value="false" />
       <param name="max_ray_length" value="$(arg ray_length)" />
-        <!-- Publishers -->
+      <!-- Publishers -->
       <remap from="~visualization_marker_out" to="visualization_marker_out" />
+      <remap from="~reference_out" to="reference_out" />
       <remap from="~simulation_ready" to="simulation_ready" />
-        <!-- Subscribers -->
+      <!-- Subscribers -->
       <remap from="~constraints_in" to="control_manager/current_constraints" />
       <remap from="~uav_state_in" to="estimation_manager/uav_state" />
       <remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" />
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
-        <!-- Services clients-->
+      <!-- Services clients-->
       <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
       <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
       <!--remap from="~path_out" to="trajectory_generation/path" /-->
-        <!-- Services servers-->
+      <!-- Services servers-->
       <remap from="~start_in" to="~start" />
       <remap from="~stop_in" to="~stop" />
 

@@ -5,6 +5,7 @@
   <arg name="truncation_distance" default="1" />
   <arg name="method" default="merged"/>
   <arg name="ray_length" default="5" />
+  <arg name="min_ray_length" default="0.3" />
 
   <!-- defines name of the namespace of the drone -->
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
@@ -37,18 +38,19 @@
     <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr" clear_params="true">
       <remap from="pointcloud" to="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points"/>
       <!--remap from="pointcloud" to="/$(arg UAV_NAME)/velodyne/scan"/-->
-      <remap from="~esdf_map_out" to="esdf_map" />
-      <remap from="~tsdf_map_out" to="tsdf_map" />
+      <remap from="voxblox_node/esdf_map_out" to="esdf_map" />
+      <remap from="voxblox_node/tsdf_map_out" to="tsdf_map" />
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
       <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
       <!--param name="truncation_distance" value="$(arg truncation_distance)" /-->
       <param name="method" value="$(arg method)" />
       <param name="max_ray_length_m" value="$(arg ray_length)" />
+      <param name="min_ray_length_m" value="$(arg min_ray_length)" />
 
       <param name="publish_tsdf_map" value="true" />
       <param name="publish_esdf_map" value="true" />
 
-      <param name="mesh_filename" value="$(find motion_planning_python)/data/fire_station_test.ply" />
+      <!--param name="mesh_filename" value="$(find motion_planning_python)/data/fire_station_test.ply" /-->
 
       <!--param name="clear_sphere_for_planning" value="true" /-->
       <!--param name="clear_sphere_radius" value="7" /-->
@@ -58,6 +60,7 @@
       <param name="use_tf_transforms" value="true" />
       <param name="update_mesh_every_n_sec" value="1.0" />
       <param name="min_time_between_msgs_sec" value="0.0" />
+      <param name="pointcloud_queue_size" value="20" />
       <param name="use_const_weight" value="false" />
       <param name="allow_clear" value="true" />
 

@@ -183,6 +183,7 @@ private:
 
     // Publishers
     ros::Publisher pub_markers;
+    ros::Publisher pub_reference;
     ros::Publisher pub_start;
 
     // Service servers

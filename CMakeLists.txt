@@ -12,6 +12,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 ## --------------------------------------------------------------
 
 #add_compile_options("-g")
+add_compile_options("-O3")
 #add_compile_options("-O0")
 
 set(CATKIN_DEPENDENCIES
@@ -24,6 +25,7 @@ set(CATKIN_DEPENDENCIES
   trajectory_generation
   voxblox_ros
   minkindr_conversions
+  cache_nodes
   )
   
 find_package(catkin REQUIRED COMPONENTS
@@ -38,6 +40,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   NBVPlanner
+  AEPlanner
   #CameraParameters
   #Planner
   #Rrt_Star
@@ -49,7 +52,7 @@ catkin_package(
   CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
   LIBRARIES ${LIBRARIES}
   DEPENDS Eigen
-  )
+)
 
  ## --------------------------------------------------------------
  ## |                            Build                           |
@@ -73,8 +76,25 @@ add_library(NBVPlanner
   #src/NBV/NBVplanner_2D.cpp
   )
 
+ # Add library targets
+add_library(AEPlanner 
+  src/gain_evaluator.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  src/RRT/rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/kd_tree.cpp
+  src/AEP/AEPlanner.cpp
+  #src/NBV/NBVplanner_2D.cpp
+  )
+
  # Add dependencies for library targets
 add_dependencies(NBVPlanner 
+  ${catkin_EXPORTED_TARGETS} 
+  ${${PROJECT_NAME}_EXPORTED_TARGETS})
+
+ # Add dependencies for library targets
+add_dependencies(AEPlanner 
   ${catkin_EXPORTED_TARGETS} 
   ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
@@ -83,17 +103,23 @@ target_link_libraries(NBVPlanner
   ${catkin_LIBRARIES}
   )
 
+ # Link libraries against required Catkin libraries
+target_link_libraries(AEPlanner
+  ${catkin_LIBRARIES}
+  )
+
  # Add executable for NBVplanner_node.cpp
-add_executable(planner src/NBV/NBVplanner_node.cpp)
+add_executable(NBV src/NBV/NBVplanner_node.cpp)
 #add_executable(planner_2D src/planner_node_2D.cpp)
+add_executable(AEP src/AEP/AEPlanner_node.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
 
 # Set compiler flags for debug mode
-set(CMAKE_C_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
+# set(CMAKE_C_FLAGS_DEBUG "-g")
+# set(CMAKE_CXX_FLAGS_DEBUG "-g")
 
  # Link executable against required libraries
-target_link_libraries(planner
+target_link_libraries(NBV
   ${catkin_LIBRARIES}
   NBVPlanner
 )
@@ -101,6 +127,11 @@ target_link_libraries(planner
 #  ${catkin_LIBRARIES}
 #  NBVPlanner
 #)
+ # Link executable against required libraries
+target_link_libraries(AEP
+  ${catkin_LIBRARIES}
+  AEPlanner
+)
 target_link_libraries(eval_voxblox_node
   ${catkin_LIBRARIES}
 )
@@ -111,8 +142,8 @@ set(VALGRIND_OUTPUT_FILE "${CMAKE_BINARY_DIR}/valgrind_output.txt")
 
 # Create a custom target to run Valgrind
 add_custom_target(valgrind
-    COMMAND ${VALGRIND_COMMAND} $<TARGET_FILE:planner> > ${VALGRIND_OUTPUT_FILE} 2>&1
-    DEPENDS planner
+    COMMAND ${VALGRIND_COMMAND} $<TARGET_FILE:NBV> > ${VALGRIND_OUTPUT_FILE} 2>&1
+    DEPENDS NBV
     COMMENT "Running Valgrind Memory Checker"
 )
 
@@ -124,6 +155,10 @@ install(TARGETS ${LIBRARIES}
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+  )
+
+install(DIRECTORY include/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
   )
 
 install(DIRECTORY config

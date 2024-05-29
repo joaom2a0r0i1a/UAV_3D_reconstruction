@@ -1,0 +1,58 @@
+frame_id: "world_origin"
+
+body:
+  frame_id: "fcu"
+
+timer_main:
+  rate: 4.0 # [Hz]
+
+center:
+  x: 0.0 # [m]
+  y: 0.0 # [m]
+  z: 13.0 # [m]
+
+dimensions:
+  x: 40.0 # [m]
+  y: 20.0 # [m]
+  z: 20.0 # [m]
+
+bounded_box:
+  min_x: -12 # [m]
+  max_x: 12 # [m]
+  min_y: -7.5 # [m]
+  max_y: 7.5 # [m]
+  min_z: 0.5 # [m]
+  max_z: 12 # [m]
+  planner_range: 3 # [m]
+
+local_planning:
+  N_max: 15
+  N_termination: 30
+  N_yaw_samples: 10
+  radius: 2.0 # [m]
+  step_size: 1.0 # [m]
+  tolerance: 1.5 # [m]
+  g_zero: 50.0
+  sigma_thresh: 0.2
+
+global_planning:
+  N_min_nodes: 300
+
+camera:
+  #frame_id: "rgbd/aligned_depth_to_color_optical"
+  frame_id: "rgbd_front_pitched/aligned_depth_to_color"
+  #frame_id: "rgbd/aligned_depth_to_color"
+  #frame_id: "rgbd/link"
+  #frame_id: "velodyne_sensor"
+  h_fov: 1.211259 # [rad]
+  #h_fov: 1.570796 # [rad]
+  width: 1280
+  height: 720
+  min_distance: 0.3 # [m]
+  #max_distance: 12 # [m]
+  max_distance: 3 # [m]
+
+path:
+  uav_radius: 1.5 # [m]
+  lambda: 0.5 # (tunning factor)
+

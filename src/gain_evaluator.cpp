@@ -5,7 +5,14 @@
 
 //namespace mav_planning {
 
-GainEvaluator::GainEvaluator() {}
+GainEvaluator::GainEvaluator() {
+  min_x_ = -11;
+  max_x_ = 11;
+  min_y_ = -6.5;
+  max_y_ = 6.5;
+  min_z_ = 0;
+  max_z_ = 11.5;
+}
 
 double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y){
   double aspect_ratio = resolution_x/resolution_y;
@@ -167,6 +174,13 @@ double GainEvaluator::evaluateExplorationGainWithRaycasting(
   int v_max = static_cast<int>(
       std::ceil(v_distance.norm() * voxel_size_inv_));  // Round this up.
 
+  min_x_ = -11;
+  max_x_ = 11;
+  min_y_ = -6.5;
+  max_y_ = 6.5;
+  min_z_ = 0;
+  max_z_ = 11.5;
+
   // We then iterate over all the voxels in the coordinate space of the back
   // bounding plane of the frustum.
   Eigen::Vector3f pos = plane_points[1];
@@ -181,6 +195,11 @@ double GainEvaluator::evaluateExplorationGainWithRaycasting(
       // Get the 'real' coordinates back from the plane coordinate space.
       pos = plane_points[1] + u * u_slope * voxel_size_ +
             v * v_slope * voxel_size_;
+
+      // Ensure that the ray intersects the bounding box before processing
+      if (!isRayIntersectingBoundingBox(camera_center, pos)) {
+        continue;
+      }
 
       // Get the block + voxel index of this voxel by projecting it into
       // the voxel grid and then computing from the global index.
@@ -224,17 +243,15 @@ double GainEvaluator::evaluateExplorationGainWithRaycasting(
             voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
                                                   voxels_per_side_);
 
-        bool voxel_checked = false;
-        // Check if this is already checked; we don't add it to the counts
-        // in that case.
-        if (checked_voxels_set[block_index_ray].count(voxel_index_ray) > 0) {
-          voxel_checked = true;
-        }
-        voxblox::Point recovered_pos =
-            global_voxel_idx.cast<float>() * voxel_size_;
-        if (!voxel_checked && !cam_model_.isPointInView(recovered_pos)) {
-          // If not in frustum, don't count contributions from this point.
-          voxel_checked = true;
+        bool voxel_checked = (checked_voxels_set[block_index_ray].count(voxel_index_ray) > 0);
+        if (!voxel_checked) {
+          voxblox::Point recovered_pos = global_voxel_idx.cast<float>() * voxel_size_;
+          if (!cam_model_.isPointInView(recovered_pos) ||
+              recovered_pos.x() < min_x_ || recovered_pos.x() > max_x_ ||
+              recovered_pos.y() < min_y_ || recovered_pos.y() > max_y_ ||
+              recovered_pos.z() < min_z_ || recovered_pos.z() > max_z_) {
+            continue;
+          }
         }
 
         // This is as far as we need to go if this ray is already occluded.
@@ -296,6 +313,39 @@ double GainEvaluator::evaluateExplorationGainWithRaycasting(
   return num_unknown;
 }
 
+bool GainEvaluator::isRayIntersectingBoundingBox(const voxblox::Point& start, const voxblox::Point& end) {
+  // Calculate the intersection of the ray with the bounding box
+  float tmin = (min_x_ - start.x()) / (end.x() - start.x());
+  float tmax = (max_x_ - start.x()) / (end.x() - start.x());
+  if (tmin > tmax) std::swap(tmin, tmax);
+
+  float tymin = (min_y_ - start.y()) / (end.y() - start.y());
+  float tymax = (max_y_ - start.y()) / (end.y() - start.y());
+  if (tymin > tymax) std::swap(tymin, tymax);
+
+  if ((tmin > tymax) || (tymin > tmax))
+    return false;
+
+  if (tymin > tmin)
+    tmin = tymin;
+  if (tymax < tmax)
+    tmax = tymax;
+
+  float tzmin = (min_z_ - start.z()) / (end.z() - start.z());
+  float tzmax = (max_z_ - start.z()) / (end.z() - start.z());
+  if (tzmin > tzmax) std::swap(tzmin, tzmax);
+
+  if ((tmin > tzmax) || (tzmin > tmax))
+    return false;
+
+  if (tzmin > tmin)
+    tmin = tzmin;
+  if (tzmax < tmax)
+    tmax = tzmax;
+
+  return true;
+}
+
 
 double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
   eth_trajectory_generation::timing::Timer timer_gain("gain_evaluator");
@@ -318,7 +368,8 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
   // Since some complete blocks may be unallocated, just do the dumbest possible
   // thing: iterate over all voxels in the AABB and check if they belong (which
   // should be quite cheap), then look them up.
-  double gain = 0.0;
+  
+  //double gain = 0.0;
   int checked_voxels = 0;
   int voxel_index = 0;
   Eigen::Vector3f pos = aabb_min.cast<float>();
@@ -329,6 +380,13 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
   max_y_ = 6.5;
   min_z_ = 0;
   max_z_ = 11.5;
+
+  const float min_x = std::max(aabb_min.x(), min_x_);
+  const float max_x = std::min(aabb_max.x(), max_x_);
+  const float min_y = std::max(aabb_min.y(), min_y_);
+  const float max_y = std::min(aabb_max.y(), max_y_);
+  const float min_z = std::max(aabb_min.z(), min_z_);
+  const float max_z = std::min(aabb_max.z(), max_z_);
 
   //return std::max(aabb_min.z(), min_z_);
 
@@ -343,9 +401,9 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
     for (pos.y() = std::max(aabb_min.y(), min_y_); pos.y() < std::min(aabb_max.y(), max_y_); pos.y() += voxel_size_) {
       for (pos.z() = std::max(aabb_min.z(), min_z_); pos.z() < std::min(aabb_max.z(), max_z_); pos.z() += voxel_size_) {*/
 
-  for (pos.x() = std::max(aabb_min.x(), min_x_); pos.x() < std::min(aabb_max.x(), max_x_); pos.x() += voxel_size_) {
-    for (pos.y() = std::max(aabb_min.y(), min_y_); pos.y() < std::min(aabb_max.y(), max_y_); pos.y() += voxel_size_) {
-      for (pos.z() = std::max(aabb_min.z(), min_z_); pos.z() < std::min(aabb_max.z(), max_z_); pos.z() += voxel_size_) {
+  for (pos.x() = min_x; pos.x() < max_x; pos.x() += voxel_size_) {
+    for (pos.y() = min_y; pos.y() < max_y; pos.y() += voxel_size_) {
+      for (pos.z() = min_z; pos.z() < max_z; pos.z() += voxel_size_) {
         if (!cam_model_.isPointInView(pos)) {
           continue;
         }

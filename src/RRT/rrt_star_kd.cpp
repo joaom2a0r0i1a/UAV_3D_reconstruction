@@ -153,7 +153,7 @@ void rrt_star::chooseParent(std::shared_ptr<Node>& new_node, const std::vector<s
     new_node->cost = minCost;
 }
 
-void rrt_star::rewire(std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius) {
+void rrt_star::rewire(const std::shared_ptr<Node>& new_node, std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius) {
     for (const auto& node : nearby_nodes) {
         double new_cost = new_node->cost + (node->point.head<3>() - new_node->point.head<3>()).norm();
         if (new_cost < node->cost) {
@@ -181,6 +181,15 @@ void rrt_star::backtrackPathNode(const std::shared_ptr<Node>& node, std::vector<
     std::reverse(path.begin(), path.end());
 }
 
+void rrt_star::backtrackPathAEP(const std::shared_ptr<Node>& node, std::vector<std::shared_ptr<Node>>& path) {
+    std::shared_ptr<Node> currentNode = node;
+    while (currentNode) {
+        path.push_back(currentNode);
+        currentNode = currentNode->parent;
+    }
+    std::reverse(path.begin(), path.end());
+}
+
 bool rrt_star::rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
              const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles,
              double dim_x, double dim_y, double dim_z, int max_iter,
@@ -203,7 +212,7 @@ bool rrt_star::rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal
             findNearby(tree, newNode, radius, nearbyNodes);
             chooseParent(newNode, nearbyNodes);
             tree.push_back(newNode);
-            rewire(tree, newNode, nearbyNodes, radius);
+            rewire(newNode, nearbyNodes, radius);
             
             if ((newNode->point.head<3>() - goal.head<3>()).norm() <= tolerance) {
                 std::cout << "Goal reached!" << std::endl;
