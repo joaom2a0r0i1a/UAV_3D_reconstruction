@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Site BuildName="(empty)"
-	BuildStamp="20240529-0738-Experimental"
+	BuildStamp="20240703-0606-Experimental"
 	Name="DESKTOP-R89REMG"
 	Generator="ctest-3.16.3"
 	CompilerName="/usr/bin/c++"
 	CompilerVersion="9.4.0"
 	OSName="Linux"
 	Hostname="DESKTOP-R89REMG"
-	OSRelease="5.10.102.1-microsoft-standard-WSL2"
-	OSVersion="#1 SMP Wed Mar 2 00:30:59 UTC 2022"
+	OSRelease="5.15.133.1-microsoft-standard-WSL2"
+	OSVersion="#1 SMP Thu Oct 5 21:02:42 UTC 2023"
 	OSPlatform="x86_64"
 	Is64Bits="1"
 	VendorString="GenuineIntel"
@@ -19,16 +19,16 @@
 	NumberOfLogicalCPU="8"
 	NumberOfPhysicalCPU="4"
 	TotalVirtualMemory="2048"
-	TotalPhysicalMemory="7865"
+	TotalPhysicalMemory="7861"
 	LogicalProcessorsPerPhysical="2"
 	ProcessorClockFrequency="1992"
 	>
 	<Testing>
-		<StartDateTime>May 29 22:55 WEST</StartDateTime>
-		<StartTestTime>1717019750</StartTestTime>
+		<StartDateTime>Jul 04 00:12 BST</StartDateTime>
+		<StartTestTime>1720048373</StartTestTime>
 		<TestList/>
-		<EndDateTime>May 29 22:55 WEST</EndDateTime>
-		<EndTestTime>1717019750</EndTestTime>
+		<EndDateTime>Jul 04 00:12 BST</EndDateTime>
+		<EndTestTime>1720048373</EndTestTime>
 		<ElapsedMinutes>0</ElapsedMinutes>
 	</Testing>
 </Site>

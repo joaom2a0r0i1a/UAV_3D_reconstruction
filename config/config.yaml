@@ -3,13 +3,13 @@ visualize:
 visualize:
   sigma: False
 visualize:
-  pts:   True
+  pts:   False
 
 visualize:
   resolution: 0.5
 
 local_planning:
-  g_zero: 100
+  g_zero: 15.0
   num_yaw_samples: 10
 
 frame_id: "world_origin"
@@ -19,8 +19,8 @@ body:
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"
-  h_fov: 1.211259 # [rad]
-  width: 1280
+  h_fov: 1.51844 # [rad]
+  width: 1080
   height: 720
-  min_distance: 0.3 # [m]
-  max_distance: 3 # [m]
+  min_distance: 0.2 # [m]
+  max_distance: 5 # [m]

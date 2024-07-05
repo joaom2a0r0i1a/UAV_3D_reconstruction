@@ -3,12 +3,16 @@
 
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 #include <voxblox/core/tsdf_map.h>
+#include <voxblox/core/esdf_map.h>
 #include <voxblox/utils/camera_model.h>
 #include <rrt_kd.h>
 
 #include <cmath>
+#include <chrono>
 
 //namespace mav_planning {
+
+enum VoxelStatus {kUnknown = 0, kOccupied, kFree};
 
 class Evaluator {
  public:
@@ -30,14 +34,32 @@ class Evaluator {
   // to ensure the layer exists and does not go out of scope.
   void setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer);
 
-  // Set Boundaries
-  void setBounds(float& min_x, float& min_y, float& min_z,
-                float& max_x, float& max_y, float& max_z, float& gain_range);
+  // Bind the ESDF map to one OWNED BY ANOTHER OBJECT. It is up to the user
+  // to ensure the map exists and does not go out of scope.
+  void setEsdfMap(voxblox::EsdfMap::Ptr esdf_map);
+
+  void getVoxelCenter(Eigen::Vector3d* center, const Eigen::Vector3d& point);
+
+  VoxelStatus getVoxelStatus(const Eigen::Vector3d& position) const;
+
+  VoxelStatus getVisibility(const Eigen::Vector3d& view_point, const Eigen::Vector3d& voxel_to_test, bool stop_at_unknown_voxel) const;
+
+  void visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& pose, std::vector<geometry_msgs::Point>& points);
 
   // Use raycasting to discard occluded voxels and compute gain.
   double evaluateExplorationGainWithRaycasting(
       const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  bool isRayIntersectingBoundingBox(const voxblox::Point& start, const voxblox::Point& end);
+
+  double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  // Use sparse raycasting to discard occluded voxels, AEP-style implementation.
+  std::pair<double, double> computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  
+  // Initialization for visualization
+  void visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);
+  
   // Use raycasting to discard occluded voxels, Bircher-style implementation.
   double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
@@ -47,26 +69,21 @@ class Evaluator {
 
   void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
 
-  // Use raycasting to discard occluded voxels and compute gain in neighbours.
-  double computeGainInNeighbours(
-    const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
-
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;
 
  private:
   // NON-OWNED pointer to the tsdf layer to use for evaluating exploration gain.
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
+  voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
+  voxblox::EsdfMap::Ptr esdf_map_;
   voxblox::CameraModel cam_model_;
-
-  bool p_accurate_frontiers_;  // True: explicitely compute all frontier voxels (may degrade performance)
-  // false: estimate frontier voxels by checking only some neighbors (detection depends on previous views)
-  bool p_surface_frontiers_;  // true: count next to occupied, false: count next
-  Eigen::Vector3d neighbor_voxels_[26];
 
   // Get map Bounds
   float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;
   float gain_range_; 
+  double fov_y_rad_, fov_p_rad_;
+  double r_max_;
 
   // Cached parameters of the layer.
   float voxel_size_;

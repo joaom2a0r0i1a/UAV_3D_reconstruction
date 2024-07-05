@@ -10,8 +10,10 @@
   <group ns="$(arg UAV_NAME)">
     <node pkg="cache_nodes" type="cached" name="cache_nodes" output="screen">
       <rosparam file="$(find cache_nodes)/config/config.yaml" />
-      <remap from="cache_nodes/esdf_map_in" to="esdf_map" />
-      <remap from="cache_nodes/tsdf_map_in" to="tsdf_map" />
+      <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />
+      <remap from="~tsdf_map_in" to="voxblox_node/tsdf_map_out" />
+      <!--remap from="cache_nodes/esdf_map_in" to="esdf_map" /-->
+      <!--remap from="cache_nodes/tsdf_map_in" to="tsdf_map" /-->
       <param name="use_tf_transforms" value="false" />
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
       <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
@@ -27,7 +29,7 @@
       <!-- Services clients-->
       <!--remap from="~reevaluate_out" to="planner_node/reevaluate" /-->
       <!-- Service Servers -->
-      <remap from="~gp_query_in" to="~gp_query" />
+      <!--remap from="~gp_query_in" to="~gp_query" /-->
       <remap from="~best_node_in" to="~best_node" />
       <!--remap from="~reevaluate_in" to="planner_node/reevaluate" /-->
     </node>
