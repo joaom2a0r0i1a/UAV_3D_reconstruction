@@ -26,8 +26,8 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
-#include <rrt_star_2d_yaw.h>
-#include <gain_evaluator.h>
+#include <motion_planning_python/rrt_star_2d_yaw.h>
+#include <motion_planning_python/gain_evaluator.h>
 
 typedef enum
 {

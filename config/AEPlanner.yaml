@@ -4,7 +4,7 @@ body:
   frame_id: "fcu"
 
 timer_main:
-  rate: 4.0 # [Hz]
+  rate: 10.0 # [Hz]
 
 center:
   x: 0.0 # [m]
@@ -16,23 +16,64 @@ dimensions:
   y: 20.0 # [m]
   z: 20.0 # [m]
 
+# Fire Station
+#bounded_box:
+  #min_x: -16.0 # [m]
+  #max_x: 16.0 # [m]
+  #min_y: -11.0 # [m]
+  #max_y: 11.0 # [m]
+  #min_z: 1.0 # [m]
+  #max_z: 14.5 # [m]
+  #planner_range: 3 # [m]
+
+# School
 bounded_box:
-  min_x: -12 # [m]
-  max_x: 12 # [m]
-  min_y: -7.5 # [m]
-  max_y: 7.5 # [m]
-  min_z: 0.5 # [m]
-  max_z: 12 # [m]
+  min_x: -25.0 # [m]
+  max_x: 25.0 # [m]
+  min_y: -20.0 # [m]
+  max_y: 15.0 # [m]
+  min_z: 1.0 # [m]
+  max_z: 20.0 # [m]
   planner_range: 3 # [m]
 
+# Police Station
+#bounded_box:
+  #min_x: -15.0 # [m]
+  #max_x: 15.0 # [m]
+  #min_y: -20.0 # [m]
+  #max_y: 15.0 # [m]
+  #min_z: 1.0 # [m]
+  #max_z: 20.0 # [m]
+  #planner_range: 3 # [m]
+
+# Grocery Store
+#bounded_box:
+  #min_x: -25.0 # [m]
+  #max_x: 25.0 # [m]
+  #min_y: -20.0 # [m]
+  #max_y: 15.0 # [m]
+  #min_z: 1.0 # [m]
+  #max_z: 20.0 # [m]
+  #planner_range: 3 # [m]
+
+# House
+#bounded_box:
+  #min_x: -15.0 # [m]
+  #max_x: 15.0 # [m]
+  #min_y: -10.0 # [m]
+  #max_y: 15.0 # [m]
+  #min_z: 1.0 # [m]
+  #max_z: 15.0 # [m]
+  #planner_range: 3 # [m]
+
 local_planning:
-  N_max: 15
-  N_termination: 30
+  N_max: 50
+  N_termination: 300
   N_yaw_samples: 10
-  radius: 2.0 # [m]
-  step_size: 1.0 # [m]
+  radius: 4.0 # [m]
+  step_size: 2.0 # [m]
   tolerance: 1.5 # [m]
-  g_zero: 50.0
+  g_zero: 5.0
   sigma_thresh: 0.2
 
 global_planning:
@@ -44,13 +85,14 @@ camera:
   #frame_id: "rgbd/aligned_depth_to_color"
   #frame_id: "rgbd/link"
   #frame_id: "velodyne_sensor"
-  h_fov: 1.211259 # [rad]
+  #h_fov: 1.211259 # [rad]
+  h_fov: 1.51844 # [rad]
   #h_fov: 1.570796 # [rad]
-  width: 1280
+  width: 1080
   height: 720
-  min_distance: 0.3 # [m]
+  min_distance: 0.2 # [m]
   #max_distance: 12 # [m]
-  max_distance: 3 # [m]
+  max_distance: 5 # [m]
 
 path:
   uav_radius: 1.5 # [m]

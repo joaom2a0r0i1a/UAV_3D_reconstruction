@@ -1,7 +1,7 @@
 #include <iostream>
 #include <ros/ros.h>
 #include <Eigen/Dense>
-#include "gain_evaluator.h"
+#include "motion_planning_python/gain_evaluator.h"
 
 std::ostream& operator<<(std::ostream& os, const GainEvaluator& gain_evaluator) {
   const voxblox::CameraModel& cam_model = gain_evaluator.getCameraModel();

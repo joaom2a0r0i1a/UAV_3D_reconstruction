@@ -2,13 +2,13 @@
 <package format="2">
 
   <name>motion_planning_python</name>
-  <version>1.0.0</version>
-  <description>The Python Example for Sweeping Generator</description>
+  <version>0.0.0</version>
+  <description>The motion planner</description>
 
-  <maintainer email="tomas.baca@fel.cvut.cz">Tomas Baca</maintainer>
-  <author email="tomas.baca@fel.cvut.cz">Tomas Baca</author>
+  <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
+  <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>
 
-  <license>MIT</license>
+  <license>TODO</license>
 
   <buildtool_depend>catkin</buildtool_depend>
 
@@ -20,8 +20,11 @@
   <depend>trajectory_generation</depend>
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
+  <depend>comm_msgs</depend>
   <depend>std_srvs</depend>
   <depend>cache_nodes</depend>
+  <depend>process_pointcloud</depend>
+  <depend>multiagent_collision_check</depend>
 
   <export>
   </export>

@@ -1,7 +1,7 @@
 <launch>
   <arg name="delay" default="10.0"/>
   <arg name="record_data" default="true"/>
-  <arg name="data_directory" default="$(find motion_planning_python)/data"/> 
+  <arg name="data_directory" default="/home/joaomendes/workspace1/src/data"/>
   <arg name="data_frequency" default="30.0" />
   <arg name="time_limit" default="30" />
 

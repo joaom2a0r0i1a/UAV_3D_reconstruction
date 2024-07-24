@@ -15,9 +15,13 @@ windows:
   - gazebo:
       layout: tiled
       panes:
-        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane gui:=true
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane gui:=false
         - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 2 3 --$UAV_TYPE --pos-file `rospack find motion_planning_python`/tmux/three_drones/config/initial_pos.yaml --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         - export UAV_NAME=uav1; waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME
+  - gz_rate:
+      layout: tiled
+      panes:
+        - waitForGazebo; sleep 5; gz physics -u 125
   - status:
       layout: tiled
       panes:
@@ -52,6 +56,11 @@ windows:
         - export UAV_NAME=uav1; waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard
         - export UAV_NAME=uav2; waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard
         - export UAV_NAME=uav3; waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard
+  - voxblox:
+      layout: tiled
+      panes:
+        - export UAV_NAME=uav1; waitForControl; roslaunch motion_planning_python voxblox_multi_drone.launch
+        - export UAV_NAME=uav1; waitForControl; roslaunch motion_planning_python pointcloud_conversion.launch
   - rviz:
       layout: tiled
       panes:

@@ -168,19 +168,6 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named valgrind
-
-# Build rule for target.
-valgrind: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 valgrind
-.PHONY : valgrind
-
-# fast build rule for target.
-valgrind/fast:
-	$(MAKE) -f CMakeFiles/valgrind.dir/build.make CMakeFiles/valgrind.dir/build
-.PHONY : valgrind/fast
-
-#=============================================================================
 # Target rules for targets named eval_voxblox_node
 
 # Build rule for target.
@@ -192,6 +179,45 @@ eval_voxblox_node: cmake_check_build_system
 eval_voxblox_node/fast:
 	$(MAKE) -f CMakeFiles/eval_voxblox_node.dir/build.make CMakeFiles/eval_voxblox_node.dir/build
 .PHONY : eval_voxblox_node/fast
+
+#=============================================================================
+# Target rules for targets named NBVPlanner
+
+# Build rule for target.
+NBVPlanner: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 NBVPlanner
+.PHONY : NBVPlanner
+
+# fast build rule for target.
+NBVPlanner/fast:
+	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/build
+.PHONY : NBVPlanner/fast
+
+#=============================================================================
+# Target rules for targets named AEP
+
+# Build rule for target.
+AEP: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 AEP
+.PHONY : AEP
+
+# fast build rule for target.
+AEP/fast:
+	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/build
+.PHONY : AEP/fast
+
+#=============================================================================
+# Target rules for targets named cache_nodes_generate_messages_nodejs
+
+# Build rule for target.
+cache_nodes_generate_messages_nodejs: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 cache_nodes_generate_messages_nodejs
+.PHONY : cache_nodes_generate_messages_nodejs
+
+# fast build rule for target.
+cache_nodes_generate_messages_nodejs/fast:
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build
+.PHONY : cache_nodes_generate_messages_nodejs/fast
 
 #=============================================================================
 # Target rules for targets named pcl_msgs_generate_messages_lisp
@@ -298,6 +324,19 @@ nav_msgs_generate_messages_eus/fast:
 .PHONY : nav_msgs_generate_messages_eus/fast
 
 #=============================================================================
+# Target rules for targets named comm_msgs_generate_messages_lisp
+
+# Build rule for target.
+comm_msgs_generate_messages_lisp: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 comm_msgs_generate_messages_lisp
+.PHONY : comm_msgs_generate_messages_lisp
+
+# fast build rule for target.
+comm_msgs_generate_messages_lisp/fast:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_lisp.dir/build.make CMakeFiles/comm_msgs_generate_messages_lisp.dir/build
+.PHONY : comm_msgs_generate_messages_lisp/fast
+
+#=============================================================================
 # Target rules for targets named std_srvs_generate_messages_eus
 
 # Build rule for target.
@@ -389,6 +428,32 @@ tf_generate_messages_lisp/fast:
 .PHONY : tf_generate_messages_lisp/fast
 
 #=============================================================================
+# Target rules for targets named cache_nodes_generate_messages_py
+
+# Build rule for target.
+cache_nodes_generate_messages_py: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 cache_nodes_generate_messages_py
+.PHONY : cache_nodes_generate_messages_py
+
+# fast build rule for target.
+cache_nodes_generate_messages_py/fast:
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/build
+.PHONY : cache_nodes_generate_messages_py/fast
+
+#=============================================================================
+# Target rules for targets named rviz_generate_messages_eus
+
+# Build rule for target.
+rviz_generate_messages_eus: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 rviz_generate_messages_eus
+.PHONY : rviz_generate_messages_eus
+
+# fast build rule for target.
+rviz_generate_messages_eus/fast:
+	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/build
+.PHONY : rviz_generate_messages_eus/fast
+
+#=============================================================================
 # Target rules for targets named sensor_msgs_generate_messages_py
 
 # Build rule for target.
@@ -452,6 +517,19 @@ rviz_generate_messages_cpp: cmake_check_build_system
 rviz_generate_messages_cpp/fast:
 	$(MAKE) -f CMakeFiles/rviz_generate_messages_cpp.dir/build.make CMakeFiles/rviz_generate_messages_cpp.dir/build
 .PHONY : rviz_generate_messages_cpp/fast
+
+#=============================================================================
+# Target rules for targets named comm_msgs_generate_messages_py
+
+# Build rule for target.
+comm_msgs_generate_messages_py: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 comm_msgs_generate_messages_py
+.PHONY : comm_msgs_generate_messages_py
+
+# fast build rule for target.
+comm_msgs_generate_messages_py/fast:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_py.dir/build.make CMakeFiles/comm_msgs_generate_messages_py.dir/build
+.PHONY : comm_msgs_generate_messages_py/fast
 
 #=============================================================================
 # Target rules for targets named geometry_msgs_generate_messages_nodejs
@@ -740,6 +818,19 @@ nodelet_generate_messages_py/fast:
 .PHONY : nodelet_generate_messages_py/fast
 
 #=============================================================================
+# Target rules for targets named comm_msgs_generate_messages_cpp
+
+# Build rule for target.
+comm_msgs_generate_messages_cpp: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 comm_msgs_generate_messages_cpp
+.PHONY : comm_msgs_generate_messages_cpp
+
+# fast build rule for target.
+comm_msgs_generate_messages_cpp/fast:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_cpp.dir/build.make CMakeFiles/comm_msgs_generate_messages_cpp.dir/build
+.PHONY : comm_msgs_generate_messages_cpp/fast
+
+#=============================================================================
 # Target rules for targets named run_tests
 
 # Build rule for target.
@@ -816,45 +907,6 @@ map_msgs_generate_messages_cpp: cmake_check_build_system
 map_msgs_generate_messages_cpp/fast:
 	$(MAKE) -f CMakeFiles/map_msgs_generate_messages_cpp.dir/build.make CMakeFiles/map_msgs_generate_messages_cpp.dir/build
 .PHONY : map_msgs_generate_messages_cpp/fast
-
-#=============================================================================
-# Target rules for targets named std_msgs_generate_messages_eus
-
-# Build rule for target.
-std_msgs_generate_messages_eus: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 std_msgs_generate_messages_eus
-.PHONY : std_msgs_generate_messages_eus
-
-# fast build rule for target.
-std_msgs_generate_messages_eus/fast:
-	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/build
-.PHONY : std_msgs_generate_messages_eus/fast
-
-#=============================================================================
-# Target rules for targets named std_srvs_generate_messages_lisp
-
-# Build rule for target.
-std_srvs_generate_messages_lisp: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 std_srvs_generate_messages_lisp
-.PHONY : std_srvs_generate_messages_lisp
-
-# fast build rule for target.
-std_srvs_generate_messages_lisp/fast:
-	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/build
-.PHONY : std_srvs_generate_messages_lisp/fast
-
-#=============================================================================
-# Target rules for targets named roscpp_generate_messages_lisp
-
-# Build rule for target.
-roscpp_generate_messages_lisp: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 roscpp_generate_messages_lisp
-.PHONY : roscpp_generate_messages_lisp
-
-# fast build rule for target.
-roscpp_generate_messages_lisp/fast:
-	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/build
-.PHONY : roscpp_generate_messages_lisp/fast
 
 #=============================================================================
 # Target rules for targets named clean_test_results
@@ -1195,6 +1247,32 @@ bond_generate_messages_cpp/fast:
 .PHONY : bond_generate_messages_cpp/fast
 
 #=============================================================================
+# Target rules for targets named NBV
+
+# Build rule for target.
+NBV: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 NBV
+.PHONY : NBV
+
+# fast build rule for target.
+NBV/fast:
+	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/build
+.PHONY : NBV/fast
+
+#=============================================================================
+# Target rules for targets named tf2_msgs_generate_messages_py
+
+# Build rule for target.
+tf2_msgs_generate_messages_py: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 tf2_msgs_generate_messages_py
+.PHONY : tf2_msgs_generate_messages_py
+
+# fast build rule for target.
+tf2_msgs_generate_messages_py/fast:
+	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/build
+.PHONY : tf2_msgs_generate_messages_py/fast
+
+#=============================================================================
 # Target rules for targets named pcl_msgs_generate_messages_cpp
 
 # Build rule for target.
@@ -1323,32 +1401,6 @@ topic_tools_generate_messages_eus: cmake_check_build_system
 topic_tools_generate_messages_eus/fast:
 	$(MAKE) -f CMakeFiles/topic_tools_generate_messages_eus.dir/build.make CMakeFiles/topic_tools_generate_messages_eus.dir/build
 .PHONY : topic_tools_generate_messages_eus/fast
-
-#=============================================================================
-# Target rules for targets named tf2_msgs_generate_messages_py
-
-# Build rule for target.
-tf2_msgs_generate_messages_py: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 tf2_msgs_generate_messages_py
-.PHONY : tf2_msgs_generate_messages_py
-
-# fast build rule for target.
-tf2_msgs_generate_messages_py/fast:
-	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/build
-.PHONY : tf2_msgs_generate_messages_py/fast
-
-#=============================================================================
-# Target rules for targets named NBV
-
-# Build rule for target.
-NBV: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 NBV
-.PHONY : NBV
-
-# fast build rule for target.
-NBV/fast:
-	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/build
-.PHONY : NBV/fast
 
 #=============================================================================
 # Target rules for targets named voxblox_msgs_generate_messages_lisp
@@ -1611,6 +1663,58 @@ voxblox_msgs_generate_messages_py/fast:
 .PHONY : voxblox_msgs_generate_messages_py/fast
 
 #=============================================================================
+# Target rules for targets named std_msgs_generate_messages_eus
+
+# Build rule for target.
+std_msgs_generate_messages_eus: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 std_msgs_generate_messages_eus
+.PHONY : std_msgs_generate_messages_eus
+
+# fast build rule for target.
+std_msgs_generate_messages_eus/fast:
+	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/build
+.PHONY : std_msgs_generate_messages_eus/fast
+
+#=============================================================================
+# Target rules for targets named std_srvs_generate_messages_lisp
+
+# Build rule for target.
+std_srvs_generate_messages_lisp: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 std_srvs_generate_messages_lisp
+.PHONY : std_srvs_generate_messages_lisp
+
+# fast build rule for target.
+std_srvs_generate_messages_lisp/fast:
+	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/build
+.PHONY : std_srvs_generate_messages_lisp/fast
+
+#=============================================================================
+# Target rules for targets named roscpp_generate_messages_lisp
+
+# Build rule for target.
+roscpp_generate_messages_lisp: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 roscpp_generate_messages_lisp
+.PHONY : roscpp_generate_messages_lisp
+
+# fast build rule for target.
+roscpp_generate_messages_lisp/fast:
+	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/build
+.PHONY : roscpp_generate_messages_lisp/fast
+
+#=============================================================================
+# Target rules for targets named comm_msgs_generate_messages_eus
+
+# Build rule for target.
+comm_msgs_generate_messages_eus: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 comm_msgs_generate_messages_eus
+.PHONY : comm_msgs_generate_messages_eus
+
+# fast build rule for target.
+comm_msgs_generate_messages_eus/fast:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_eus.dir/build.make CMakeFiles/comm_msgs_generate_messages_eus.dir/build
+.PHONY : comm_msgs_generate_messages_eus/fast
+
+#=============================================================================
 # Target rules for targets named tf_generate_messages_py
 
 # Build rule for target.
@@ -1715,19 +1819,6 @@ map_msgs_generate_messages_lisp/fast:
 .PHONY : map_msgs_generate_messages_lisp/fast
 
 #=============================================================================
-# Target rules for targets named NBVPlanner
-
-# Build rule for target.
-NBVPlanner: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 NBVPlanner
-.PHONY : NBVPlanner
-
-# fast build rule for target.
-NBVPlanner/fast:
-	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/build
-.PHONY : NBVPlanner/fast
-
-#=============================================================================
 # Target rules for targets named map_msgs_generate_messages_nodejs
 
 # Build rule for target.
@@ -1741,6 +1832,19 @@ map_msgs_generate_messages_nodejs/fast:
 .PHONY : map_msgs_generate_messages_nodejs/fast
 
 #=============================================================================
+# Target rules for targets named comm_msgs_generate_messages_nodejs
+
+# Build rule for target.
+comm_msgs_generate_messages_nodejs: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 comm_msgs_generate_messages_nodejs
+.PHONY : comm_msgs_generate_messages_nodejs
+
+# fast build rule for target.
+comm_msgs_generate_messages_nodejs/fast:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_nodejs.dir/build.make CMakeFiles/comm_msgs_generate_messages_nodejs.dir/build
+.PHONY : comm_msgs_generate_messages_nodejs/fast
+
+#=============================================================================
 # Target rules for targets named cache_nodes_generate_messages_eus
 
 # Build rule for target.
@@ -1752,58 +1856,6 @@ cache_nodes_generate_messages_eus: cmake_check_build_system
 cache_nodes_generate_messages_eus/fast:
 	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_eus.dir/build.make CMakeFiles/cache_nodes_generate_messages_eus.dir/build
 .PHONY : cache_nodes_generate_messages_eus/fast
-
-#=============================================================================
-# Target rules for targets named AEP
-
-# Build rule for target.
-AEP: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 AEP
-.PHONY : AEP
-
-# fast build rule for target.
-AEP/fast:
-	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/build
-.PHONY : AEP/fast
-
-#=============================================================================
-# Target rules for targets named cache_nodes_generate_messages_nodejs
-
-# Build rule for target.
-cache_nodes_generate_messages_nodejs: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 cache_nodes_generate_messages_nodejs
-.PHONY : cache_nodes_generate_messages_nodejs
-
-# fast build rule for target.
-cache_nodes_generate_messages_nodejs/fast:
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build
-.PHONY : cache_nodes_generate_messages_nodejs/fast
-
-#=============================================================================
-# Target rules for targets named rviz_generate_messages_eus
-
-# Build rule for target.
-rviz_generate_messages_eus: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 rviz_generate_messages_eus
-.PHONY : rviz_generate_messages_eus
-
-# fast build rule for target.
-rviz_generate_messages_eus/fast:
-	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/build
-.PHONY : rviz_generate_messages_eus/fast
-
-#=============================================================================
-# Target rules for targets named cache_nodes_generate_messages_py
-
-# Build rule for target.
-cache_nodes_generate_messages_py: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 cache_nodes_generate_messages_py
-.PHONY : cache_nodes_generate_messages_py
-
-# fast build rule for target.
-cache_nodes_generate_messages_py/fast:
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/build
-.PHONY : cache_nodes_generate_messages_py/fast
 
 src/AEP/AEPlanner.o: src/AEP/AEPlanner.cpp.o
 
@@ -1919,8 +1971,8 @@ src/RRT/rrt_star_kd.o: src/RRT/rrt_star_kd.cpp.o
 
 # target to build an object file
 src/RRT/rrt_star_kd.cpp.o:
-	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/RRT/rrt_star_kd.cpp.o
 	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/src/RRT/rrt_star_kd.cpp.o
+	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/RRT/rrt_star_kd.cpp.o
 .PHONY : src/RRT/rrt_star_kd.cpp.o
 
 src/RRT/rrt_star_kd.i: src/RRT/rrt_star_kd.cpp.i
@@ -1929,8 +1981,8 @@ src/RRT/rrt_star_kd.i: src/RRT/rrt_star_kd.cpp.i
 
 # target to preprocess a source file
 src/RRT/rrt_star_kd.cpp.i:
-	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/RRT/rrt_star_kd.cpp.i
 	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/src/RRT/rrt_star_kd.cpp.i
+	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/RRT/rrt_star_kd.cpp.i
 .PHONY : src/RRT/rrt_star_kd.cpp.i
 
 src/RRT/rrt_star_kd.s: src/RRT/rrt_star_kd.cpp.s
@@ -1939,8 +1991,8 @@ src/RRT/rrt_star_kd.s: src/RRT/rrt_star_kd.cpp.s
 
 # target to generate assembly for a file
 src/RRT/rrt_star_kd.cpp.s:
-	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/RRT/rrt_star_kd.cpp.s
 	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/src/RRT/rrt_star_kd.cpp.s
+	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/RRT/rrt_star_kd.cpp.s
 .PHONY : src/RRT/rrt_star_kd.cpp.s
 
 src/evaluate/eval_voxblox_node.o: src/evaluate/eval_voxblox_node.cpp.o
@@ -1976,8 +2028,8 @@ src/gain_evaluator.o: src/gain_evaluator.cpp.o
 
 # target to build an object file
 src/gain_evaluator.cpp.o:
-	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/gain_evaluator.cpp.o
 	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/src/gain_evaluator.cpp.o
+	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/gain_evaluator.cpp.o
 .PHONY : src/gain_evaluator.cpp.o
 
 src/gain_evaluator.i: src/gain_evaluator.cpp.i
@@ -1986,8 +2038,8 @@ src/gain_evaluator.i: src/gain_evaluator.cpp.i
 
 # target to preprocess a source file
 src/gain_evaluator.cpp.i:
-	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/gain_evaluator.cpp.i
 	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/src/gain_evaluator.cpp.i
+	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/gain_evaluator.cpp.i
 .PHONY : src/gain_evaluator.cpp.i
 
 src/gain_evaluator.s: src/gain_evaluator.cpp.s
@@ -1996,8 +2048,8 @@ src/gain_evaluator.s: src/gain_evaluator.cpp.s
 
 # target to generate assembly for a file
 src/gain_evaluator.cpp.s:
-	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/gain_evaluator.cpp.s
 	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/src/gain_evaluator.cpp.s
+	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/src/gain_evaluator.cpp.s
 .PHONY : src/gain_evaluator.cpp.s
 
 src/kd_tree.o: src/kd_tree.cpp.o
@@ -2037,8 +2089,10 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... edit_cache"
-	@echo "... valgrind"
 	@echo "... eval_voxblox_node"
+	@echo "... NBVPlanner"
+	@echo "... AEP"
+	@echo "... cache_nodes_generate_messages_nodejs"
 	@echo "... pcl_msgs_generate_messages_lisp"
 	@echo "... pcl_msgs_generate_messages_nodejs"
 	@echo "... pcl_msgs_generate_messages_eus"
@@ -2047,6 +2101,7 @@ help:
 	@echo "... mrs_msgs_generate_messages_cpp"
 	@echo "... actionlib_msgs_generate_messages_cpp"
 	@echo "... nav_msgs_generate_messages_eus"
+	@echo "... comm_msgs_generate_messages_lisp"
 	@echo "... std_srvs_generate_messages_eus"
 	@echo "... sensor_msgs_generate_messages_eus"
 	@echo "... nodelet_topic_tools_gencfg"
@@ -2054,12 +2109,15 @@ help:
 	@echo "... nav_msgs_generate_messages_nodejs"
 	@echo "... nav_msgs_generate_messages_py"
 	@echo "... tf_generate_messages_lisp"
+	@echo "... cache_nodes_generate_messages_py"
+	@echo "... rviz_generate_messages_eus"
 	@echo "... install/strip"
 	@echo "... sensor_msgs_generate_messages_py"
 	@echo "... geometry_msgs_generate_messages_py"
 	@echo "... tf2_msgs_generate_messages_eus"
 	@echo "... mrs_msgs_generate_messages_py"
 	@echo "... rviz_generate_messages_cpp"
+	@echo "... comm_msgs_generate_messages_py"
 	@echo "... geometry_msgs_generate_messages_nodejs"
 	@echo "... dynamic_reconfigure_generate_messages_eus"
 	@echo "... geometry_msgs_generate_messages_cpp"
@@ -2082,15 +2140,13 @@ help:
 	@echo "... mrs_msgs_generate_messages_lisp"
 	@echo "... std_srvs_generate_messages_nodejs"
 	@echo "... nodelet_generate_messages_py"
+	@echo "... comm_msgs_generate_messages_cpp"
 	@echo "... run_tests"
 	@echo "... std_srvs_generate_messages_cpp"
 	@echo "... AEPlanner"
 	@echo "... std_msgs_generate_messages_lisp"
 	@echo "... mrs_msgs_generate_messages_nodejs"
 	@echo "... map_msgs_generate_messages_cpp"
-	@echo "... std_msgs_generate_messages_eus"
-	@echo "... std_srvs_generate_messages_lisp"
-	@echo "... roscpp_generate_messages_lisp"
 	@echo "... clean_test_results"
 	@echo "... actionlib_generate_messages_lisp"
 	@echo "... tests"
@@ -2118,6 +2174,8 @@ help:
 	@echo "... tf2_msgs_generate_messages_cpp"
 	@echo "... dynamic_reconfigure_generate_messages_nodejs"
 	@echo "... bond_generate_messages_cpp"
+	@echo "... NBV"
+	@echo "... tf2_msgs_generate_messages_py"
 	@echo "... pcl_msgs_generate_messages_cpp"
 	@echo "... dynamic_reconfigure_gencfg"
 	@echo "... nodelet_generate_messages_eus"
@@ -2128,8 +2186,6 @@ help:
 	@echo "... topic_tools_generate_messages_cpp"
 	@echo "... visualization_msgs_generate_messages_py"
 	@echo "... topic_tools_generate_messages_eus"
-	@echo "... tf2_msgs_generate_messages_py"
-	@echo "... NBV"
 	@echo "... voxblox_msgs_generate_messages_lisp"
 	@echo "... topic_tools_generate_messages_lisp"
 	@echo "... topic_tools_generate_messages_nodejs"
@@ -2151,6 +2207,10 @@ help:
 	@echo "... voxblox_msgs_generate_messages_nodejs"
 	@echo "... tf_generate_messages_cpp"
 	@echo "... voxblox_msgs_generate_messages_py"
+	@echo "... std_msgs_generate_messages_eus"
+	@echo "... std_srvs_generate_messages_lisp"
+	@echo "... roscpp_generate_messages_lisp"
+	@echo "... comm_msgs_generate_messages_eus"
 	@echo "... tf_generate_messages_py"
 	@echo "... rviz_generate_messages_lisp"
 	@echo "... rviz_generate_messages_nodejs"
@@ -2159,13 +2219,9 @@ help:
 	@echo "... bond_generate_messages_eus"
 	@echo "... map_msgs_generate_messages_eus"
 	@echo "... map_msgs_generate_messages_lisp"
-	@echo "... NBVPlanner"
 	@echo "... map_msgs_generate_messages_nodejs"
+	@echo "... comm_msgs_generate_messages_nodejs"
 	@echo "... cache_nodes_generate_messages_eus"
-	@echo "... AEP"
-	@echo "... cache_nodes_generate_messages_nodejs"
-	@echo "... rviz_generate_messages_eus"
-	@echo "... cache_nodes_generate_messages_py"
 	@echo "... src/AEP/AEPlanner.o"
 	@echo "... src/AEP/AEPlanner.i"
 	@echo "... src/AEP/AEPlanner.s"

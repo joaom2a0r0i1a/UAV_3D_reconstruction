@@ -302,6 +302,9 @@ class_loader_DIR:PATH=/opt/ros/noetic/share/class_loader/cmake
 //The directory containing a CMake configuration file for cmake_modules.
 cmake_modules_DIR:PATH=/opt/ros/noetic/share/cmake_modules/cmake
 
+//The directory containing a CMake configuration file for comm_msgs.
+comm_msgs_DIR:PATH=/home/joaomendes/voxblox/devel/share/comm_msgs/cmake
+
 //The directory containing a CMake configuration file for cpp_common.
 cpp_common_DIR:PATH=/opt/ros/noetic/share/cpp_common/cmake
 
@@ -395,6 +398,9 @@ mrs_msgs_DIR:PATH=/opt/ros/noetic/share/mrs_msgs/cmake
 //The directory containing a CMake configuration file for mrs_uav_testing.
 mrs_uav_testing_DIR:PATH=/opt/ros/noetic/share/mrs_uav_testing/cmake
 
+//The directory containing a CMake configuration file for multiagent_collision_check.
+multiagent_collision_check_DIR:PATH=/home/joaomendes/workspace1/devel/share/multiagent_collision_check/cmake
+
 //The directory containing a CMake configuration file for nav_msgs.
 nav_msgs_DIR:PATH=/opt/ros/noetic/share/nav_msgs/cmake
 
@@ -418,6 +424,12 @@ pcl_ros_DIR:PATH=/opt/ros/noetic/share/pcl_ros/cmake
 
 //The directory containing a CMake configuration file for pluginlib.
 pluginlib_DIR:PATH=/opt/ros/noetic/share/pluginlib/cmake
+
+//The directory containing a CMake configuration file for process_pointcloud.
+process_pointcloud_DIR:PATH=/home/joaomendes/workspace1/devel/share/process_pointcloud/cmake
+
+//The directory containing a CMake configuration file for processed_pointcloud.
+processed_pointcloud_DIR:PATH=processed_pointcloud_DIR-NOTFOUND
 
 //The directory containing a CMake configuration file for protobuf_catkin.
 protobuf_catkin_DIR:PATH=/home/joaomendes/voxblox/devel/share/protobuf_catkin/cmake

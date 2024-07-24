@@ -1,4 +1,4 @@
-#include "RRT/rrt_star_2D.h"
+#include "motion_planning_python/RRT/rrt_star_2D.h"
 
 namespace rrt_star_2d {
 

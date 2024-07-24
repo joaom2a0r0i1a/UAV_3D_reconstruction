@@ -1,74 +1,63 @@
+#!/usr/bin/env python
+
 import rospy
-import rosbag
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped
 from rosgraph_msgs.msg import Clock
+from mrs_msgs.msg import UavState, Reference
+from threading import Lock
 
-def extract_path(bag_file, pose_topic, clock_topic):
-    path = Path()
-    path.header.frame_id = "uav1/world_origin"
+class PathExtractor:
+    def __init__(self, pose_topic, reference_topic, clock_topic):
+        self.path = Path()
+        self.path.header.frame_id = "uav1/world_origin"
+        self.reference = Path()
+        self.reference.header.frame_id = "uav1/world_origin"
+        self.current_time = rospy.Time()
 
-    with rosbag.Bag(bag_file, 'r') as bag:
-        for topic, msg, t in bag.read_messages(topics=[pose_topic, clock_topic]):
-            if topic == clock_topic:
-                # Extract time from /clock topic
-                current_time = msg.clock.secs + msg.clock.nsecs * 1e-9
-            elif topic == pose_topic:
-                # Extract pose from the specified topic
-                pose_stamped = PoseStamped()
-                pose_stamped.header.stamp = rospy.Time.from_sec(current_time)
-                pose_stamped.header.frame_id = "uav1/world_origin"
-                pose_stamped.pose = msg.pose
+        self.path_pub = rospy.Publisher('/uav1/finished_path', Path, queue_size=10)
+        self.reference_pub = rospy.Publisher('/uav1/reference_path', Path, queue_size=10)
 
-                path.poses.append(pose_stamped)
+        rospy.Subscriber(clock_topic, Clock, self.clock_callback)
+        rospy.Subscriber(pose_topic, UavState, self.pose_callback)
+        rospy.Subscriber(reference_topic, Reference, self.reference_callback)
 
-    return path
+    def clock_callback(self, msg):
+        self.current_time = msg.clock
 
-def extract_reference(bag_file, pose_topic, clock_topic):
-    path = Path()
-    path.header.frame_id = "uav1/world_origin"
+    def pose_callback(self, msg):
+        pose_stamped = PoseStamped()
+        pose_stamped.header.stamp = self.current_time
+        pose_stamped.header.frame_id = "uav1/world_origin"
+        pose_stamped.pose = msg.pose
 
-    with rosbag.Bag(bag_file, 'r') as bag:
-        for topic, msg, t in bag.read_messages(topics=[pose_topic, clock_topic]):
-            if topic == clock_topic:
-                # Extract time from /clock topic
-                current_time = msg.clock.secs + msg.clock.nsecs * 1e-9
-            elif topic == pose_topic:
-                # Extract pose from the specified topic
-                pose_stamped = PoseStamped()
-                pose_stamped.header.stamp = rospy.Time.from_sec(current_time)
-                pose_stamped.header.frame_id = "uav1/world_origin"
-                pose_stamped.pose.position = msg.position
+        self.path.poses.append(pose_stamped)
 
-                path.poses.append(pose_stamped)
+    def reference_callback(self, msg):
+        pose_stamped = PoseStamped()
+        pose_stamped.header.stamp = self.current_time
+        pose_stamped.header.frame_id = "uav1/world_origin"
+        pose_stamped.pose.position = msg.position
 
-    return path
+        self.reference.poses.append(pose_stamped)
 
-def publish_path():
-    rospy.init_node('path_publisher', anonymous=True)
-    path_pub = rospy.Publisher('/uav1/finished_path', Path, queue_size=10)
-    reference_pub = rospy.Publisher('/uav1/reference_path', Path, queue_size=10)
-
-    bag_file = '/home/joaomendes/workspace1/src/motion_planning_python/data/tmp_bags/tmp_bag_2024-05-23-10-53-33.bag'
-    uav_pose_topic = '/uav1/estimation_manager/uav_state'
-    uav_reference_topic = '/uav1/reference_out'
-    clock_topic = '/clock'
-
-    path = extract_path(bag_file, uav_pose_topic, clock_topic)
-    print("HALFWAY THERE")
-    reference = extract_reference(bag_file, uav_reference_topic, clock_topic)
-    print("FINITO")
-
-    rate = rospy.Rate(5)
-    while not rospy.is_shutdown():
-        path.header.stamp = rospy.Time.now()
-        reference.header.stamp = rospy.Time.now()
-        path_pub.publish(path)
-        reference_pub.publish(reference)
-        rate.sleep()
+    def publish(self):
+        rate = rospy.Rate(200)
+        while not rospy.is_shutdown():
+            self.path.header.stamp = rospy.Time.now()
+            self.reference.header.stamp = rospy.Time.now()
+            self.path_pub.publish(self.path)
+            self.reference_pub.publish(self.reference)
+            rate.sleep()
 
 if __name__ == "__main__":
     try:
-        publish_path()
+        rospy.init_node('path_publisher', anonymous=True)
+        rospy.set_param('/use_sim_time', True)
+        pose_topic = '/uav1/estimation_manager/uav_state'
+        reference_topic = '/uav1/reference_out'
+        clock_topic = '/clock'
+        extractor = PathExtractor(pose_topic, reference_topic, clock_topic)
+        extractor.publish()
     except rospy.ROSInterruptException:
         pass

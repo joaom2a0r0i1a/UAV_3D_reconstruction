@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include "NBV/NBVplanner.h"
+#include "motion_planning_python/NBV/NBVplanner.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "planner");

@@ -1,7 +1,7 @@
 #include <eth_trajectory_generation/timing.h>
 #include <voxblox/integrator/integrator_utils.h>
 
-#include "gain_evaluator_2D.h"
+#include "motion_planning_python/gain_evaluator_2D.h"
 
 //namespace mav_planning {
 

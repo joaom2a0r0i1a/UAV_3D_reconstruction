@@ -1,4 +1,4 @@
-#include "NBV/NBVplanner_2D.h"
+#include "motion_planning_python/NBV/NBVplanner_2D.h"
 
 NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_), lower_bound_(Eigen::Vector3d::Zero()),
     upper_bound_(Eigen::Vector3d::Zero()) {

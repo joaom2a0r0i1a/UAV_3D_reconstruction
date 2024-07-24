@@ -24,8 +24,11 @@ set(CATKIN_DEPENDENCIES
   visualization_msgs
   trajectory_generation
   voxblox_ros
+  comm_msgs
   minkindr_conversions
   cache_nodes
+  #process_pointcloud
+  #multiagent_collision_check
   )
   
 find_package(catkin REQUIRED COMPONENTS
@@ -40,6 +43,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   NBVPlanner
+  #NBVMultiPlanner
   AEPlanner
   #CameraParameters
   #Planner
@@ -48,7 +52,7 @@ set(LIBRARIES
 
   # Define Catkin package
 catkin_package(
-  INCLUDE_DIRS include
+  INCLUDE_DIRS include ${catkin_INCLUDE_DIRS}
   CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
   LIBRARIES ${LIBRARIES}
   DEPENDS Eigen
@@ -76,6 +80,16 @@ add_library(NBVPlanner
   #src/NBV/NBVplanner_2D.cpp
   )
 
+#add_library(NBVMultiPlanner 
+#  src/gain_evaluator.cpp
+#  #src/gain_evaluator_2D.cpp
+#  #src/RRT/rrt_star.cpp
+#  src/RRT/rrt_star_kd.cpp
+#  #src/RRT/rrt_star_2D.cpp
+#  src/NBV/NBVMultiplanner.cpp
+#  #src/NBV/NBVplanner_2D.cpp
+#  )
+
  # Add library targets
 add_library(AEPlanner 
   src/gain_evaluator.cpp
@@ -89,63 +103,47 @@ add_library(AEPlanner
   )
 
  # Add dependencies for library targets
-add_dependencies(NBVPlanner 
-  ${catkin_EXPORTED_TARGETS} 
-  ${${PROJECT_NAME}_EXPORTED_TARGETS})
-
- # Add dependencies for library targets
-add_dependencies(AEPlanner 
-  ${catkin_EXPORTED_TARGETS} 
-  ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(NBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+#add_dependencies(NBVMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(AEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
-target_link_libraries(NBVPlanner
-  ${catkin_LIBRARIES}
-  )
-
- # Link libraries against required Catkin libraries
-target_link_libraries(AEPlanner
-  ${catkin_LIBRARIES}
-  )
+target_link_libraries(NBVPlanner ${catkin_LIBRARIES})
+#target_link_libraries(NBVMultiPlanner ${catkin_LIBRARIES})
+target_link_libraries(AEPlanner ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
 add_executable(NBV src/NBV/NBVplanner_node.cpp)
-#add_executable(planner_2D src/planner_node_2D.cpp)
+#add_executable(NBVMulti src/NBV/NBVMultiplanner_node.cpp)
 add_executable(AEP src/AEP/AEPlanner_node.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
+
+#add_executable(planner_2D src/planner_node_2D.cpp)
 
 # Set compiler flags for debug mode
 # set(CMAKE_C_FLAGS_DEBUG "-g")
 # set(CMAKE_CXX_FLAGS_DEBUG "-g")
 
- # Link executable against required libraries
-target_link_libraries(NBV
-  ${catkin_LIBRARIES}
-  NBVPlanner
-)
 #target_link_libraries(planner_2D
 #  ${catkin_LIBRARIES}
 #  NBVPlanner
 #)
  # Link executable against required libraries
-target_link_libraries(AEP
-  ${catkin_LIBRARIES}
-  AEPlanner
-)
-target_link_libraries(eval_voxblox_node
-  ${catkin_LIBRARIES}
-)
+target_link_libraries(NBV ${catkin_LIBRARIES} NBVPlanner)
+#target_link_libraries(NBVMulti ${catkin_LIBRARIES} NBVMultiPlanner)
+target_link_libraries(AEP ${catkin_LIBRARIES} AEPlanner)
+target_link_libraries(eval_voxblox_node ${catkin_LIBRARIES})
 
 # Specify the command to run Valgrind
-set(VALGRIND_COMMAND valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes)
-set(VALGRIND_OUTPUT_FILE "${CMAKE_BINARY_DIR}/valgrind_output.txt")
+#set(VALGRIND_COMMAND valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes)
+#set(VALGRIND_OUTPUT_FILE "${CMAKE_BINARY_DIR}/valgrind_output.txt")
 
 # Create a custom target to run Valgrind
-add_custom_target(valgrind
-    COMMAND ${VALGRIND_COMMAND} $<TARGET_FILE:NBV> > ${VALGRIND_OUTPUT_FILE} 2>&1
-    DEPENDS NBV
-    COMMENT "Running Valgrind Memory Checker"
-)
+#add_custom_target(valgrind
+    #COMMAND ${VALGRIND_COMMAND} $<TARGET_FILE:NBV> > ${VALGRIND_OUTPUT_FILE} 2>&1
+    #DEPENDS NBV
+    #COMMENT "Running Valgrind Memory Checker"
+#)
 
  ## --------------------------------------------------------------
  ## |                           Install                          |

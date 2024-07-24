@@ -32,7 +32,7 @@
 #include <voxblox_ros/mesh_vis.h>
 #include <voxblox_ros/ptcloud_vis.h>
 
-#include "../../include/libs/nanoflann.hpp"
+#include "../../include/motion_planning_python/libs/nanoflann.hpp"
 
 namespace evaluate {
 
@@ -313,9 +313,10 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
   uint64_t total_evaluated_voxels = 0;
   uint64_t unknown_voxels = 0;
   uint64_t outside_truncation_voxels = 0;
-  const float min_weight = 0.01;
+  const float min_weight = 0.0;
   const bool interpolate = true;
   double truncation_distance = 3 * tsdf_layer->voxel_size();
+  double voxel_size = tsdf_layer->voxel_size();
   if (p_truncation_distance_ != 0.0) {
     truncation_distance = p_truncation_distance_;
   }
@@ -329,11 +330,74 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
       voxblox::FloatingPoint distance = 0.0;
 
       float weight = 0.0;
+
+      /*// Helper function to check if a voxel is unknown
+      auto isUnknownVoxel = [&](const voxblox::Point& point) {
+        if (!interpolator->getNearestDistanceAndWeight(point, &distance, &weight) ||
+            weight <= min_weight) {
+          return true;
+        }
+        return false;
+      };
+
+      // Check the current voxel and its 6 neighbors
+      if (isUnknownVoxel(point)) {
+        // Define the 6 neighbors (assuming a grid-aligned voxel space)
+        std::vector<voxblox::Point> neighbors = {
+          point + voxblox::Point(voxel_size, 0, 0),
+          point + voxblox::Point(-voxel_size, 0, 0),
+          point + voxblox::Point(0, voxel_size, 0),
+          point + voxblox::Point(0, -voxel_size, 0),
+          point + voxblox::Point(0, 0, voxel_size),
+          point + voxblox::Point(0, 0, -voxel_size),
+          point + voxblox::Point(2*voxel_size, 0, 0),
+          point + voxblox::Point(-2*voxel_size, 0, 0),
+          point + voxblox::Point(0, 2*voxel_size, 0),
+          point + voxblox::Point(0, -2*voxel_size, 0),
+          point + voxblox::Point(0, 0, 2*voxel_size),
+          point + voxblox::Point(0, 0, -2*voxel_size)
+        };
+
+        // Generate all 26 neighboring voxel offsets
+        std::vector<voxblox::Point> neighbors;
+        for (int dx = -2; dx <= 2; ++dx) {
+          for (int dy = -2; dy <= 2; ++dy) {
+            for (int dz = -2; dz <= 2; ++dz) {
+              // Skip the center point itself
+              if (dx == 0 && dy == 0 && dz == 0) continue;
+              voxblox::Point neighbor = point + voxblox::Point(dx * voxel_size, dy * voxel_size, dz * voxel_size);
+              neighbors.emplace_back(neighbor);
+            }
+          }
+        }
+
+        bool all_neighbors_unknown = true;
+        for (const auto& neighbor : neighbors) {
+          if (!isUnknownVoxel(neighbor)) {
+            all_neighbors_unknown = false;
+            break;
+          }
+        }
+
+        if (all_neighbors_unknown) {
+          unknown_voxels++;
+        }
+      } else {
+        interpolator->getDistance(point, &distance, interpolate);
+        if (std::abs(distance) > truncation_distance) {
+          distance = truncation_distance;
+        }
+        abserror.push_back(std::abs(distance));
+      }
+      total_evaluated_voxels++;*/
+
+
       // We will do multiple lookups -- the first is to determine whether the
-      // voxel exists.
+      // voxel exists.      
       if (!interpolator->getNearestDistanceAndWeight(point, &distance,
                                                      &weight)) {
         unknown_voxels++;
+      //} else {
       } else if (weight <= min_weight) {
         unknown_voxels++;
       } else {

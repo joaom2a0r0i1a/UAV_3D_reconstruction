@@ -54,11 +54,11 @@ CMAKE_BINARY_DIR = /home/joaomendes/workspace1/src/motion_planning_python/build
 
 # The main recursive "all" target.
 all: CMakeFiles/eval_voxblox_node.dir/all
+all: CMakeFiles/NBVPlanner.dir/all
+all: CMakeFiles/AEP.dir/all
 all: CMakeFiles/GMock.dir/all
 all: CMakeFiles/AEPlanner.dir/all
 all: CMakeFiles/NBV.dir/all
-all: CMakeFiles/NBVPlanner.dir/all
-all: CMakeFiles/AEP.dir/all
 
 .PHONY : all
 
@@ -68,8 +68,10 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/valgrind.dir/clean
 clean: CMakeFiles/eval_voxblox_node.dir/clean
+clean: CMakeFiles/NBVPlanner.dir/clean
+clean: CMakeFiles/AEP.dir/clean
+clean: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/pcl_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/pcl_msgs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/pcl_msgs_generate_messages_eus.dir/clean
@@ -78,6 +80,7 @@ clean: CMakeFiles/actionlib_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/mrs_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/actionlib_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/nav_msgs_generate_messages_eus.dir/clean
+clean: CMakeFiles/comm_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/std_srvs_generate_messages_eus.dir/clean
 clean: CMakeFiles/sensor_msgs_generate_messages_eus.dir/clean
 clean: CMakeFiles/nodelet_topic_tools_gencfg.dir/clean
@@ -85,11 +88,14 @@ clean: CMakeFiles/sensor_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/nav_msgs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/nav_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/tf_generate_messages_lisp.dir/clean
+clean: CMakeFiles/cache_nodes_generate_messages_py.dir/clean
+clean: CMakeFiles/rviz_generate_messages_eus.dir/clean
 clean: CMakeFiles/sensor_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/geometry_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/tf2_msgs_generate_messages_eus.dir/clean
 clean: CMakeFiles/mrs_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/rviz_generate_messages_cpp.dir/clean
+clean: CMakeFiles/comm_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/geometry_msgs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/dynamic_reconfigure_generate_messages_eus.dir/clean
 clean: CMakeFiles/geometry_msgs_generate_messages_cpp.dir/clean
@@ -112,15 +118,13 @@ clean: CMakeFiles/voxblox_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/mrs_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/std_srvs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/nodelet_generate_messages_py.dir/clean
+clean: CMakeFiles/comm_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/run_tests.dir/clean
 clean: CMakeFiles/std_srvs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/AEPlanner.dir/clean
 clean: CMakeFiles/std_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/mrs_msgs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/map_msgs_generate_messages_cpp.dir/clean
-clean: CMakeFiles/std_msgs_generate_messages_eus.dir/clean
-clean: CMakeFiles/std_srvs_generate_messages_lisp.dir/clean
-clean: CMakeFiles/roscpp_generate_messages_lisp.dir/clean
 clean: CMakeFiles/clean_test_results.dir/clean
 clean: CMakeFiles/actionlib_generate_messages_lisp.dir/clean
 clean: CMakeFiles/tests.dir/clean
@@ -147,6 +151,8 @@ clean: CMakeFiles/nav_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/tf2_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/dynamic_reconfigure_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/bond_generate_messages_cpp.dir/clean
+clean: CMakeFiles/NBV.dir/clean
+clean: CMakeFiles/tf2_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/pcl_msgs_generate_messages_cpp.dir/clean
 clean: CMakeFiles/dynamic_reconfigure_gencfg.dir/clean
 clean: CMakeFiles/nodelet_generate_messages_eus.dir/clean
@@ -157,8 +163,6 @@ clean: CMakeFiles/bond_generate_messages_py.dir/clean
 clean: CMakeFiles/topic_tools_generate_messages_cpp.dir/clean
 clean: CMakeFiles/visualization_msgs_generate_messages_py.dir/clean
 clean: CMakeFiles/topic_tools_generate_messages_eus.dir/clean
-clean: CMakeFiles/tf2_msgs_generate_messages_py.dir/clean
-clean: CMakeFiles/NBV.dir/clean
 clean: CMakeFiles/voxblox_msgs_generate_messages_lisp.dir/clean
 clean: CMakeFiles/topic_tools_generate_messages_lisp.dir/clean
 clean: CMakeFiles/topic_tools_generate_messages_nodejs.dir/clean
@@ -179,6 +183,10 @@ clean: CMakeFiles/voxblox_msgs_generate_messages_eus.dir/clean
 clean: CMakeFiles/voxblox_msgs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/tf_generate_messages_cpp.dir/clean
 clean: CMakeFiles/voxblox_msgs_generate_messages_py.dir/clean
+clean: CMakeFiles/std_msgs_generate_messages_eus.dir/clean
+clean: CMakeFiles/std_srvs_generate_messages_lisp.dir/clean
+clean: CMakeFiles/roscpp_generate_messages_lisp.dir/clean
+clean: CMakeFiles/comm_msgs_generate_messages_eus.dir/clean
 clean: CMakeFiles/tf_generate_messages_py.dir/clean
 clean: CMakeFiles/rviz_generate_messages_lisp.dir/clean
 clean: CMakeFiles/rviz_generate_messages_nodejs.dir/clean
@@ -187,42 +195,11 @@ clean: CMakeFiles/cache_nodes_generate_messages_cpp.dir/clean
 clean: CMakeFiles/bond_generate_messages_eus.dir/clean
 clean: CMakeFiles/map_msgs_generate_messages_eus.dir/clean
 clean: CMakeFiles/map_msgs_generate_messages_lisp.dir/clean
-clean: CMakeFiles/NBVPlanner.dir/clean
 clean: CMakeFiles/map_msgs_generate_messages_nodejs.dir/clean
+clean: CMakeFiles/comm_msgs_generate_messages_nodejs.dir/clean
 clean: CMakeFiles/cache_nodes_generate_messages_eus.dir/clean
-clean: CMakeFiles/AEP.dir/clean
-clean: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean
-clean: CMakeFiles/rviz_generate_messages_eus.dir/clean
-clean: CMakeFiles/cache_nodes_generate_messages_py.dir/clean
 
 .PHONY : clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/valgrind.dir
-
-# All Build rule for target.
-CMakeFiles/valgrind.dir/all: CMakeFiles/NBV.dir/all
-	$(MAKE) -f CMakeFiles/valgrind.dir/build.make CMakeFiles/valgrind.dir/depend
-	$(MAKE) -f CMakeFiles/valgrind.dir/build.make CMakeFiles/valgrind.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=24 "Built target valgrind"
-.PHONY : CMakeFiles/valgrind.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/valgrind.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 7
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/valgrind.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/valgrind.dir/rule
-
-# Convenience name for target.
-valgrind: CMakeFiles/valgrind.dir/rule
-
-.PHONY : valgrind
-
-# clean rule for target.
-CMakeFiles/valgrind.dir/clean:
-	$(MAKE) -f CMakeFiles/valgrind.dir/build.make CMakeFiles/valgrind.dir/clean
-.PHONY : CMakeFiles/valgrind.dir/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/eval_voxblox_node.dir
@@ -250,6 +227,205 @@ eval_voxblox_node: CMakeFiles/eval_voxblox_node.dir/rule
 CMakeFiles/eval_voxblox_node.dir/clean:
 	$(MAKE) -f CMakeFiles/eval_voxblox_node.dir/build.make CMakeFiles/eval_voxblox_node.dir/clean
 .PHONY : CMakeFiles/eval_voxblox_node.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/NBVPlanner.dir
+
+# All Build rule for target.
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_topic_tools_gencfg.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/trajectory_generation_gencfg.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_ros_gencfg.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_gencfg.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_py.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_cpp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_eus.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_lisp.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_eus.dir/all
+	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/depend
+	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=18,19,20,21 "Built target NBVPlanner"
+.PHONY : CMakeFiles/NBVPlanner.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/NBVPlanner.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 4
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/NBVPlanner.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/NBVPlanner.dir/rule
+
+# Convenience name for target.
+NBVPlanner: CMakeFiles/NBVPlanner.dir/rule
+
+.PHONY : NBVPlanner
+
+# clean rule for target.
+CMakeFiles/NBVPlanner.dir/clean:
+	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/clean
+.PHONY : CMakeFiles/NBVPlanner.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/AEP.dir
+
+# All Build rule for target.
+CMakeFiles/AEP.dir/all: CMakeFiles/AEPlanner.dir/all
+	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/depend
+	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=1,2 "Built target AEP"
+.PHONY : CMakeFiles/AEP.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/AEP.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 7
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/AEP.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/AEP.dir/rule
+
+# Convenience name for target.
+AEP: CMakeFiles/AEP.dir/rule
+
+.PHONY : AEP
+
+# clean rule for target.
+CMakeFiles/AEP.dir/clean:
+	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/clean
+.PHONY : CMakeFiles/AEP.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/cache_nodes_generate_messages_nodejs.dir
+
+# All Build rule for target.
+CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all:
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/depend
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target cache_nodes_generate_messages_nodejs"
+.PHONY : CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/cache_nodes_generate_messages_nodejs.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/cache_nodes_generate_messages_nodejs.dir/rule
+
+# Convenience name for target.
+cache_nodes_generate_messages_nodejs: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/rule
+
+.PHONY : cache_nodes_generate_messages_nodejs
+
+# clean rule for target.
+CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean:
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean
+.PHONY : CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/pcl_msgs_generate_messages_lisp.dir
@@ -468,6 +644,33 @@ CMakeFiles/nav_msgs_generate_messages_eus.dir/clean:
 .PHONY : CMakeFiles/nav_msgs_generate_messages_eus.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/comm_msgs_generate_messages_lisp.dir
+
+# All Build rule for target.
+CMakeFiles/comm_msgs_generate_messages_lisp.dir/all:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_lisp.dir/build.make CMakeFiles/comm_msgs_generate_messages_lisp.dir/depend
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_lisp.dir/build.make CMakeFiles/comm_msgs_generate_messages_lisp.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target comm_msgs_generate_messages_lisp"
+.PHONY : CMakeFiles/comm_msgs_generate_messages_lisp.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/comm_msgs_generate_messages_lisp.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/comm_msgs_generate_messages_lisp.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/comm_msgs_generate_messages_lisp.dir/rule
+
+# Convenience name for target.
+comm_msgs_generate_messages_lisp: CMakeFiles/comm_msgs_generate_messages_lisp.dir/rule
+
+.PHONY : comm_msgs_generate_messages_lisp
+
+# clean rule for target.
+CMakeFiles/comm_msgs_generate_messages_lisp.dir/clean:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_lisp.dir/build.make CMakeFiles/comm_msgs_generate_messages_lisp.dir/clean
+.PHONY : CMakeFiles/comm_msgs_generate_messages_lisp.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/std_srvs_generate_messages_eus.dir
 
 # All Build rule for target.
@@ -657,6 +860,60 @@ CMakeFiles/tf_generate_messages_lisp.dir/clean:
 .PHONY : CMakeFiles/tf_generate_messages_lisp.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/cache_nodes_generate_messages_py.dir
+
+# All Build rule for target.
+CMakeFiles/cache_nodes_generate_messages_py.dir/all:
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/depend
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target cache_nodes_generate_messages_py"
+.PHONY : CMakeFiles/cache_nodes_generate_messages_py.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/cache_nodes_generate_messages_py.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/cache_nodes_generate_messages_py.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/cache_nodes_generate_messages_py.dir/rule
+
+# Convenience name for target.
+cache_nodes_generate_messages_py: CMakeFiles/cache_nodes_generate_messages_py.dir/rule
+
+.PHONY : cache_nodes_generate_messages_py
+
+# clean rule for target.
+CMakeFiles/cache_nodes_generate_messages_py.dir/clean:
+	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/clean
+.PHONY : CMakeFiles/cache_nodes_generate_messages_py.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/rviz_generate_messages_eus.dir
+
+# All Build rule for target.
+CMakeFiles/rviz_generate_messages_eus.dir/all:
+	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/depend
+	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target rviz_generate_messages_eus"
+.PHONY : CMakeFiles/rviz_generate_messages_eus.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/rviz_generate_messages_eus.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/rviz_generate_messages_eus.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/rviz_generate_messages_eus.dir/rule
+
+# Convenience name for target.
+rviz_generate_messages_eus: CMakeFiles/rviz_generate_messages_eus.dir/rule
+
+.PHONY : rviz_generate_messages_eus
+
+# clean rule for target.
+CMakeFiles/rviz_generate_messages_eus.dir/clean:
+	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/clean
+.PHONY : CMakeFiles/rviz_generate_messages_eus.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/sensor_msgs_generate_messages_py.dir
 
 # All Build rule for target.
@@ -790,6 +1047,33 @@ rviz_generate_messages_cpp: CMakeFiles/rviz_generate_messages_cpp.dir/rule
 CMakeFiles/rviz_generate_messages_cpp.dir/clean:
 	$(MAKE) -f CMakeFiles/rviz_generate_messages_cpp.dir/build.make CMakeFiles/rviz_generate_messages_cpp.dir/clean
 .PHONY : CMakeFiles/rviz_generate_messages_cpp.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/comm_msgs_generate_messages_py.dir
+
+# All Build rule for target.
+CMakeFiles/comm_msgs_generate_messages_py.dir/all:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_py.dir/build.make CMakeFiles/comm_msgs_generate_messages_py.dir/depend
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_py.dir/build.make CMakeFiles/comm_msgs_generate_messages_py.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target comm_msgs_generate_messages_py"
+.PHONY : CMakeFiles/comm_msgs_generate_messages_py.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/comm_msgs_generate_messages_py.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/comm_msgs_generate_messages_py.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/comm_msgs_generate_messages_py.dir/rule
+
+# Convenience name for target.
+comm_msgs_generate_messages_py: CMakeFiles/comm_msgs_generate_messages_py.dir/rule
+
+.PHONY : comm_msgs_generate_messages_py
+
+# clean rule for target.
+CMakeFiles/comm_msgs_generate_messages_py.dir/clean:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_py.dir/build.make CMakeFiles/comm_msgs_generate_messages_py.dir/clean
+.PHONY : CMakeFiles/comm_msgs_generate_messages_py.dir/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/geometry_msgs_generate_messages_nodejs.dir
@@ -1386,6 +1670,33 @@ CMakeFiles/nodelet_generate_messages_py.dir/clean:
 .PHONY : CMakeFiles/nodelet_generate_messages_py.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/comm_msgs_generate_messages_cpp.dir
+
+# All Build rule for target.
+CMakeFiles/comm_msgs_generate_messages_cpp.dir/all:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_cpp.dir/build.make CMakeFiles/comm_msgs_generate_messages_cpp.dir/depend
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_cpp.dir/build.make CMakeFiles/comm_msgs_generate_messages_cpp.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target comm_msgs_generate_messages_cpp"
+.PHONY : CMakeFiles/comm_msgs_generate_messages_cpp.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/comm_msgs_generate_messages_cpp.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/comm_msgs_generate_messages_cpp.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/comm_msgs_generate_messages_cpp.dir/rule
+
+# Convenience name for target.
+comm_msgs_generate_messages_cpp: CMakeFiles/comm_msgs_generate_messages_cpp.dir/rule
+
+.PHONY : comm_msgs_generate_messages_cpp
+
+# clean rule for target.
+CMakeFiles/comm_msgs_generate_messages_cpp.dir/clean:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_cpp.dir/build.make CMakeFiles/comm_msgs_generate_messages_cpp.dir/clean
+.PHONY : CMakeFiles/comm_msgs_generate_messages_cpp.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/run_tests.dir
 
 # All Build rule for target.
@@ -1443,6 +1754,7 @@ CMakeFiles/std_srvs_generate_messages_cpp.dir/clean:
 # Target rules for target CMakeFiles/AEPlanner.dir
 
 # All Build rule for target.
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_eus.dir/all
@@ -1451,6 +1763,7 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_lisp.d
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_eus.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/nodelet_topic_tools_gencfg.dir/all
@@ -1458,11 +1771,14 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_cpp.dir/a
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf_generate_messages_lisp.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_py.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/rviz_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/rviz_generate_messages_cpp.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_cpp.dir/all
@@ -1482,13 +1798,11 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_cpp.dir/
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/nodelet_generate_messages_py.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_cpp.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_eus.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_lisp.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/roscpp_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/actionlib_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/roscpp_generate_messages_nodejs.dir/all
@@ -1513,6 +1827,7 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/bond_generate_messages_cpp.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/dynamic_reconfigure_gencfg.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/nodelet_generate_messages_eus.dir/all
@@ -1523,7 +1838,6 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/bond_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_eus.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_nodejs.dir/all
@@ -1544,6 +1858,10 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_eus.dir/
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf_generate_messages_cpp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_py.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_eus.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_lisp.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/roscpp_generate_messages_lisp.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/tf_generate_messages_py.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/rviz_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/rviz_generate_messages_nodejs.dir/all
@@ -1553,10 +1871,8 @@ CMakeFiles/AEPlanner.dir/all: CMakeFiles/bond_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_eus.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_lisp.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_nodejs.dir/all
+CMakeFiles/AEPlanner.dir/all: CMakeFiles/comm_msgs_generate_messages_nodejs.dir/all
 CMakeFiles/AEPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_eus.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/rviz_generate_messages_eus.dir/all
-CMakeFiles/AEPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_py.dir/all
 	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/depend
 	$(MAKE) -f CMakeFiles/AEPlanner.dir/build.make CMakeFiles/AEPlanner.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=3,4,5,6,7 "Built target AEPlanner"
@@ -1659,87 +1975,6 @@ map_msgs_generate_messages_cpp: CMakeFiles/map_msgs_generate_messages_cpp.dir/ru
 CMakeFiles/map_msgs_generate_messages_cpp.dir/clean:
 	$(MAKE) -f CMakeFiles/map_msgs_generate_messages_cpp.dir/build.make CMakeFiles/map_msgs_generate_messages_cpp.dir/clean
 .PHONY : CMakeFiles/map_msgs_generate_messages_cpp.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/std_msgs_generate_messages_eus.dir
-
-# All Build rule for target.
-CMakeFiles/std_msgs_generate_messages_eus.dir/all:
-	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/depend
-	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target std_msgs_generate_messages_eus"
-.PHONY : CMakeFiles/std_msgs_generate_messages_eus.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/std_msgs_generate_messages_eus.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/std_msgs_generate_messages_eus.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/std_msgs_generate_messages_eus.dir/rule
-
-# Convenience name for target.
-std_msgs_generate_messages_eus: CMakeFiles/std_msgs_generate_messages_eus.dir/rule
-
-.PHONY : std_msgs_generate_messages_eus
-
-# clean rule for target.
-CMakeFiles/std_msgs_generate_messages_eus.dir/clean:
-	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/clean
-.PHONY : CMakeFiles/std_msgs_generate_messages_eus.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/std_srvs_generate_messages_lisp.dir
-
-# All Build rule for target.
-CMakeFiles/std_srvs_generate_messages_lisp.dir/all:
-	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/depend
-	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target std_srvs_generate_messages_lisp"
-.PHONY : CMakeFiles/std_srvs_generate_messages_lisp.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/std_srvs_generate_messages_lisp.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/std_srvs_generate_messages_lisp.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/std_srvs_generate_messages_lisp.dir/rule
-
-# Convenience name for target.
-std_srvs_generate_messages_lisp: CMakeFiles/std_srvs_generate_messages_lisp.dir/rule
-
-.PHONY : std_srvs_generate_messages_lisp
-
-# clean rule for target.
-CMakeFiles/std_srvs_generate_messages_lisp.dir/clean:
-	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/clean
-.PHONY : CMakeFiles/std_srvs_generate_messages_lisp.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/roscpp_generate_messages_lisp.dir
-
-# All Build rule for target.
-CMakeFiles/roscpp_generate_messages_lisp.dir/all:
-	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/depend
-	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target roscpp_generate_messages_lisp"
-.PHONY : CMakeFiles/roscpp_generate_messages_lisp.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/roscpp_generate_messages_lisp.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/roscpp_generate_messages_lisp.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/roscpp_generate_messages_lisp.dir/rule
-
-# Convenience name for target.
-roscpp_generate_messages_lisp: CMakeFiles/roscpp_generate_messages_lisp.dir/rule
-
-.PHONY : roscpp_generate_messages_lisp
-
-# clean rule for target.
-CMakeFiles/roscpp_generate_messages_lisp.dir/clean:
-	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/clean
-.PHONY : CMakeFiles/roscpp_generate_messages_lisp.dir/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/clean_test_results.dir
@@ -2444,6 +2679,60 @@ CMakeFiles/bond_generate_messages_cpp.dir/clean:
 .PHONY : CMakeFiles/bond_generate_messages_cpp.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/NBV.dir
+
+# All Build rule for target.
+CMakeFiles/NBV.dir/all: CMakeFiles/NBVPlanner.dir/all
+	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/depend
+	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=16,17 "Built target NBV"
+.PHONY : CMakeFiles/NBV.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/NBV.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 6
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/NBV.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/NBV.dir/rule
+
+# Convenience name for target.
+NBV: CMakeFiles/NBV.dir/rule
+
+.PHONY : NBV
+
+# clean rule for target.
+CMakeFiles/NBV.dir/clean:
+	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/clean
+.PHONY : CMakeFiles/NBV.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/tf2_msgs_generate_messages_py.dir
+
+# All Build rule for target.
+CMakeFiles/tf2_msgs_generate_messages_py.dir/all:
+	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/depend
+	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target tf2_msgs_generate_messages_py"
+.PHONY : CMakeFiles/tf2_msgs_generate_messages_py.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/tf2_msgs_generate_messages_py.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/tf2_msgs_generate_messages_py.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/tf2_msgs_generate_messages_py.dir/rule
+
+# Convenience name for target.
+tf2_msgs_generate_messages_py: CMakeFiles/tf2_msgs_generate_messages_py.dir/rule
+
+.PHONY : tf2_msgs_generate_messages_py
+
+# clean rule for target.
+CMakeFiles/tf2_msgs_generate_messages_py.dir/clean:
+	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/clean
+.PHONY : CMakeFiles/tf2_msgs_generate_messages_py.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/pcl_msgs_generate_messages_cpp.dir
 
 # All Build rule for target.
@@ -2712,60 +3001,6 @@ topic_tools_generate_messages_eus: CMakeFiles/topic_tools_generate_messages_eus.
 CMakeFiles/topic_tools_generate_messages_eus.dir/clean:
 	$(MAKE) -f CMakeFiles/topic_tools_generate_messages_eus.dir/build.make CMakeFiles/topic_tools_generate_messages_eus.dir/clean
 .PHONY : CMakeFiles/topic_tools_generate_messages_eus.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/tf2_msgs_generate_messages_py.dir
-
-# All Build rule for target.
-CMakeFiles/tf2_msgs_generate_messages_py.dir/all:
-	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/depend
-	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target tf2_msgs_generate_messages_py"
-.PHONY : CMakeFiles/tf2_msgs_generate_messages_py.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/tf2_msgs_generate_messages_py.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/tf2_msgs_generate_messages_py.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/tf2_msgs_generate_messages_py.dir/rule
-
-# Convenience name for target.
-tf2_msgs_generate_messages_py: CMakeFiles/tf2_msgs_generate_messages_py.dir/rule
-
-.PHONY : tf2_msgs_generate_messages_py
-
-# clean rule for target.
-CMakeFiles/tf2_msgs_generate_messages_py.dir/clean:
-	$(MAKE) -f CMakeFiles/tf2_msgs_generate_messages_py.dir/build.make CMakeFiles/tf2_msgs_generate_messages_py.dir/clean
-.PHONY : CMakeFiles/tf2_msgs_generate_messages_py.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/NBV.dir
-
-# All Build rule for target.
-CMakeFiles/NBV.dir/all: CMakeFiles/NBVPlanner.dir/all
-	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/depend
-	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=16,17 "Built target NBV"
-.PHONY : CMakeFiles/NBV.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/NBV.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 6
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/NBV.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/NBV.dir/rule
-
-# Convenience name for target.
-NBV: CMakeFiles/NBV.dir/rule
-
-.PHONY : NBV
-
-# clean rule for target.
-CMakeFiles/NBV.dir/clean:
-	$(MAKE) -f CMakeFiles/NBV.dir/build.make CMakeFiles/NBV.dir/clean
-.PHONY : CMakeFiles/NBV.dir/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/voxblox_msgs_generate_messages_lisp.dir
@@ -3308,6 +3543,114 @@ CMakeFiles/voxblox_msgs_generate_messages_py.dir/clean:
 .PHONY : CMakeFiles/voxblox_msgs_generate_messages_py.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/std_msgs_generate_messages_eus.dir
+
+# All Build rule for target.
+CMakeFiles/std_msgs_generate_messages_eus.dir/all:
+	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/depend
+	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target std_msgs_generate_messages_eus"
+.PHONY : CMakeFiles/std_msgs_generate_messages_eus.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/std_msgs_generate_messages_eus.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/std_msgs_generate_messages_eus.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/std_msgs_generate_messages_eus.dir/rule
+
+# Convenience name for target.
+std_msgs_generate_messages_eus: CMakeFiles/std_msgs_generate_messages_eus.dir/rule
+
+.PHONY : std_msgs_generate_messages_eus
+
+# clean rule for target.
+CMakeFiles/std_msgs_generate_messages_eus.dir/clean:
+	$(MAKE) -f CMakeFiles/std_msgs_generate_messages_eus.dir/build.make CMakeFiles/std_msgs_generate_messages_eus.dir/clean
+.PHONY : CMakeFiles/std_msgs_generate_messages_eus.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/std_srvs_generate_messages_lisp.dir
+
+# All Build rule for target.
+CMakeFiles/std_srvs_generate_messages_lisp.dir/all:
+	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/depend
+	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target std_srvs_generate_messages_lisp"
+.PHONY : CMakeFiles/std_srvs_generate_messages_lisp.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/std_srvs_generate_messages_lisp.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/std_srvs_generate_messages_lisp.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/std_srvs_generate_messages_lisp.dir/rule
+
+# Convenience name for target.
+std_srvs_generate_messages_lisp: CMakeFiles/std_srvs_generate_messages_lisp.dir/rule
+
+.PHONY : std_srvs_generate_messages_lisp
+
+# clean rule for target.
+CMakeFiles/std_srvs_generate_messages_lisp.dir/clean:
+	$(MAKE) -f CMakeFiles/std_srvs_generate_messages_lisp.dir/build.make CMakeFiles/std_srvs_generate_messages_lisp.dir/clean
+.PHONY : CMakeFiles/std_srvs_generate_messages_lisp.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/roscpp_generate_messages_lisp.dir
+
+# All Build rule for target.
+CMakeFiles/roscpp_generate_messages_lisp.dir/all:
+	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/depend
+	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target roscpp_generate_messages_lisp"
+.PHONY : CMakeFiles/roscpp_generate_messages_lisp.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/roscpp_generate_messages_lisp.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/roscpp_generate_messages_lisp.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/roscpp_generate_messages_lisp.dir/rule
+
+# Convenience name for target.
+roscpp_generate_messages_lisp: CMakeFiles/roscpp_generate_messages_lisp.dir/rule
+
+.PHONY : roscpp_generate_messages_lisp
+
+# clean rule for target.
+CMakeFiles/roscpp_generate_messages_lisp.dir/clean:
+	$(MAKE) -f CMakeFiles/roscpp_generate_messages_lisp.dir/build.make CMakeFiles/roscpp_generate_messages_lisp.dir/clean
+.PHONY : CMakeFiles/roscpp_generate_messages_lisp.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/comm_msgs_generate_messages_eus.dir
+
+# All Build rule for target.
+CMakeFiles/comm_msgs_generate_messages_eus.dir/all:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_eus.dir/build.make CMakeFiles/comm_msgs_generate_messages_eus.dir/depend
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_eus.dir/build.make CMakeFiles/comm_msgs_generate_messages_eus.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target comm_msgs_generate_messages_eus"
+.PHONY : CMakeFiles/comm_msgs_generate_messages_eus.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/comm_msgs_generate_messages_eus.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/comm_msgs_generate_messages_eus.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/comm_msgs_generate_messages_eus.dir/rule
+
+# Convenience name for target.
+comm_msgs_generate_messages_eus: CMakeFiles/comm_msgs_generate_messages_eus.dir/rule
+
+.PHONY : comm_msgs_generate_messages_eus
+
+# clean rule for target.
+CMakeFiles/comm_msgs_generate_messages_eus.dir/clean:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_eus.dir/build.make CMakeFiles/comm_msgs_generate_messages_eus.dir/clean
+.PHONY : CMakeFiles/comm_msgs_generate_messages_eus.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/tf_generate_messages_py.dir
 
 # All Build rule for target.
@@ -3524,146 +3867,6 @@ CMakeFiles/map_msgs_generate_messages_lisp.dir/clean:
 .PHONY : CMakeFiles/map_msgs_generate_messages_lisp.dir/clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/NBVPlanner.dir
-
-# All Build rule for target.
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_topic_tools_gencfg.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/roscpp_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/trajectory_generation_gencfg.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/geometry_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/mrs_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_ros_gencfg.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nav_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/pcl_msgs_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/dynamic_reconfigure_gencfg.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/topic_tools_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/std_srvs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/actionlib_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/sensor_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/nodelet_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf2_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rosgraph_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/visualization_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/voxblox_msgs_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/tf_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_py.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_cpp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/bond_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_lisp.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/map_msgs_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/rviz_generate_messages_eus.dir/all
-CMakeFiles/NBVPlanner.dir/all: CMakeFiles/cache_nodes_generate_messages_py.dir/all
-	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/depend
-	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=18,19,20,21 "Built target NBVPlanner"
-.PHONY : CMakeFiles/NBVPlanner.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/NBVPlanner.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 4
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/NBVPlanner.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/NBVPlanner.dir/rule
-
-# Convenience name for target.
-NBVPlanner: CMakeFiles/NBVPlanner.dir/rule
-
-.PHONY : NBVPlanner
-
-# clean rule for target.
-CMakeFiles/NBVPlanner.dir/clean:
-	$(MAKE) -f CMakeFiles/NBVPlanner.dir/build.make CMakeFiles/NBVPlanner.dir/clean
-.PHONY : CMakeFiles/NBVPlanner.dir/clean
-
-#=============================================================================
 # Target rules for target CMakeFiles/map_msgs_generate_messages_nodejs.dir
 
 # All Build rule for target.
@@ -3691,6 +3894,33 @@ CMakeFiles/map_msgs_generate_messages_nodejs.dir/clean:
 .PHONY : CMakeFiles/map_msgs_generate_messages_nodejs.dir/clean
 
 #=============================================================================
+# Target rules for target CMakeFiles/comm_msgs_generate_messages_nodejs.dir
+
+# All Build rule for target.
+CMakeFiles/comm_msgs_generate_messages_nodejs.dir/all:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_nodejs.dir/build.make CMakeFiles/comm_msgs_generate_messages_nodejs.dir/depend
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_nodejs.dir/build.make CMakeFiles/comm_msgs_generate_messages_nodejs.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target comm_msgs_generate_messages_nodejs"
+.PHONY : CMakeFiles/comm_msgs_generate_messages_nodejs.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/comm_msgs_generate_messages_nodejs.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/comm_msgs_generate_messages_nodejs.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
+.PHONY : CMakeFiles/comm_msgs_generate_messages_nodejs.dir/rule
+
+# Convenience name for target.
+comm_msgs_generate_messages_nodejs: CMakeFiles/comm_msgs_generate_messages_nodejs.dir/rule
+
+.PHONY : comm_msgs_generate_messages_nodejs
+
+# clean rule for target.
+CMakeFiles/comm_msgs_generate_messages_nodejs.dir/clean:
+	$(MAKE) -f CMakeFiles/comm_msgs_generate_messages_nodejs.dir/build.make CMakeFiles/comm_msgs_generate_messages_nodejs.dir/clean
+.PHONY : CMakeFiles/comm_msgs_generate_messages_nodejs.dir/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/cache_nodes_generate_messages_eus.dir
 
 # All Build rule for target.
@@ -3716,114 +3946,6 @@ cache_nodes_generate_messages_eus: CMakeFiles/cache_nodes_generate_messages_eus.
 CMakeFiles/cache_nodes_generate_messages_eus.dir/clean:
 	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_eus.dir/build.make CMakeFiles/cache_nodes_generate_messages_eus.dir/clean
 .PHONY : CMakeFiles/cache_nodes_generate_messages_eus.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/AEP.dir
-
-# All Build rule for target.
-CMakeFiles/AEP.dir/all: CMakeFiles/AEPlanner.dir/all
-	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/depend
-	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num=1,2 "Built target AEP"
-.PHONY : CMakeFiles/AEP.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/AEP.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 7
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/AEP.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/AEP.dir/rule
-
-# Convenience name for target.
-AEP: CMakeFiles/AEP.dir/rule
-
-.PHONY : AEP
-
-# clean rule for target.
-CMakeFiles/AEP.dir/clean:
-	$(MAKE) -f CMakeFiles/AEP.dir/build.make CMakeFiles/AEP.dir/clean
-.PHONY : CMakeFiles/AEP.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/cache_nodes_generate_messages_nodejs.dir
-
-# All Build rule for target.
-CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all:
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/depend
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target cache_nodes_generate_messages_nodejs"
-.PHONY : CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/cache_nodes_generate_messages_nodejs.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/cache_nodes_generate_messages_nodejs.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/cache_nodes_generate_messages_nodejs.dir/rule
-
-# Convenience name for target.
-cache_nodes_generate_messages_nodejs: CMakeFiles/cache_nodes_generate_messages_nodejs.dir/rule
-
-.PHONY : cache_nodes_generate_messages_nodejs
-
-# clean rule for target.
-CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean:
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_nodejs.dir/build.make CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean
-.PHONY : CMakeFiles/cache_nodes_generate_messages_nodejs.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/rviz_generate_messages_eus.dir
-
-# All Build rule for target.
-CMakeFiles/rviz_generate_messages_eus.dir/all:
-	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/depend
-	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target rviz_generate_messages_eus"
-.PHONY : CMakeFiles/rviz_generate_messages_eus.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/rviz_generate_messages_eus.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/rviz_generate_messages_eus.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/rviz_generate_messages_eus.dir/rule
-
-# Convenience name for target.
-rviz_generate_messages_eus: CMakeFiles/rviz_generate_messages_eus.dir/rule
-
-.PHONY : rviz_generate_messages_eus
-
-# clean rule for target.
-CMakeFiles/rviz_generate_messages_eus.dir/clean:
-	$(MAKE) -f CMakeFiles/rviz_generate_messages_eus.dir/build.make CMakeFiles/rviz_generate_messages_eus.dir/clean
-.PHONY : CMakeFiles/rviz_generate_messages_eus.dir/clean
-
-#=============================================================================
-# Target rules for target CMakeFiles/cache_nodes_generate_messages_py.dir
-
-# All Build rule for target.
-CMakeFiles/cache_nodes_generate_messages_py.dir/all:
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/depend
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles --progress-num= "Built target cache_nodes_generate_messages_py"
-.PHONY : CMakeFiles/cache_nodes_generate_messages_py.dir/all
-
-# Build rule for subdir invocation for target.
-CMakeFiles/cache_nodes_generate_messages_py.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/cache_nodes_generate_messages_py.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/joaomendes/workspace1/src/motion_planning_python/build/CMakeFiles 0
-.PHONY : CMakeFiles/cache_nodes_generate_messages_py.dir/rule
-
-# Convenience name for target.
-cache_nodes_generate_messages_py: CMakeFiles/cache_nodes_generate_messages_py.dir/rule
-
-.PHONY : cache_nodes_generate_messages_py
-
-# clean rule for target.
-CMakeFiles/cache_nodes_generate_messages_py.dir/clean:
-	$(MAKE) -f CMakeFiles/cache_nodes_generate_messages_py.dir/build.make CMakeFiles/cache_nodes_generate_messages_py.dir/clean
-.PHONY : CMakeFiles/cache_nodes_generate_messages_py.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

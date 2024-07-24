@@ -1,11 +1,14 @@
-#include "NBV/NBVplanner.h"
+#include "motion_planning_python/NBV/NBVplanner.h"
 
 NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
 
-    ns = "uav1";
+    //ns = "uav1";
 
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "planner");
+
+    // Namespace
+    param_loader.loadParam("uav_namespace", ns);
 
     // Frames, Coordinates and Dimensions
     param_loader.loadParam("frame_id", frame_id);
@@ -50,7 +53,8 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
-    changeState(STATE_IDLE);
+    //changeState(STATE_IDLE);
+    state_ = STATE_IDLE;
     iteration_ = 0;
 
     // Get vertical FoV and setup camera
@@ -61,6 +65,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     tsdf_map_ = voxblox_server_.getTsdfMapPtr();
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     segment_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
+    segment_evaluator.setEsdfMap(esdf_map_);
             
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("planner");
@@ -81,6 +86,9 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
     pub_reference = nh_private_.advertise<mrs_msgs::Reference>("reference_out", 1);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
+    pub_frustum = nh_private_.advertise<visualization_msgs::Marker>("frustum_out", 10);
+    pub_voxels = nh_private_.advertise<visualization_msgs::MarkerArray>("unknown_voxels_out", 10);
+    pub_initial_reference = nh_private_.advertise<mrs_msgs::ReferenceStamped>("initial_reference_out", 5);
 
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
@@ -93,7 +101,8 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &NBVPlanner::callbackUavState, this);
-    sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &NBVPlanner::callbackControlManagerDiagnostics, this);
+    sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &NBVPlanner::callbackControlManagerDiag, this);
+    //sub_control_manager_diag =  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", ros::Duration(3.0), &NBVPlanner::timeoutControlManagerDiag, this);
     sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
@@ -121,9 +130,9 @@ double NBVPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool NBVPlanner::isPathCollisionFree(const eth_mav_msgs::EigenTrajectoryPointVector& path) const {
-    for (const eth_mav_msgs::EigenTrajectoryPoint& point : path) {
-        if (getMapDistance(point.position_W) < uav_radius) {
+bool NBVPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const {
+    for (const std::shared_ptr<rrt_star::Node>& node : path) {
+        if (getMapDistance(node->point.head(3)) < uav_radius) {
             return false;
         }
     }
@@ -150,8 +159,15 @@ void NBVPlanner::GetTransformation() {
 void NBVPlanner::NBV() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
+    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
     //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
+
+    std::shared_ptr<rrt_star::Node> root;
+    if (prev_best_branch.size() > 1) {
+        root = std::make_shared<rrt_star::Node>(prev_best_branch[1]);
+    } else {
+        root = std::make_shared<rrt_star::Node>(pose);
+    }
 
     root->cost = 0;
     root->score = root->gain;
@@ -168,7 +184,24 @@ void NBVPlanner::NBV() {
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
-    while (j < N_max || best_score_ == 0) {
+    if (prev_best_branch.size() > 0) {
+        previous_root = std::make_shared<rrt_star::Node>(prev_best_branch[0]);
+    }
+    while (j < N_max || best_score_ == 0.0) {
+        /*// Backtrack
+        if (collision_id_counter_ > 1000 * j) {
+            if (previous_root) {
+                //next_best_node = previous_root;
+                rotate();
+                changeState(STATE_WAITING_INITIALIZE);
+            } else {
+                ROS_INFO("[planner]: Enough");
+                collision_id_counter_ = 0;
+                break;
+            }
+            return;
+        }*/
+
         for (size_t i = 1; i < prev_best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -176,6 +209,9 @@ void NBVPlanner::NBV() {
             }
             
             const Eigen::Vector4d& node_position = prev_best_branch[i];
+
+            //double yaw;
+            //RRTStar.computeYaw(bounded_radius, yaw);
 
             std::shared_ptr<rrt_star::Node> nearest_node_best;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
@@ -210,7 +246,21 @@ void NBVPlanner::NBV() {
             trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
-            segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
+            trajectory_point.position_W = new_node_best->point.head(3);
+            trajectory_point.setFromYaw(new_node_best->point[3]);
+
+            double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
+            new_node_best->gain = result_best;
+
+            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+            //new_node_best->gain = result.first;
+            //new_node_best->point[3] = result.second;
+
+            /*eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
+            trajectory_point_gain.position_W = new_node_best->point.head(3);
+            trajectory_point_gain.setFromYaw(new_node_best->point[3]);
+            new_node_best->gain = segment_evaluator.computeGain(trajectory_point_gain);*/
+            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
@@ -235,8 +285,10 @@ void NBVPlanner::NBV() {
     
         prev_best_branch.clear();
 
+        Eigen::Vector4d rand_point_yaw;
         Eigen::Vector3d rand_point;
-        RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
+        RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
+        rand_point = rand_point_yaw.head(3);
         rand_point += root->point.head(3);
 
         std::shared_ptr<rrt_star::Node> nearest_node;
@@ -247,11 +299,7 @@ void NBVPlanner::NBV() {
         RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
 
         //std::shared_ptr<rrt_star::Node> new_node;
-        if (new_node->point[0] < 12 && new_node->point[0] > -12 && new_node->point[1] > -7.0 && new_node->point[1] < 7.0 && new_node->point[2] > 0 && new_node->point[2] < 12.5) {
-            continue;
-        }
-
-        if (new_node->point[2] < 0.5 || new_node->point[2] > 14.5) {
+        if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
             continue;
         }
 
@@ -264,15 +312,10 @@ void NBVPlanner::NBV() {
         //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes = RRTStar.findNearby(tree, new_node, radius);
         //new_node = RRTStar.chooseParent(new_node, nearby_nodes);
 
-        /*eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment;
-
-        trajectory_point.position_W.head(3) = new_node->parent->point.head(3);
-        trajectory_point.setFromYaw(new_node->parent->point[3]);
-        trajectory_segment.push_back(trajectory_point);
-
-        trajectory_point.position_W.head(3) = new_node->point.head(3);
-        trajectory_point.setFromYaw(new_node->point[3]);
-        trajectory_segment.push_back(trajectory_point);
+        // Collision Check
+        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
+        //trajectory_segment.push_back(new_node->parent);
+        trajectory_segment.push_back(new_node);
 
         bool success_collision = false;
         success_collision = isPathCollisionFree(trajectory_segment);
@@ -284,11 +327,26 @@ void NBVPlanner::NBV() {
             continue;
         }
 
-        trajectory_segment.clear();*/
+        trajectory_segment.clear();
         visualize_node(new_node->point, ns);
-        collision_id_counter_ = 0;
 
-        segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
+        new_node->point[3] = rand_point_yaw[3];
+        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
+        trajectory_point_gain.position_W = new_node->point.head(3);
+        trajectory_point_gain.setFromYaw(new_node->point[3]);
+        //new_node->gain = segment_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point_gain);
+        //ROS_INFO("[planner]: Best gain RayCast: %f", new_node->gain);
+        double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
+        new_node->gain = result;
+        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_gain);
+        //new_node->gain = result.first;
+        //new_node->point[3] = result.second;
+        //ROS_INFO("[planner]: Best gain AEP: %f", new_node->gain);
+        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
+        //ROS_INFO("[planner]: Best gain Bircher Optimized: %f", new_node->gain);
+        //new_node->gain = segment_evaluator.computeGain(trajectory_point_gain);
+        //ROS_INFO("[planner]: Best gain Bircher: %f", new_node->gain);
+        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
 
         //ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
 
@@ -300,6 +358,7 @@ void NBVPlanner::NBV() {
             best_node = new_node;
         }
 
+        //ROS_INFO("[planner]: Yaw: %f", new_node->point[3]);
         ROS_INFO("[planner]: Best Score: %f", new_node->score);
 
         //tree.push_back(new_node);
@@ -328,6 +387,119 @@ void NBVPlanner::NBV() {
 
 }
 
+double NBVPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
+
+  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+                                 vec3_t(pose.position.x, pose.position.y, pose.position.z));
+}
+
+void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
+    initial_reference.header.frame_id = ns + "/" + frame_id;
+    initial_reference.header.stamp = ros::Time::now();
+
+    ROS_INFO("[planner]: Flying 3 meters up");
+
+    initial_reference.reference.position.x = pose[0];
+    initial_reference.reference.position.y = pose[1];
+    initial_reference.reference.position.z = pose[2] + 3;
+    initial_reference.reference.heading = pose[3];
+    pub_initial_reference.publish(initial_reference);
+    // Max horizontal speed is 1 m/s so we wait 2 second between points
+    ros::Duration(3).sleep();
+
+    ROS_INFO("[planner]: Rotating 360 degrees");
+
+    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
+        initial_reference.reference.position.x = pose[0];
+        initial_reference.reference.position.y = pose[1];
+        initial_reference.reference.position.z = pose[2] + 3;
+        initial_reference.reference.heading = pose[3] + M_PI * i;
+        pub_initial_reference.publish(initial_reference);
+        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
+        ros::Duration(0.8*M_PI).sleep();
+    }
+
+    ros::Duration(0.5).sleep();
+
+    ROS_INFO("[planner]: Flying 2 meters down");
+
+    initial_reference.reference.position.x = pose[0];
+    initial_reference.reference.position.y = pose[1];
+    initial_reference.reference.position.z = pose[2] + 1;
+    initial_reference.reference.heading = pose[3];
+    pub_initial_reference.publish(initial_reference);
+    // Max horizontal speed is 1 m/s so we wait 2 second between points
+    ros::Duration(2).sleep();
+
+    /*// Initialization motion, necessary for the planning of initial paths.
+    // Move 10 meters in the z axis and then back to the initial position
+    initial_reference.reference.position.x = pose[0];
+    initial_reference.reference.position.y = pose[1];
+    initial_reference.reference.position.z = pose[2] + 12;
+    initial_reference.reference.heading = pose[3];
+    pub_initial_reference.publish(initial_reference);
+    // Max horizontal speed is 1 m/s so we wait 10 second between points
+    ros::Duration(12).sleep();
+
+    // Rotate 360 degrees
+    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
+        initial_reference.reference.position.x = pose[0];
+        initial_reference.reference.position.y = pose[1];
+        initial_reference.reference.position.z = pose[2] + 12;
+        initial_reference.reference.heading = pose[3] + M_PI * i;
+        pub_initial_reference.publish(initial_reference);
+        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
+        ros::Duration(0.8*M_PI).sleep();
+    }
+
+    // Wait for rotation to finish
+    ros::Duration(0.5).sleep();
+
+    initial_reference.reference.position.x = pose[0];
+    initial_reference.reference.position.y = pose[1] - 2.5;;
+    initial_reference.reference.position.z = pose[2] + 12;
+    initial_reference.reference.heading = pose[3] - M_PI/2;
+    pub_initial_reference.publish(initial_reference);
+    // Max horizontal speed is 1 m/s so we wait 4 seconds between points
+    ros::Duration(2.5).sleep();
+
+    initial_reference.reference.position.x = pose[0];
+    initial_reference.reference.position.y = pose[1] - 2.5;;
+    initial_reference.reference.position.z = pose[2] + 1;
+    initial_reference.reference.heading = pose[3] - M_PI/2;
+    pub_initial_reference.publish(initial_reference);
+    // Max horizontal speed is 1 m/s so we wait 9 second between points
+    ros::Duration(11).sleep();
+
+    // Move 1 meter in the x axis and then back to the initial position
+    for (double j = -2.5; j <= 0.0; j = j + 0.5) {
+        initial_reference.reference.position.x = pose[0];
+        initial_reference.reference.position.y = pose[1] + j;
+        initial_reference.reference.position.z = pose[2] + 1;
+        initial_reference.reference.heading = pose[3];
+        pub_initial_reference.publish(initial_reference);
+        // Max horizontal speed is 1 m/s so we wait 1 second between points
+        ros::Duration(0.5).sleep();
+    }*/
+}
+
+void NBVPlanner::rotate() {
+    mrs_msgs::ReferenceStamped initial_reference;
+    initial_reference.header.frame_id = ns + "/" + frame_id;
+    initial_reference.header.stamp = ros::Time::now();
+
+    // Rotate 360 degrees
+    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
+        initial_reference.reference.position.x = pose[0];
+        initial_reference.reference.position.y = pose[1];
+        initial_reference.reference.position.z = pose[2];
+        initial_reference.reference.heading = pose[3] + M_PI * i;
+        pub_initial_reference.publish(initial_reference);
+        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
+        ros::Duration(0.8*M_PI).sleep();
+    }
+}
+
 bool NBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
     if (!is_initialized) {
         res.success = false;
@@ -347,7 +519,7 @@ bool NBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigge
     }
 
     interrupted_ = false;
-    changeState(STATE_PLANNING);
+    changeState(STATE_INITIALIZE);
 
     res.success = true;
     res.message = "starting";
@@ -383,7 +555,7 @@ bool NBVPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger
 
 }
 
-void NBVPlanner::callbackControlManagerDiagnostics(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
+void NBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
     if (!is_initialized) {
         return;
     }
@@ -396,9 +568,26 @@ void NBVPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
         return;
     }
     ROS_INFO_ONCE("[planner]: getting UavState diagnostics");
-    uav_state = *msg;
-    pose = {uav_state.pose.position.x, uav_state.pose.position.y, uav_state.pose.position.z, -3.0};
+    geometry_msgs::Pose uav_state = msg->pose;
+    double yaw = mrs_lib::getYaw(uav_state);
+    pose = {uav_state.position.x, uav_state.position.y, uav_state.position.z, yaw};
 }
+
+// MUDAR VELOCIDADE ANGULAR 
+// MUDAR OPTIMIZACAO DO ANGULO 
+// MUDAR INICIALIZAÇÃO 
+
+/*void NBVPlanner::timeoutControlManagerDiag(const std::string& topic, const ros::Time& last_msg) {
+    ROS_INFO_ONCE("[planner]: getting ControlManager diagnostics");
+    if (!is_initialized) {
+        return;
+    }
+    if (!sub_control_manager_diag.hasMsg()) {
+        return;
+    }
+    ROS_INFO("[planner]: I AM GETTING THE INFO");
+    ROS_WARN_THROTTLE(1.0, "[planner]: Control manager diag timeouted!");
+}*/
 
 void NBVPlanner::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
@@ -411,7 +600,7 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
     const bool got_uav_state = sub_uav_state.hasMsg() && (ros::Time::now() - sub_uav_state.lastMsgTime()).toSec() < 2.0;
 
     if (!got_control_manager_diag || !got_uav_state) {
-        ROS_INFO_THROTTLE(1.0, "[planner]: waiting for data: ControlManager diag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
+        ROS_INFO_THROTTLE(1.0, "[planner]: waiting for data: ControlManagerDiag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
         return;
     } else {
         ready_to_plan_ = true;
@@ -429,6 +618,8 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
         ROS_INFO("[planner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
         set_variables = true;
     }
+
+    //const mrs_msgs::ControlManagerDiagnosticsConstPtr control_manager_diag_ = sub_control_manager_diag.getMsg();
     
     switch (state_) {
         case STATE_IDLE: {
@@ -439,31 +630,63 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             }
             break;
         }
-        case STATE_STOPPED: {break;}
+        case STATE_WAITING_INITIALIZE: {
+            if (control_manager_diag.tracker_status.have_goal) {
+                ROS_INFO("[planner]: tracker has goal");
+            } else {
+                ROS_INFO("[planner]: waiting for command");
+                changeState(STATE_PLANNING);
+            }
+            break;
+        }
+        case STATE_INITIALIZE: {
+            mrs_msgs::ReferenceStamped initial_reference;
+            initialize(initial_reference);
+            changeState(STATE_WAITING_INITIALIZE);
+            break;
+        }
         case STATE_PLANNING: {
             NBV();
+            clear_all_voxels();
 
-            if (state_ == STATE_STOPPED) {
+            if (state_ != STATE_PLANNING) {
                 break;
             }
 
             iteration_ += 1;
 
+            current_waypoint_.position.x = next_best_node->point[0];
+            current_waypoint_.position.y = next_best_node->point[1];
+            current_waypoint_.position.z = next_best_node->point[2];
+            current_waypoint_.heading = next_best_node->point[3];
+
+            visualize_frustum(next_best_node);
+            visualize_unknown_voxels(next_best_node);
+
             mrs_msgs::GetPathSrv srv_get_path;
 
-            srv_get_path.request.path.header.frame_id = "uav1/" + frame_id;
+            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
             srv_get_path.request.path.header.stamp = ros::Time::now();
             srv_get_path.request.path.fly_now = false;
             srv_get_path.request.path.use_heading = true;
 
             mrs_msgs::Reference reference;
 
+            // Add parent node so UAV goes to last incomplete node
+            if (next_best_node->parent) {
+                reference.position.x = next_best_node->parent->point[0];
+                reference.position.y = next_best_node->parent->point[1];
+                reference.position.z = next_best_node->parent->point[2];
+                reference.heading = next_best_node->parent->point[3];
+                srv_get_path.request.path.points.push_back(reference);
+            }
+
+            // Add Node
             reference.position.x = next_best_node->point[0];
             reference.position.y = next_best_node->point[1];
             reference.position.z = next_best_node->point[2];
             reference.heading = next_best_node->point[3];
             pub_reference.publish(reference);
-
             srv_get_path.request.path.points.push_back(reference);
             bool success = sc_trajectory_generation.call(srv_get_path);
 
@@ -508,13 +731,28 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
         case STATE_MOVING: {
             if (control_manager_diag.tracker_status.have_goal) {
                 ROS_INFO("[planner]: tracker has goal");
+                mrs_msgs::UavState::ConstPtr uav_state_here = sub_uav_state.getMsg();
+                geometry_msgs::Pose current_pose = uav_state_here->pose;
+                double current_yaw = mrs_lib::getYaw(current_pose);
+
+                double dist = distance(current_waypoint_, current_pose);
+                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
+                ROS_INFO("[planner]: Distance to waypoint: %.2f", dist);
+                if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
+                    changeState(STATE_PLANNING);
+                }
             } else {
                 ROS_INFO("[planner]: waiting for command");
                 changeState(STATE_PLANNING);
             }
             break;
         }
-
+        case STATE_STOPPED: {
+            ROS_INFO_ONCE("[planner]: Total Iterations: %d", iteration_);
+            ROS_INFO("[planner]: Shutting down.");
+            ros::shutdown();
+            return;
+        }
         default: {
             if (control_manager_diag.tracker_status.have_goal) {
                 ROS_INFO("[planner]: tracker has goal");
@@ -673,6 +911,72 @@ void NBVPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, cons
     }
 }
 
+void NBVPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
+    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
+    trajectory_point_visualize.position_W = position->point.head(3);
+    trajectory_point_visualize.setFromYaw(position->point[3]);
+    
+    visualization_msgs::Marker frustum;
+    frustum.header.frame_id = ns + "/" + frame_id;
+    frustum.header.stamp = ros::Time::now();
+    frustum.ns = "camera_frustum";
+    frustum.id = 0;
+    frustum.type = visualization_msgs::Marker::LINE_LIST;
+    frustum.action = visualization_msgs::Marker::ADD;
+
+    // Line width
+    frustum.scale.x = 0.02;
+
+    frustum.color.a = 1.0;
+    frustum.color.r = 1.0;
+    frustum.color.g = 0.0;
+    frustum.color.b = 0.0;
+
+    std::vector<geometry_msgs::Point> points;
+    segment_evaluator.visualize_frustum(trajectory_point_visualize, points);
+
+    frustum.points = points;
+    frustum.lifetime = ros::Duration(10.0);
+    pub_frustum.publish(frustum);
+}
+
+void NBVPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position) {
+    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
+    trajectory_point_visualize.position_W = position->point.head(3);
+    trajectory_point_visualize.setFromYaw(position->point[3]);
+
+    voxblox::Pointcloud voxel_points;
+    segment_evaluator.visualizeGainAEP(trajectory_point_visualize, voxel_points);
+    
+    visualization_msgs::MarkerArray voxels_marker;
+    for (size_t i = 0; i < voxel_points.size(); ++i) {
+        visualization_msgs::Marker unknown_voxel;
+        unknown_voxel.header.frame_id = ns + "/" + frame_id;
+        unknown_voxel.header.stamp = ros::Time::now();
+        unknown_voxel.ns = "unknown_voxels";
+        unknown_voxel.id = i;
+        unknown_voxel.type = visualization_msgs::Marker::CUBE;
+        unknown_voxel.action = visualization_msgs::Marker::ADD;
+
+        // Voxel size
+        unknown_voxel.scale.x = 0.2;
+        unknown_voxel.scale.y = 0.2;
+        unknown_voxel.scale.z = 0.2;
+
+        unknown_voxel.color.a = 0.5;
+        unknown_voxel.color.r = 0.0;
+        unknown_voxel.color.g = 1.0;
+        unknown_voxel.color.b = 0.0;
+
+        unknown_voxel.pose.position.x = voxel_points[i].x();
+        unknown_voxel.pose.position.y = voxel_points[i].y();
+        unknown_voxel.pose.position.z = voxel_points[i].z();
+        unknown_voxel.lifetime = ros::Duration(3.0);
+        voxels_marker.markers.push_back(unknown_voxel);
+    }
+    pub_voxels.publish(voxels_marker);
+}
+
 void NBVPlanner::clear_node() {
     visualization_msgs::Marker clear_node;
     clear_node.header.stamp = ros::Time::now();
@@ -681,6 +985,14 @@ void NBVPlanner::clear_node() {
     clear_node.action = visualization_msgs::Marker::DELETE;
     node_id_counter_--;
     pub_markers.publish(clear_node);
+}
+
+void NBVPlanner::clear_all_voxels() {
+    visualization_msgs::Marker clear_voxels;
+    clear_voxels.header.stamp = ros::Time::now();
+    clear_voxels.ns = "unknown_voxels";
+    clear_voxels.action = visualization_msgs::Marker::DELETEALL;
+    pub_voxels.publish(clear_voxels);
 }
 
 void NBVPlanner::clearMarkers() {
