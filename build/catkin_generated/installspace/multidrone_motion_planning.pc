@@ -1,0 +1,8 @@
+prefix=/usr/local
+
+Name: multidrone_motion_planning
+Description: Description of multidrone_motion_planning
+Version: 0.0.0
+Cflags: -I${prefix}/include -I/usr/include/eigen3
+Libs: -L${prefix}/lib -lNBVMultiPlanner -lAEPMultiPlanner
+Requires: rospy roscpp mrs_msgs mrs_lib std_srvs visualization_msgs trajectory_generation voxblox_ros comm_msgs minkindr_conversions cache_nodes process_pointcloud multiagent_collision_check motion_planning_python

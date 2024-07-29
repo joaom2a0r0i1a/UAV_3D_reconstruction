@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+    <!-- Defines name of the namespace of the drones -->
+    <arg name="UAV_NAME" default="$(env UAV_NAME)" />
+    <arg name="LOGGER_DEBUG" default="$(optenv LOGGER_DEBUG false)" />
+    <arg name="MAX_DIST" default="0.4" />
+
+    <!-- other args -->
+    <arg name="standalone" default="false" />
+    <arg name="debug" default="false" />
+    <arg name="nodelet_manager_name" default="$(arg UAV_NAME)_mapping_nodelet_manager" />
+    <arg name="world_frame_id" default="$(arg UAV_NAME)/world_origin" />
+
+    <!-- custom configs -->
+    <arg name="config_pcl_filter_rs_front_pitched" default="" />
+
+    <!-- NodeletManager //{ -->
+    <include file="$(find mrs_octomap_mapping_planning)/launch/nodelet_manager.launch">
+        <arg name="standalone" value="$(arg standalone)" />
+        <arg name="debug" value="$(arg debug)" />
+        <arg name="nodelet_manager_name" value="$(arg nodelet_manager_name)" />
+    </include>
+
+    <!--Depth camera PointCloud-->
+    <include file="$(find mrs_octomap_mapping_planning)/launch/depth_to_pc.launch">
+        <arg name="standalone" value="$(arg standalone)" />
+        <arg name="nodelet_manager_name" value="$(arg nodelet_manager_name)" />
+        <arg name="name_suffix" value="_realsense_front_pitched" />
+        <arg name="camera_info_topic_in" value="rgbd_front_pitched/aligned_depth_to_color/camera_info" />
+        <arg name="image_rect_topic_in" value="rgbd_front_pitched/aligned_depth_to_color/image_raw" />
+        <arg name="pc_topic_out" value="rgbd_front_pitched/aligned_depth_to_color/points" />
+    </include>
+
+    <!--Realsense Front Pitched filter-->
+    <include file="$(find mrs_pcl_tools)/launch/pcl_filter.launch">
+        <arg name="standalone" value="$(arg standalone)" />
+        <arg name="nodelet_manager_name" value="$(arg nodelet_manager_name)" />
+        <arg name="custom_config" value="$(arg config_pcl_filter_rs_front_pitched)" />
+        <arg name="debug" value="false" />
+        <arg name="name_suffix" value="rs_front_pitched" />
+        <arg name="topic_3d_lidar_in" value="rgbd_front_pitched/aligned_depth_to_color/points" />
+    </include>
+
+    <!--Process Pointcloud-->
+    <include file="$(find process_pointcloud)/launch/process_pointcloud.launch">
+        <arg name="standalone" value="$(arg standalone)" />
+        <param name="max_distance" value="$(arg MAX_DIST)" />
+        <remap from="pointcloud_in" to="pcl_filter_rs_front_pitched/points_processed"/>
+        <remap from="transformed_pointcloud_out" to="/$(arg UAV_NAME)/transformed_points"/>
+    </include>
+
+</launch>

@@ -1,0 +1,8 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/joaomendes/workspace1/devel/lib/python3/dist-packages",
+        "/home/joaomendes/traj_gen/devel/lib/python3/dist-packages",
+        "/home/joaomendes/voxblox/devel/lib/python3/dist-packages",
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
+}

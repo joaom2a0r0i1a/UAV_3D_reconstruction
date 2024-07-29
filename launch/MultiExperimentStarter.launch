@@ -1,0 +1,39 @@
+<launch>
+  <arg name="num_uavs" default="3"/>
+  <!--arg name="num_uavs" default="2"/-->
+  <arg name="delay" default="10.0"/>
+  <arg name="record_data" default="true"/>
+  <arg name="data_directory" default="/home/joaomendes/workspace1/src/data"/>
+  <arg name="data_frequency" default="40.0" />
+  <arg name="time_limit" default="40" />
+
+  <arg name="UAV_NAME_1" default="uav1" />
+  <arg name="UAV_NAME_2" default="uav2" />
+  <arg name="UAV_NAME_3" default="uav3" />
+  <arg name="world_frame" default="common_origin" />
+
+  <node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_gazebo_static /tf_static /voxblox_node/mesh /$(arg UAV_NAME_1)/estimation_manager/uav_state /$(arg UAV_NAME_1)/reference_out /$(arg UAV_NAME_2)/estimation_manager/uav_state /$(arg UAV_NAME_2)/reference_out /$(arg UAV_NAME_3)/estimation_manager/uav_state /$(arg UAV_NAME_3)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
+  <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_gazebo_static /tf_static /voxblox_node/mesh /$(arg UAV_NAME_1)/estimation_manager/uav_state /$(arg UAV_NAME_1)/reference_out /$(arg UAV_NAME_2)/estimation_manager/uav_state /$(arg UAV_NAME_2)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/-->
+  <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="-a -o my_data"/-->
+
+  <!-- Experiment launcher -->
+  <node name="eval_data_node" pkg="multidrone_motion_planning" type="multi_eval_data_node.py" output="screen" required="true">
+    <param name="num_uavs" value="$(arg num_uavs)" />
+    <remap from="points_1" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/points" />
+    <remap from="points_2" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/points" />
+    <remap from="points_3" to="/$(arg UAV_NAME_3)/rgbd_front_pitched/aligned_depth_to_color/points" />
+    <param name="ns_planner_uav_1" value="/$(arg UAV_NAME_1)/planner_node" />
+    <param name="ns_planner_uav_2" value="/$(arg UAV_NAME_2)/planner_node" />
+    <param name="ns_planner_uav_3" value="/$(arg UAV_NAME_3)/planner_node" />
+    <param name="ns_voxblox" value="/voxblox_node" />
+    <param name="delay" value="$(arg delay)" />
+    <param name="startup_timeout" value="200.0" />
+    <param name="evaluate" value="$(arg record_data)" />
+    <param name="eval_directory" value="$(arg data_directory)" />
+    <param name="eval_frequency" value="$(arg data_frequency)" />
+    <param name="time_limit" value="$(arg time_limit)" />
+  </node>
+
+  <!-- /tf_connector/parameter_descriptions  /tf_connector/parameter_updates /tf_gazebo_static/-->
+
+</launch>

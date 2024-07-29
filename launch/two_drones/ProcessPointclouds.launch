@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+    <!-- Defines name of the namespace of the drones -->
+    <arg name="UAV_NAME_1" default="uav1" />
+    <arg name="UAV_NAME_2" default="uav2" />
+
+    <arg name="MAX_DIST" default="0.4" />
+
+    <!--Depth camera PointCloud-->
+    <node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" />
+
+    <!--Make Depth camera PointCloud for UAV 1 -->
+    <node pkg="nodelet" type="nodelet" name="point_cloud_xyz_uav1" args="load depth_image_proc/point_cloud_xyz standalone_nodelet">
+        <remap from="camera_info" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/camera_info"/>
+        <remap from="image_rect" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/image_raw"/>
+        <remap from="points" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+        <param name="queue_size" value="3" />
+    </node>
+
+    <!-- Make Depth camera PointCloud for UAV 2 -->
+    <node pkg="nodelet" type="nodelet" name="point_cloud_xyz_uav2" args="load depth_image_proc/point_cloud_xyz standalone_nodelet">
+        <remap from="camera_info" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/camera_info"/>
+        <remap from="image_rect" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/image_raw"/>
+        <remap from="points" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+        <param name="queue_size" value="3" />
+    </node>
+
+    <group ns="$(arg UAV_NAME_1)">
+        <node name="pcl_process" pkg="process_pointcloud" type="process_node">
+            <param name="uav_namespace" value="$(arg UAV_NAME_1)" />
+            <param name="max_distance" value="$(arg MAX_DIST)" />
+            <remap from="pointcloud_in" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+            <remap from="transformed_pointcloud_out" to="/$(arg UAV_NAME_1)/transformed_points"/>
+        </node>
+    </group>
+
+    <group ns="$(arg UAV_NAME_2)">
+        <node name="pcl_process" pkg="process_pointcloud" type="process_node">
+            <param name="uav_namespace" value="$(arg UAV_NAME_2)" />
+            <param name="max_distance" value="$(arg MAX_DIST)" />
+            <remap from="pointcloud_in" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+            <remap from="transformed_pointcloud_out" to="/$(arg UAV_NAME_2)/transformed_points"/>
+        </node>
+    </group>
+</launch>
