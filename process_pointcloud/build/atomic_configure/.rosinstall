@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/joaomendes/workspace1/src/process_pointcloud/build/devel/setup.sh
