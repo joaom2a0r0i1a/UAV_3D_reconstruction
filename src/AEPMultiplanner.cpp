@@ -14,12 +14,6 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     param_loader.loadParam("frame_id", frame_id);
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
-    param_loader.loadParam("center/x", center_x);
-    param_loader.loadParam("center/y", center_y);
-    param_loader.loadParam("center/z", center_z);
-    param_loader.loadParam("dimensions/x", dimensions_x);
-    param_loader.loadParam("dimensions/y", dimensions_y);
-    param_loader.loadParam("dimensions/z", dimensions_z);
 
     // Bounded Box
     param_loader.loadParam("bounded_box/min_x", min_x);
@@ -96,7 +90,7 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     pub_frustum = nh_private_.advertise<visualization_msgs::Marker>("frustum_out", 10);
     pub_voxels = nh_private_.advertise<visualization_msgs::MarkerArray>("unknown_voxels_out", 30);
     pub_initial_reference = nh_private_.advertise<mrs_msgs::ReferenceStamped>("initial_reference_out", 15);
-    pub_evade = nh_.advertise<multiagent_collision_check::Segment>("evasion_segment_out", 100);
+    pub_evade = nh_private_.advertise<multiagent_collision_check::Segment>("evasion_segment_out", 100);
 
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
@@ -681,7 +675,7 @@ double AEPMultiPlanner::distance(const mrs_msgs::Reference& waypoint, const geom
 }
 
 void AEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
-    initial_reference.header.frame_id = "uav1/" + frame_id;
+    initial_reference.header.frame_id = ns + "/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
 
     ROS_INFO("[AEPMultiPlanner]: Flying 3 meters up");
@@ -772,7 +766,7 @@ void AEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
 
 void AEPMultiPlanner::rotate() {
     mrs_msgs::ReferenceStamped initial_reference;
-    initial_reference.header.frame_id = "uav1/" + frame_id;
+    initial_reference.header.frame_id = ns + "/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
 
     // Rotate 360 degrees
@@ -899,7 +893,7 @@ void AEPMultiPlanner::callbackEvade(const multiagent_collision_check::Segment::C
 
     // Update the segment list with the poses from msg
     segments_[i]->clear();
-    for(typename std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
+    for(std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
         segments_[i]->push_back(Eigen::Vector3d(it->x, it->y, it->z));
     }    
 }
@@ -978,7 +972,7 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
 
             mrs_msgs::GetPathSrv srv_get_path;
 
-            srv_get_path.request.path.header.frame_id = "uav1/" + frame_id;
+            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
             srv_get_path.request.path.header.stamp = ros::Time::now();
             srv_get_path.request.path.fly_now = false;
             srv_get_path.request.path.use_heading = true;
@@ -1014,12 +1008,14 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
 
             if (!success) {
                 ROS_ERROR("[AEPMultiPlanner]: service call for trajectory failed");
-                changeState(STATE_STOPPED);
+                //changeState(STATE_STOPPED);
+                changeState(STATE_MOVING);
                 return;
             } else {
                 if (!srv_get_path.response.success) {
                     ROS_ERROR("[AEPMultiPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                    changeState(STATE_STOPPED);
+                    //changeState(STATE_STOPPED);
+                    changeState(STATE_MOVING);
                     return;
                 }
             }
@@ -1032,12 +1028,14 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
 
             if (!success_trajectory) {
                 ROS_ERROR("[AEPMultiPlanner]: service call for trajectory reference failed");
-                changeState(STATE_STOPPED);
+                //changeState(STATE_STOPPED);
+                changeState(STATE_MOVING);
                 return;
             } else {
                 if (!srv_trajectory_reference.response.success) {
                     ROS_ERROR("[AEPMultiPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    changeState(STATE_STOPPED);
+                    //changeState(STATE_STOPPED);
+                    changeState(STATE_MOVING);
                     return;
                 }
             }
@@ -1070,6 +1068,17 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[AEPMultiPlanner]: Total Iterations: %d", iteration_);
             ROS_INFO("[AEPMultiPlanner]: Shutting down.");
+            // Multi-UAV remove final pose so drones don't collide when algorithm is finished
+            int k;
+            for (k = 0; k < agentsId_.size(); k++) {
+                if (agentsId_[k] == uav_id) {
+                    break;
+                }
+            }
+            if (k < agentsId_.size()) {
+                segments_[k]->clear();
+                segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
+            }
             ros::shutdown();
             return;
         }

@@ -15,12 +15,6 @@ NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     param_loader.loadParam("frame_id", frame_id);
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
-    param_loader.loadParam("center/x", center_x);
-    param_loader.loadParam("center/y", center_y);
-    param_loader.loadParam("center/z", center_z);
-    param_loader.loadParam("dimensions/x", dimensions_x);
-    param_loader.loadParam("dimensions/y", dimensions_y);
-    param_loader.loadParam("dimensions/z", dimensions_z);
 
     // Bounded Box
     param_loader.loadParam("bounded_box/min_x", min_x);
@@ -90,7 +84,7 @@ NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     pub_frustum = nh_private_.advertise<visualization_msgs::Marker>("frustum_out", 10);
     pub_voxels = nh_private_.advertise<visualization_msgs::MarkerArray>("unknown_voxels_out", 10);
     pub_initial_reference = nh_private_.advertise<mrs_msgs::ReferenceStamped>("initial_reference_out", 5);
-    pub_evade = nh_.advertise<multiagent_collision_check::Segment>("evasion_segment_out", 100);
+    pub_evade = nh_private_.advertise<multiagent_collision_check::Segment>("evasion_segment_out", 100);
 
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
@@ -176,6 +170,7 @@ void NBVMultiPlanner::NBV() {
         segments_[k]->clear();
     }
 
+    // Finds root node
     std::shared_ptr<rrt_star::Node> root;
     if (prev_best_branch.size() > 1) {
         root = std::make_shared<rrt_star::Node>(prev_best_branch[1]);
@@ -183,6 +178,7 @@ void NBVMultiPlanner::NBV() {
         root = std::make_shared<rrt_star::Node>(pose);
     }
 
+    // Evaluates root node
     root->cost = 0;
     root->score = root->gain;
 
@@ -336,6 +332,9 @@ void NBVMultiPlanner::NBV() {
 
         if (!success_collision || multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
             //clear_node();
+            /*if (multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
+                ROS_INFO("[NBVMultiPlanner]: In Drone Collision");
+            }*/
             trajectory_segment.clear();
             collision_id_counter_++;
             continue;
@@ -563,7 +562,7 @@ void NBVMultiPlanner::callbackEvade(const multiagent_collision_check::Segment::C
 
     // Update the segment list with the poses from msg
     segments_[i]->clear();
-    for(typename std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
+    for(std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
         segments_[i]->push_back(Eigen::Vector3d(it->x, it->y, it->z));
     }    
 }
@@ -671,6 +670,8 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
             for (const auto& point : srv_get_path.request.path.points) {
                 segment.uav_path.push_back(point.position);
             }
+            ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
+                << " with path points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
 
@@ -678,12 +679,14 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
 
             if (!success) {
                 ROS_ERROR("[NBVMultiPlanner]: service call for trajectory failed");
-                changeState(STATE_STOPPED);
+                //changeState(STATE_STOPPED);
+                changeState(STATE_MOVING);
                 return;
             } else {
                 if (!srv_get_path.response.success) {
                     ROS_ERROR("[NBVMultiPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                    changeState(STATE_STOPPED);
+                    //changeState(STATE_STOPPED);
+                    changeState(STATE_MOVING);
                     return;
                 }
             }
@@ -696,12 +699,14 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
 
             if (!success_trajectory) {
                 ROS_ERROR("[NBVMultiPlanner]: service call for trajectory reference failed");
-                changeState(STATE_STOPPED);
+                //changeState(STATE_STOPPED);
+                changeState(STATE_MOVING);
                 return;
             } else {
                 if (!srv_trajectory_reference.response.success) {
                     ROS_ERROR("[NBVMultiPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    changeState(STATE_STOPPED);
+                    //changeState(STATE_STOPPED);
+                    changeState(STATE_MOVING);
                     return;
                 }
             }
@@ -735,6 +740,17 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[NBVMultiPlanner]: Total Iterations: %d", iteration_);
             ROS_INFO("[NBVMultiPlanner]: Shutting down.");
+            // Multi-UAV remove final pose so drones don't collide when algorithm is finished
+            int k;
+            for (k = 0; k < agentsId_.size(); k++) {
+                if (agentsId_[k] == uav_id) {
+                    break;
+                }
+            }
+            if (k < agentsId_.size()) {
+                segments_[k]->clear();
+                segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
+            }
             ros::shutdown();
             return;
         }

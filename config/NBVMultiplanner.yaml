@@ -6,16 +6,6 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
-center:
-  x: 0.0 # [m]
-  y: 0.0 # [m]
-  z: 13.0 # [m]
-
-dimensions:
-  x: 40.0 # [m]
-  y: 20.0 # [m]
-  z: 20.0 # [m]
-
 # Fire Station
 #bounded_box:
   #min_x: -16.0 # [m]

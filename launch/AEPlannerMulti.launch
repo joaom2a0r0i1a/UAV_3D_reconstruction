@@ -14,8 +14,8 @@
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <param name="uav_id" value="$(arg UAV_ID)" />
       <!-- Voxblox Planner -->
-      <remap from="~esdf_map_in" to="/voxblox_node/esdf_map_out" />
-      <remap from="~tsdf_map_in" to="/voxblox_node/tsdf_map_out" />
+      <remap from="~esdf_map_in" to="/voxblox_node/merged_esdf_map" />
+      <remap from="~tsdf_map_in" to="/voxblox_node/merged_tsdf_map" />
       <!--remap from="~esdf_map_in" to="esdf_map" /-->
       <!--remap from="~tsdf_map_in" to="tsdf_map" /-->
       <param name="use_tf_transforms" value="false" />
@@ -33,11 +33,13 @@
       <remap from="~tree_node_out" to="tree_node" />
       <remap from="~frustum_out" to="frustum_out" />
       <remap from="~unknown_voxels_out" to="unknown_voxels_out" />
+      <remap from="~evasion_segment_out" to="/planner_node/evasion_segment" />
       <!-- Subscribers -->
       <!--remap from="~constraints_in" to="control_manager/current_constraints" /-->
       <remap from="~uav_state_in" to="estimation_manager/uav_state" />
       <remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" />
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
+      <remap from="~evasion_segment_in" to="/planner_node/evasion_segment" />
       <!-- Services clients-->
       <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
       <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />

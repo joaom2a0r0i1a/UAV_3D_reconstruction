@@ -30,13 +30,13 @@
       <remap from="~frustum_out" to="frustum_out" />
       <remap from="~unknown_voxels_out" to="unknown_voxels_out" />
       <remap from="~simulation_ready" to="simulation_ready" />
-      <remap from="~evasion_segment_out" to="/evasion_segment" />
+      <remap from="~evasion_segment_out" to="/planner_node/evasion_segment" />
       <!-- Subscribers -->
       <remap from="~constraints_in" to="control_manager/current_constraints" />
       <remap from="~uav_state_in" to="estimation_manager/uav_state" />
       <remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" />
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
-      <remap from="~evasion_segment_in" to="/evasion_segment" />
+      <remap from="~evasion_segment_in" to="/planner_node/evasion_segment" />
       <!-- Services clients-->
       <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
       <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />

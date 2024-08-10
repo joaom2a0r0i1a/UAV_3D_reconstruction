@@ -54,3 +54,13 @@ mrs_uav_trackers:
       enabled_passively: false # disabling this will stop this uav to even transmit its data to others (only if enabled: false)
       radius: 1.5 # [m]
       correction: 1.5 # [m]
+
+mrs_uav_managers:
+
+  control_manager:
+
+    safety:
+
+      # after not receiving odometry for more than this, the failsafe landing will trigger
+      # will be overriden for ACCELERATION+ output mode
+      odometry_max_missing_time: 1.0 # [s]

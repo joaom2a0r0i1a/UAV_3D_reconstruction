@@ -27,7 +27,7 @@
     <param name="ns_planner_uav_3" value="/$(arg UAV_NAME_3)/planner_node" />
     <param name="ns_voxblox" value="/voxblox_node" />
     <param name="delay" value="$(arg delay)" />
-    <param name="startup_timeout" value="200.0" />
+    <param name="startup_timeout" value="100.0" />
     <param name="evaluate" value="$(arg record_data)" />
     <param name="eval_directory" value="$(arg data_directory)" />
     <param name="eval_frequency" value="$(arg data_frequency)" />

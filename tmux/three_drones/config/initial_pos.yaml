@@ -7,14 +7,191 @@ uav1:
 
 uav2:
   id: 2
-  x: 0
-  y: 12
+  x: -22
+  y: 4
   z: 0.5
-  heading: -1.57079
+  heading: 0
 
 uav3:
   id: 3
-  x: 22
-  y: 0
+  x: -22
+  y: -4
   z: 0.5
-  heading: 3.14159
+  heading: 0
+
+
+# 1st layout -> connected 1 #(Done 1x (06/08) NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: -22 
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: -22
+#  y: 4
+#  z: 0.5
+#  heading: 0
+
+#uav3:
+#  id: 3
+#  x: -22
+#  y: -4
+#  z: 0.5
+#  heading: 0
+
+# 2st layout -> connected 2 #(Done 1x (07/08) NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: 22 
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 22
+#  y: 4
+#  z: 0.5
+#  heading: 3.14159
+
+#uav3:
+#  id: 3
+#  x: 22
+#  y: -4
+#  z: 0.5
+#  heading: 3.14159
+
+# 3rd layout -> connected 3 #(Done 1x (08/08) NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: 0 
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav2:
+#  id: 2
+#  x: 4
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: -4
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+# 4th layout -> connected 4 #(Done 1x (08/08) NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: 0 
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+#uav2:
+#  id: 2
+#  x: 4
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+#uav3:
+#  id: 3
+#  x: -4
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+# 5th layout -> unconnected 1 #(Done 2x (05/08) NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: -22 
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+#uav3:
+#  id: 3
+#  x: 22
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+# 6th layout -> unconnected 2 #(To do NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: -22 
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 22
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+# 7th layout -> unconnected 3 #(To do NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: -22 
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+# 8th layout -> unconnected 4 #(To do NBV, To do AEP)
+#uav1:
+#  id: 1
+#  x: 22 
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079

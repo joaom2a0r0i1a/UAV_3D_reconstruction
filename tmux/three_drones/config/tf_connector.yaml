@@ -20,4 +20,4 @@ connections:
 ignore_older_messages: false
 
 # if no update of a certain connection happens for this duration, it will be forced
-max_update_period: 0.1 # seconds (set to zero to disable)
+max_update_period: 0.0 # seconds (set to zero to disable)
