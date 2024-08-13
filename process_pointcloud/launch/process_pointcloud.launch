@@ -5,7 +5,7 @@
   <arg name="standalone" default="false" />
   <arg name="name_suffix" default="" />
 
-  <arg name="MAX_DIST" default="0.25" />
+  <arg name="max_distance" default="0.25" />
   <arg name="pointcloud_msg_in" default="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points"/>
   <arg name="pointcloud_msg_out" default="/$(arg UAV_NAME)/transformed_points"/>
 

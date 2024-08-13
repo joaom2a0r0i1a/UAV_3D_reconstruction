@@ -30,7 +30,6 @@ set(CATKIN_DEPENDENCIES
   pcl_ros
   mrs_lib
   geometry_msgs
-  comm_msgs
 )
 
 find_package(catkin REQUIRED COMPONENTS

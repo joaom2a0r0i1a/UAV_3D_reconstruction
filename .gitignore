@@ -1,0 +1,8 @@
+devel/
+logs/
+build/
+bin/
+lib/
+
+# Ignore Visual Studio Code configuration files
+.vscode/
