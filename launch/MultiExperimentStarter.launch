@@ -3,7 +3,7 @@
   <!--arg name="num_uavs" default="2"/-->
   <arg name="delay" default="10.0"/>
   <arg name="record_data" default="true"/>
-  <arg name="data_directory" default="/home/joaomendes/workspace1/src/data"/>
+  <arg name="data_directory" default="/mnt/c/Users/joaof/data"/>
   <arg name="data_frequency" default="40.0" />
   <arg name="time_limit" default="40" />
 

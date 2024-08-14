@@ -69,7 +69,7 @@ windows:
         #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
         #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
         #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
-        - export UAV_NAME=uav3; waitForControl; roslaunch multidrone_motion_planning MultiExperimentStarter.launch
+        #- export UAV_NAME=uav3; waitForControl; roslaunch multidrone_motion_planning MultiExperimentStarter.launch
   #- cached_nodes:
       #layout: tiled
       #panes:
