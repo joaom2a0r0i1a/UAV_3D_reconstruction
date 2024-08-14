@@ -64,13 +64,13 @@ public:
         param_loader.loadParam("camera/max_distance", max_distance);
         param_loader.loadParam("camera/frame_id", camera_frame_id);
 
-        sub_gain = nh_private_.subscribe("tree_node_in", 10, &Cached::callbackGain, this);
-
         std::vector<std::string> uav_ids;
         param_loader.loadParam("uav_ids", uav_ids);
+
+        sub_gain = nh_private_.subscribe("tree_node_in", 10, &MultiCached::callbackGain, this);
         
         for (const auto& uav_id : uav_ids) {
-            std::string topic = "uav" + uav_id + "_state_in";
+            std::string topic = uav_id + "_state_in";
             ros::Subscriber sub = nh_private_.subscribe<mrs_msgs::UavState>(topic, 10, 
                               boost::bind(&MultiCached::callbackUavState, this, _1, uav_id));
             sub_uav_states.push_back(sub);
