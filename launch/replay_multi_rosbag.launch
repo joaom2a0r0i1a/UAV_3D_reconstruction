@@ -2,7 +2,7 @@
     <param name="use_sim_time" value="true"/>
 
     <!-- Play the rosbag -->
-    <node name="rosbag_play" pkg="rosbag" type="play" args="-r 4 /mnt/c/Users/joaof/data/tmp_bags/tmp_bag_2024-08-05-19-01-52.bag" />
+    <node name="rosbag_play" pkg="rosbag" type="play" args="-r 4 /mnt/c/Users/joaof/Documents/data/tmp_bags/tmp_bag_2024-08-05-19-01-52.bag" />
 
     <!-- Run the path processing node for UAV 1 -->
     <node name="path_publisher_uav1" pkg="motion_planning_python" type="eval_paths.py" output="screen">
