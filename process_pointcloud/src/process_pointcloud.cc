@@ -34,6 +34,10 @@ Processing::Processing(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
 void Processing::process_pointcloud(const sensor_msgs::PointCloud2::ConstPtr& pointcloud) {
   // Prune the pointcloud in areas where other UAVs are located
   // Find transforms for all specified vehicles by their tf frames.
+
+  // Start timing
+  auto start = std::chrono::high_resolution_clock::now();
+
   std::vector<tf::Vector3> agents;
   for (typename std::vector<std::string>::iterator it = uav_frames.begin();
        it != uav_frames.end(); it++) {
@@ -78,6 +82,11 @@ void Processing::process_pointcloud(const sensor_msgs::PointCloud2::ConstPtr& po
   pcl::toROSMsg(*cloud_pruned, *pointcloudOut);
   pointcloudOut->header = pointcloud->header;
   pub_pointcloud.publish(pointcloudOut);
+
+  // End timing
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> elapsed = end - start;
+  ROS_INFO("Point cloud processing took: %.6f seconds", elapsed.count());
 
   /*// Convert input point cloud from ROS to PCL
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
