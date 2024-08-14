@@ -109,6 +109,15 @@ target_link_libraries(cached
   auxiliar
 )
 
+# Add executable for cached_multi.cpp
+add_executable(cached_multi src/cached_multi.cpp)
+
+# Link executable against required libraries
+target_link_libraries(cached_multi
+  ${catkin_LIBRARIES}
+  auxiliar
+)
+
 #############
 ## Install ##
 #############
