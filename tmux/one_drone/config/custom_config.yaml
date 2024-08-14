@@ -30,6 +30,51 @@ mrs_uav_managers:
         #controller: "Se3Controller" # more precise
         tracker: "MpcTracker"
 
+  control_manager:
+
+    safety:
+
+      # after not receiving odometry for more than this, the failsafe landing will trigger
+      # will be overriden for ACCELERATION+ output mode
+      odometry_max_missing_time: 0.5 # [s]
+
+  constraint_manager:
+
+    slow:
+
+      horizontal:
+        speed: 1.0
+        acceleration: 1.0
+        jerk: 20.0
+        snap: 20.0
+
+      vertical:
+
+        ascending:
+          speed: 1.0
+          acceleration: 1.0
+          jerk: 20.0
+          snap: 20.0
+
+        descending:
+          speed: 1.0
+          acceleration: 1.0
+          jerk: 20.0
+          snap: 20.0
+
+      heading:
+        speed: 2.0 # change speed
+        acceleration: 2.0 # change acceleration
+        jerk: 10.0
+        snap: 10.0
+
+      angular_speed:
+        roll: 60.0
+        pitch: 60.0
+        yaw: 10.0
+
+      tilt: 60.0 # [deg]
+
 mrs_uav_trajectory_generation:
 
   # execution time limiter

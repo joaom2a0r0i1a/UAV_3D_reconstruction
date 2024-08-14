@@ -88,7 +88,7 @@ def plot_data(time_data, velocity_x_data, velocity_y_data, velocity_z_data, velo
 
 # Main function
 def main():
-    bag_file = '/home/joaomendes/workspace1/src/data/school/NBV/tmp_bags/tmp_bag_2024-07-11-17-52-12.bag'
+    bag_file = '/mnt/c/Users/joaof/Downloads/tmp_bag_2024-07-11-17-52-12.bag'
     #bag_file = '/home/joaomendes/workspace1/src/data/school/AEP/tmp_bags/tmp_bag_2024-07-12-11-20-14.bag'
     state_topic = '/uav1/estimation_manager/uav_state'
     clock_topic = '/clock'

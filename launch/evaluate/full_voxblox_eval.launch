@@ -1,7 +1,7 @@
 <launch>
   <!-- Data source Data, -->
-  <arg name="target_directory" default="/home/joaomendes/workspace1/src/data" />
-  <arg name="gt_file_path" default="/home/joaomendes/workspace1/src/data/gt_school_ptcloud.ply"/>
+  <arg name="target_directory" default="/mnt/c/Users/joaof/data" />
+  <arg name="gt_file_path" default="/mnt/c/Users/joaof/data/gt_school_processed.ply"/>
   <arg name="experiment_config" default="School.yaml"/>
   <arg name="method" default="recent"/>
 
