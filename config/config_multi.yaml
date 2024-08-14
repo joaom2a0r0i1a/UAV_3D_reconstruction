@@ -25,4 +25,4 @@ camera:
   min_distance: 0.2 # [m]
   max_distance: 5 # [m]
 
-  uav_ids: ['uav1', 'uav2', 'uav3']
+uav_ids: ['uav1', 'uav2', 'uav3']

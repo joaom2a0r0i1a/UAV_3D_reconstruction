@@ -265,7 +265,7 @@ private:
 
         //rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_s));
 
-        size_t result_before = result_s.size();
+        size_t numNodesBefore = rtree.size();
 
         for (const auto& node : result_s) {
             Eigen::Vector3d pos(node.second.position.x, node.second.position.y, node.second.position.z);
@@ -286,10 +286,11 @@ private:
             rtree.insert(std::make_pair(node.first, updated_node));
         }
 
-        size_t numNodes = rtree.size();
-        ROS_INFO("[Cached]: List Size Before: %lu", result_before);
-        ROS_INFO("[Cached]: Nodes in the RTree: %lu", numNodes);
-        ROS_INFO("[Cached]: List Size After: %lu", result_s.size());
+        size_t numNodesAfter = rtree.size();
+        
+        ROS_INFO("[Cached]: Nodes in the RTree Before: %lu", numNodesBefore);
+        ROS_INFO("[Cached]: Search List Size: %lu", result_s.size());
+        ROS_INFO("[Cached]: Nodes in the RTree After: %lu", numNodesAfter);
 
         /*if (!set_variables) {
             GetTransformation();

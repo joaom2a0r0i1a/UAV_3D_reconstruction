@@ -173,7 +173,7 @@ private:
             return false;
         }), std::back_inserter(result_s));
 
-        size_t result_before = result_s.size();
+        size_t numNodesBefore = rtree.size();
 
         for (const auto& node : result_s) {
             Eigen::Vector3d pos(node.second.position.x, node.second.position.y, node.second.position.z);
@@ -196,10 +196,11 @@ private:
             }
         }
 
-        size_t numNodes = rtree.size();
-        ROS_INFO("[MultiCached]: List Size Before: %lu", result_before);
-        ROS_INFO("[MultiCached]: Nodes in the RTree: %lu", numNodes);
-        ROS_INFO("[MultiCached]: List Size After: %lu", result_s.size());
+        size_t numNodesAfter = rtree.size();
+        
+        ROS_INFO("[MultiCached]: Nodes in the RTree Before: %lu", numNodesBefore);
+        ROS_INFO("[MultiCached]: Search List Size: %lu", result_s.size());
+        ROS_INFO("[MultiCached]: Nodes in the RTree After: %lu", numNodesAfter);
 
         ROS_INFO("Reevaluate Done");
     }
