@@ -19,7 +19,6 @@
   <depend>trajectory_generation</depend>
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
-  <depend>comm_msgs</depend>
   <depend>std_srvs</depend>
   <depend>cache_nodes</depend>
   <depend>process_pointcloud</depend>

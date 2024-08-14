@@ -18,7 +18,6 @@ set(CATKIN_DEPENDENCIES
   visualization_msgs
   trajectory_generation
   voxblox_ros
-  comm_msgs
   minkindr_conversions
   cache_nodes
   process_pointcloud
