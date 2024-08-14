@@ -9,6 +9,8 @@
     <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
     <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
 
+    <remap from="/voxblox_node/merged_mesh" to="/voxblox_node/mesh" />
+
     <param name="publish_tsdf_pointclouds" value="true" />
     <param name="publish_esdf_pointclouds" value="true" />
     <param name="publish_tsdf_map" value="true" />
