@@ -117,7 +117,7 @@ public:
 
         //rtree = std::make_unique<RTree<cache_nodes::Node, double, 3>>();
 
-        reevaluate_timer = nh.createTimer(ros::Duration(4), &Cached::timerReevaluate, this);
+        reevaluate_timer = nh.createTimer(ros::Duration(3), &Cached::timerReevaluate, this);
     }
 
 private:
@@ -260,7 +260,7 @@ private:
             Point node_point(v.second.position.x, v.second.position.y, v.second.position.z);
             //bool within_range = bg::distance(current_point, node_point) <= range;
             //bool above_g_zero = v.second.gain > g_zero;
-            return(v.second.gain > g_zero && bg::distance(current_point, node_point) <= range);
+            return(bg::distance(current_point, node_point) <= range);
         }), std::back_inserter(result_s));
 
         //rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_s));
@@ -274,16 +274,18 @@ private:
             trajectory_point_gain.setFromYaw(node.second.yaw);
             std::pair<double, double> result = evaluator.computeGainAEP(trajectory_point_gain);
 
-            ROS_INFO("[Cached]: Point position: [%f, %f, %f]", node.second.position.x, node.second.position.y, node.second.position.z);
-            ROS_INFO("[Cached]: Old Point gain: %f", node.second.gain);
-            ROS_INFO("[Cached]: New Point gain: %f", result.first);
+            ROS_INFO("[MultiCached]: Point position: [%f, %f, %f]", node.second.position.x, node.second.position.y, node.second.position.z);
+            ROS_INFO("[MultiCached]: Old Point gain: %f", node.second.gain);
+            ROS_INFO("[MultiCached]: New Point gain: %f", result.first);
 
             cache_nodes::Node updated_node = node.second;
             updated_node.gain = result.first;
             updated_node.yaw = result.second;
 
             rtree.remove(node);
-            rtree.insert(std::make_pair(node.first, updated_node));
+            if (updated_node.gain > g_zero) {
+                rtree.insert(std::make_pair(node.first, updated_node));
+            }
         }
 
         size_t numNodesAfter = rtree.size();
