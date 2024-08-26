@@ -42,6 +42,9 @@
 #include <motion_planning_python/kd_tree.h>
 #include <motion_planning_python/gain_evaluator.h>
 
+#include <fstream>
+#include <chrono>
+
 typedef enum
 {
   STATE_IDLE,
@@ -153,6 +156,10 @@ private:
     int num_yaw_samples;
     double g_zero;
     double sigma_threshold;
+
+    // Log files
+    int num_nodes_count;
+    std::ofstream outfile;
 
     // RRT* Parameters
     int N_min_nodes;

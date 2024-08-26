@@ -87,6 +87,20 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
+
+    // Open file in append mode
+    num_nodes_count = 0;
+    outfile.open("/home/joaomendes/motion_workspace/src/data/computation_time_gain.csv", std::ios_base::out);
+    if (!outfile.is_open()) {
+        ROS_ERROR("Failed to open the file: computation_time_gain.csv");
+        return;
+    }
+
+    if (outfile.tellp() == 0) {
+        outfile << "NumberNodes,GainComputationTime\n";
+    }
+    //std::ofstream outfile;
+    //outfile.open("computation_time_gain.csv", std::ios::out);
     
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 500);
@@ -278,11 +292,21 @@ void AEPlanner::localPlanner() {
             trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
+            auto start1 = std::chrono::high_resolution_clock::now();
+
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
+
+            auto end1 = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = end1 - start1;
+            num_nodes_count += 1;
+
+            // Write the iteration count and elapsed time to the file
+            outfile << num_nodes_count << "," << elapsed.count() << "\n";
 
             //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
@@ -371,11 +395,21 @@ void AEPlanner::localPlanner() {
             segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
         }*/
 
+        auto start2 = std::chrono::high_resolution_clock::now();
+
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
+
+        auto end2 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end2 - start2;
+        num_nodes_count += 1;
+
+        // Write the iteration count and elapsed time to the file
+        outfile << num_nodes_count << "," << elapsed.count() << "\n";
 
         //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
 
@@ -411,6 +445,10 @@ void AEPlanner::localPlanner() {
 
         ++j;
 
+    }
+
+    if (num_nodes_count >= 10000 && outfile.is_open()) {
+        outfile.close();
     }
     
     if (best_node) {
@@ -1024,6 +1062,10 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
         }
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[AEPlanner]: Total Iterations: %d", iteration_);
+            ROS_INFO("[AEPlanner]: Closing output file.");
+            if (outfile.is_open()) {
+                outfile.close();
+            }
             ROS_INFO("[AEPlanner]: Shutting down.");
             ros::shutdown();
             return;

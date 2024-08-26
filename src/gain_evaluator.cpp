@@ -1,3 +1,4 @@
+#include <ros/ros.h>
 #include <eth_trajectory_generation/timing.h>
 #include <voxblox/integrator/integrator_utils.h>
 
@@ -70,6 +71,7 @@ GainEvaluator::GainEvaluator() {
   fov_y_rad_ = 1.51844;
   fov_p_rad_ = 1.01229;
   r_max_ = 5.0;
+  yaw_samples = 15;
 
   /*min_x_ = -11;
   max_x_ = 11;
@@ -402,6 +404,153 @@ bool GainEvaluator::isRayIntersectingBoundingBox(const voxblox::Point& start, co
 
   return true;
 }
+
+double GainEvaluator::computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
+  CHECK_NOTNULL(tsdf_layer_);
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  cam_model_.setBodyPose(voxblox::Transformation(
+      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+
+  // Get the center of the camera to raycast to.
+  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
+  voxblox::Point camera_center = camera_pose.getPosition();
+
+  double yaw_rad = pose.getYaw();
+  double yaw = yaw_rad * 180 / M_PI;
+
+  double gain = 0.0;
+
+  // This function computes the gain
+  double fov_y = fov_y_rad_ / M_PI * 180.0f;
+  double fov_p = fov_p_rad_ / M_PI * 180.0f;
+
+  double dr = 0.2;
+  double dphi_rad = dr / r_max_;
+  double dtheta_rad = dr / r_max_;
+  double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
+  double r;
+  double phi, theta;
+  double phi_rad, theta_rad;
+
+  //voxblox::Point vec;
+  Eigen::Vector3d vec;
+  double min_x = static_cast<double>(min_x_);
+  double min_y = static_cast<double>(min_y_);
+  double min_z = static_cast<double>(min_z_);
+  double max_x = static_cast<double>(max_x_);
+  double max_y = static_cast<double>(max_y_);
+  double max_z = static_cast<double>(max_z_);
+
+  int id = 0;
+  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
+    theta_rad = M_PI * theta / 180.0f;
+    for (phi = 90 - fov_p / 2; phi < 90 + fov_p / 2; phi += dphi) {
+      phi_rad = M_PI * phi / 180.0f;
+
+      double g = 0;
+      bool occupied_ray = false;
+      for (r = 0; r < r_max_; r += dr) {
+        vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
+        vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
+        vec[2] = pose.position_W[2] + r * cos(phi_rad);
+
+        if (vec[0] < min_x || vec[0] > max_x || 
+        vec[1] < min_y || vec[1] > max_y || 
+        vec[2] < min_z || vec[2] > max_z) {
+          continue;
+        }
+
+        VoxelStatus node = getVoxelStatus(vec);
+
+        if (node == kOccupied) {
+          occupied_ray = true;
+          break;
+        } else if (node == kFree) {
+          continue;
+        } else if (node == kUnknown) {
+          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+        }
+      }
+      gain += g;
+    }
+  }
+
+  //auto end = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> elapsed = end - start;
+  //ROS_INFO("[AEPlanner]: RayCasting took: %f seconds.", elapsed.count());
+  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
+
+  return gain;
+}
+
+std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position) {
+  double best_gain;
+  double best_yaw;
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  for (int k = 0; k < yaw_samples; ++k) {
+    double yaw = k * 2 * M_PI / yaw_samples;
+    //position.position_W = node->point.head(3);
+    position.setFromYaw(yaw);
+    double gain = computeGainRaycasting(position);
+    if (gain > best_gain) {
+      best_gain = gain;
+      best_yaw = yaw;
+    }
+  }
+
+  //auto end = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> elapsed = end - start;
+
+  return std::make_pair(best_gain, best_yaw);
+}
+
+std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position) {
+  double best_gain;
+  double best_yaw;
+
+  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
+
+  std::vector<double> yaws;
+  std::vector<double> gains;
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  for (int k = 0; k < min_yaw_samples; ++k) {
+    double yaw = k * 2 * M_PI / min_yaw_samples;
+    position.setFromYaw(yaw);
+    double gain = computeGainRaycasting(position);
+
+    yaws.push_back(yaw);
+    gains.push_back(gain);
+
+    if (gain > best_gain) {
+      best_gain = gain;
+      best_yaw = yaw;
+    }
+  }
+
+  // Create a vector to store the filtered yaws
+  std::vector<double> filteredYaws;
+
+  for (int i = 0; i < min_yaw_samples; ++i) {
+      int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
+      int next = (i + 1) % min_yaw_samples;
+
+      if ((gains[i] + gains[next] >= best_gain) || (gains[i] + gains[prev] >= best_gain)) {
+          filteredYaws.push_back(yaws[i]);
+      }
+  }
+
+  //auto end = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> elapsed = end - start;
+
+  return std::make_pair(best_gain, best_yaw);
+}
+
 
 double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
   CHECK_NOTNULL(tsdf_layer_);

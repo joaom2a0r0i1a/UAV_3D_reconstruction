@@ -52,6 +52,12 @@ class GainEvaluator {
 
   bool isRayIntersectingBoundingBox(const voxblox::Point& start, const voxblox::Point& end);
 
+  double computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
+  
+  std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
+
   double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   // Use sparse raycasting to discard occluded voxels, AEP-style implementation.
@@ -84,6 +90,8 @@ class GainEvaluator {
   float gain_range_; 
   double fov_y_rad_, fov_p_rad_;
   double r_max_;
+
+  int yaw_samples;
 
   // Cached parameters of the layer.
   float voxel_size_;
