@@ -94,8 +94,8 @@ def plot_both_csv(file_path1, file_path2):
     plt.show()
 
 # Replace with your CSV file path
-csv_file_path = '/home/joaomendes/motion_workspace/src/data/computation_time_gain.csv'
-csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/computation_time_gain_sparse.csv'
+csv_file_path = '/home/joaomendes/motion_workspace/src/data/computation_time_gain_raycast.csv'
+csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/computation_time_gain_ours.csv'
 
 # Plot the data
 #plot_csv(csv_file_path)

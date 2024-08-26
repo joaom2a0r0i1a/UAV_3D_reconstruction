@@ -516,11 +516,14 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
 
   std::vector<double> yaws;
   std::vector<double> gains;
+  double min_yaw_step = 2 * M_PI / min_yaw_samples;
+  double yaw_step = 2 * M_PI / yaw_samples;
+  int aditional_angles = (yaw_samples - min_yaw_samples) / min_yaw_samples;
 
   //auto start = std::chrono::high_resolution_clock::now();
 
   for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw = k * 2 * M_PI / min_yaw_samples;
+    double yaw = k * min_yaw_step;
     position.setFromYaw(yaw);
     double gain = computeGainRaycasting(position);
 
@@ -537,12 +540,29 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
   std::vector<double> filteredYaws;
 
   for (int i = 0; i < min_yaw_samples; ++i) {
-      int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
-      int next = (i + 1) % min_yaw_samples;
+    int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
+    int next = (i + 1) % min_yaw_samples;
 
-      if ((gains[i] + gains[next] >= best_gain) || (gains[i] + gains[prev] >= best_gain)) {
-          filteredYaws.push_back(yaws[i]);
+    if ((gains[i] + gains[next] > best_gain)) {
+      filteredYaws.push_back(yaws[i]);
+    }
+
+    /*if ((gains[i] + gains[next] > best_gain) || (gains[i] + gains[prev] > best_gain)) {
+      filteredYaws.push_back(yaws[i]);
+    }*/
+  }
+
+  for (int j = 0; j < filteredYaws.size(); ++j) {
+    for (int l = 0; l < aditional_angles; ++l) {
+      double yaw = filteredYaws[j] + yaw_step * l;
+      position.setFromYaw(yaw);
+      double gain = computeGainRaycasting(position);
+
+      if (gain > best_gain) {
+        best_gain = gain;
+        best_yaw = yaw;
       }
+    }
   }
 
   //auto end = std::chrono::high_resolution_clock::now();

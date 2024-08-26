@@ -297,7 +297,7 @@ void AEPlanner::localPlanner() {
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
             //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -400,7 +400,7 @@ void AEPlanner::localPlanner() {
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
         //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
