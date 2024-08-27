@@ -296,8 +296,10 @@ void AEPlanner::localPlanner() {
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
+            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+            //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
+            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -318,9 +320,11 @@ void AEPlanner::localPlanner() {
                 best_node = new_node_best;
             }
 
-            //ROS_INFO("[AEPlanner]: Best Gain BB: %f", new_node_best->gain);
+            //ROS_INFO("[AEPlanner]: Best Gain Optimized BB: %f", new_node_best->gain);
+            //ROS_INFO("[AEPlanner]: Best Gain BB: %f", result2.first);
             //ROS_INFO("[AEPlanner]: Best Cost BB: %f", new_node_best->cost);
             ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
+            
 
             RRTStar.addKDTreeNode(new_node_best);
             //tree.push_back(new_node_best);
@@ -399,8 +403,10 @@ void AEPlanner::localPlanner() {
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
         //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+        //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
+        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
@@ -421,7 +427,8 @@ void AEPlanner::localPlanner() {
             best_node = new_node;
         }
 
-        //ROS_INFO("[AEPlanner]: Best Gain: %f", new_node->gain);
+        //ROS_INFO("[AEPlanner]: Best Gain Optimized: %f", new_node->gain);
+        //ROS_INFO("[AEPlanner]: Best Gain: %f", result2.first);
         //ROS_INFO("[AEPlanner]: Best Cost: %f", new_node->cost);
         ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
 

@@ -77,10 +77,10 @@ def plot_both_csv(file_path1, file_path2):
 
     # Create the plot
     plt.figure(figsize=(10, 6))
-    plt.plot(num_nodes, gain_time, linestyle='-', color='b', label='Gain Computation Time')
-    plt.plot(num_nodes, cumulative_avg, linestyle='-', color='r', label='Cumulative Average Gain Computation Time')
+    #plt.plot(num_nodes, gain_time, linestyle='-', color='b', label='Gain Computation Time')
+    #plt.plot(num_nodes2, gain_time2, linestyle='-', color='y', label='Sparse Gain Computation Time')
 
-    plt.plot(num_nodes2, gain_time2, linestyle='-', color='y', label='Sparse Gain Computation Time')
+    plt.plot(num_nodes, cumulative_avg, linestyle='-', color='r', label='Cumulative Average Gain Computation Time')
     plt.plot(num_nodes2, cumulative_avg2, linestyle='-', color='g', label='Sparse Cumulative Average Gain Computation Time')
 
     # Labeling the plot
@@ -94,8 +94,8 @@ def plot_both_csv(file_path1, file_path2):
     plt.show()
 
 # Replace with your CSV file path
-csv_file_path = '/home/joaomendes/motion_workspace/src/data/computation_time_gain_raycast.csv'
-csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/computation_time_gain_ours.csv'
+csv_file_path = '/home/joaomendes/motion_workspace/src/data/computation_time_gain.csv'
+csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/computation_time_gain_ours_sparse.csv'
 
 # Plot the data
 #plot_csv(csv_file_path)
