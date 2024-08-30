@@ -5,7 +5,9 @@
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/core/esdf_map.h>
 #include <voxblox/utils/camera_model.h>
+
 #include <motion_planning_python/RRT/rrt_star.h>
+#include <motion_planning_python/RRT/kino_rrt_star_kd.h>
 
 #include <cmath>
 #include <chrono>
@@ -75,7 +77,11 @@ class GainEvaluator {
 
   void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
 
+  void computeCost(std::shared_ptr<kino_rrt_star::Node>& new_node);
+
   void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
+
+  void computeScore(std::shared_ptr<kino_rrt_star::Node>& new_node, double lambda);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;

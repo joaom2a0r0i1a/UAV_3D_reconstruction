@@ -93,6 +93,10 @@ windows:
   #    layout: tiled
   #    panes:
   #      - waitForControl; roslaunch motion_planning_python voxblox_eval.launch
+  #- rqt_plot:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch motion_planning_python rqt_plot_velocity.launch
   - rviz:
       layout: tiled
       panes:

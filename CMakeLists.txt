@@ -42,6 +42,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   NBVPlanner
+  KinoNBVPlanner
   #NBVMultiPlanner
   AEPlanner
   #CameraParameters
@@ -79,6 +80,18 @@ add_library(NBVPlanner
   #src/NBV/NBVplanner_2D.cpp
   )
 
+ # Add library targets
+ add_library(KinoNBVPlanner 
+ src/gain_evaluator.cpp
+ #src/gain_evaluator_2D.cpp
+ #src/RRT/rrt_star.cpp
+ src/RRT/kino_rrt_star_kd.cpp
+ #src/RRT/rrt_star_2D.cpp
+ src/NBV/KinoNBVplanner.cpp
+ #src/NBV/NBVplanner_2D.cpp
+ )
+
+
 #add_library(NBVMultiPlanner 
 #  src/gain_evaluator.cpp
 #  #src/gain_evaluator_2D.cpp
@@ -103,16 +116,19 @@ add_library(AEPlanner
 
  # Add dependencies for library targets
 add_dependencies(NBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KinoNBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 #add_dependencies(NBVMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(AEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
 target_link_libraries(NBVPlanner ${catkin_LIBRARIES})
+target_link_libraries(KinoNBVPlanner ${catkin_LIBRARIES})
 #target_link_libraries(NBVMultiPlanner ${catkin_LIBRARIES})
 target_link_libraries(AEPlanner ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
 add_executable(NBV src/NBV/NBVplanner_node.cpp)
+add_executable(KinoNBV src/NBV/KinoNBVplanner_node.cpp)
 #add_executable(NBVMulti src/NBV/NBVMultiplanner_node.cpp)
 add_executable(AEP src/AEP/AEPlanner_node.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
@@ -129,6 +145,7 @@ add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
 #)
  # Link executable against required libraries
 target_link_libraries(NBV ${catkin_LIBRARIES} NBVPlanner)
+target_link_libraries(KinoNBV ${catkin_LIBRARIES} KinoNBVPlanner)
 #target_link_libraries(NBVMulti ${catkin_LIBRARIES} NBVMultiPlanner)
 target_link_libraries(AEP ${catkin_LIBRARIES} AEPlanner)
 target_link_libraries(eval_voxblox_node ${catkin_LIBRARIES})

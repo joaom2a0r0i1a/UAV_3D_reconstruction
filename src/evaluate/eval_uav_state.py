@@ -6,7 +6,7 @@ from rosgraph_msgs.msg import Clock
 import numpy as np
 
 # Function to extract data from rosbag
-def extract_data(bag_file, state_topic):
+def extract_data(bag_file, state_topic, time_limit=2000):
     time_data = []
     velocity_x_data = []
     velocity_y_data = []
@@ -22,6 +22,10 @@ def extract_data(bag_file, state_topic):
         for topic, msg, t in bag.read_messages(topics=[state_topic]):
             if topic == state_topic:
                 current_time = t.to_sec()
+
+                # Limit time in case simulation finishes early
+                if current_time > time_limit:
+                    break
 
                 velocity_x = msg.velocity.linear.x
                 velocity_y = msg.velocity.linear.y
@@ -86,16 +90,27 @@ def plot_data(time_data, velocity_x_data, velocity_y_data, velocity_z_data, velo
     plt.tight_layout()
     plt.show()
 
-# Main function
+def compute_averages(velocity_magnitude_data, acceleration_magnitude_data):
+    average_velocity_magnitude = np.mean(velocity_magnitude_data)
+    average_acceleration_magnitude = np.mean(acceleration_magnitude_data)
+    return average_velocity_magnitude, average_acceleration_magnitude
+
 def main():
-    bag_file = '/mnt/c/Users/joaof/Downloads/tmp_bag_2024-07-11-17-52-12.bag'
+    bag_file = '/mnt/c/Users/joaof/Documents/data/school/one_drone/AEP/tmp_bags/tmp_bag_2024-08-15-21-55-17.bag'
     #bag_file = '/home/joaomendes/workspace1/src/data/school/AEP/tmp_bags/tmp_bag_2024-07-12-11-20-14.bag'
     state_topic = '/uav1/estimation_manager/uav_state'
     clock_topic = '/clock'
 
     # Extract data
     (time_data, velocity_x_data, velocity_y_data, velocity_z_data, velocity_magnitude_data,
-     acceleration_x_data, acceleration_y_data, acceleration_z_data, acceleration_magnitude_data) = extract_data(bag_file, state_topic)
+     acceleration_x_data, acceleration_y_data, acceleration_z_data, acceleration_magnitude_data) = extract_data(bag_file, state_topic, time_limit=2500)
+
+    # Compute averages
+    average_velocity_magnitude, average_acceleration_magnitude = compute_averages(velocity_magnitude_data, acceleration_magnitude_data)
+
+    # Print the averages
+    print(f"Average Velocity Magnitude: {average_velocity_magnitude:.2f} m/s")
+    print(f"Average Acceleration Magnitude: {average_acceleration_magnitude:.2f} m/s^2")
 
     # Plot data
     plot_data(time_data, velocity_x_data, velocity_y_data, velocity_z_data, velocity_magnitude_data,
