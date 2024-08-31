@@ -77,11 +77,11 @@ class GainEvaluator {
 
   void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
 
-  void computeCost(std::shared_ptr<kino_rrt_star::Node>& new_node);
-
   void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
 
-  void computeScore(std::shared_ptr<kino_rrt_star::Node>& new_node, double lambda);
+  void computeCost(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory);
+
+  void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;

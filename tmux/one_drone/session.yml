@@ -60,7 +60,8 @@ windows:
       panes:
         #- 'history -s python3 eval_paths.py'
         #- waitForControl; roslaunch motion_planning_python motion_planner.launch
-        - waitForControl; roslaunch motion_planning_python AEPlanner.launch
+        #- waitForControl; roslaunch motion_planning_python AEPlanner.launch
+        - waitForControl; roslaunch motion_planning_python KinoNBV.launch
         - waitForControl; roslaunch motion_planning_python experiment_starter.launch
         #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
         #- waitForControl; roslaunch motion_planning_python motion_planner_python.launch
@@ -78,10 +79,10 @@ windows:
         #- 'history -s rosservice call /$UAV_NAME/cover_planner/fly_to_first_waypoint'
         #- 'history -s rosservice call /$UAV_NAME/cover_planner/start_waypoints_following'
         #- 'history -s rosservice call /$UAV_NAME/cover_planner/stop_waypoints_following'
-  - cached_nodes:
-      layout: tiled
-      panes:
-        - waitForControl; roslaunch cache_nodes cache.launch
+  #- cached_nodes:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch cache_nodes cache.launch
   - voxblox:
       layout: tiled
       panes:

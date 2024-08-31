@@ -17,30 +17,30 @@ public:
     struct Node {
         Eigen::Vector4d point;
         Eigen::Vector3d velocity;
-        std::shared_ptr<Node> parent;
-        double cost;
-        double gain;
-        double score;
-
         Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v);
     };
 
     struct Trajectory {
         std::vector<std::shared_ptr<Node>> TrajectoryPoints;
-        double total_cost; 
+        std::shared_ptr<Trajectory> parent;
+        double cost;
+        double gain;
+        double score;
 
-        // Constructor
+        // Constructors
         Trajectory();
+        Trajectory(const std::shared_ptr<Node>& Node);
 
         // Method to add a node to the trajectory
         void addNode(const std::shared_ptr<Node>& node) {
             TrajectoryPoints.push_back(node);
-            total_cost += node->cost;
         }
 
         void clear() {
             TrajectoryPoints.clear();
-            total_cost = 0.0;
+            cost = 0.0;
+            gain = 0.0;
+            score = 0.0;
         }
     };
 
@@ -81,45 +81,23 @@ public:
     
     kino_rrt_star();
 
-    void addKDTreeNode(std::shared_ptr<Node>& node);
+    void addKDTreeTrajectory(std::shared_ptr<Trajectory>& newTrajectory);
 
     void clearKDTree();
 
-    void initializeKDTreeWithNodes(std::vector<std::shared_ptr<Node>>& nodes);
-
-    Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z);
-
-    void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
+    void initializeKDTreeWithTrajectories(std::vector<std::shared_ptr<Trajectory>>& Trajectories);
 
     void computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result);
-
-    void computeYaw(double radius, double& result);
     
     void computeAccelerationSampling(double a_max, Eigen::Vector3d& result);
 
-    void findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Node>& nearestNode);
+    void findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Trajectory>& nearestTrajectory);
 
-    void steer_trajectory(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, const Eigen::Vector3d& accel, double stepSize, std::vector<std::shared_ptr<Node>>& new_node_trajectory);
+    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
-    bool collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles)
+    void backtrackTrajectory(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory, std::shared_ptr<Trajectory>& nextBestTrajectory);
 
-    void findNearbyKD(const std::shared_ptr<Node>& point, double radius, std::vector<std::shared_ptr<Node>>& nearbyNodes);
-
-    void chooseParent(std::shared_ptr<Node>& point, const std::vector<std::shared_ptr<Node>>& nearbyNodes);
-
-    void rewire(const std::shared_ptr<Node>& new_node, std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
-
-    double calculateYawAngle(const std::shared_ptr<Node>& node1, const std::shared_ptr<Node>& node2);
-
-    void backtrackTrajectory(const std::shared_ptr<Node>& node, std::vector<std::shared_ptr<Node>>& path, std::shared_ptr<Node>& nextBestNode);
-
-    void backtrackPathAEP(const std::shared_ptr<Node>& node, std::vector<std::shared_ptr<Node>>& path);
-
-    bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
-                const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles,
-                double dim_x, double dim_y, double dim_z, int max_iter,
-                double step_size, double radius, double tolerance,
-                std::vector<std::shared_ptr<Node>>& tree, std::vector<Eigen::Vector4d>& path);
+    void backtrackTrajectoryAEP(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory);
 
 private:
     std::unique_ptr<Tree> kdtree_;

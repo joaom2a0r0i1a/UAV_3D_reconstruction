@@ -54,7 +54,7 @@ public:
     KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isPathCollisionFree(const std::vector<std::shared_ptr<kino_rrt_star::Node>>& path) const;
+    bool isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const;
     void GetTransformation();
 
     void KinoNBV();
@@ -72,9 +72,9 @@ public:
     
     void changeState(const State_t new_state);
 
-    void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(const std::shared_ptr<kino_rrt_star::Node> node, const std::string& ns);
-    void visualize_path(const std::shared_ptr<kino_rrt_star::Node> node, const std::string& ns);
+    void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
+    void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
+    void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
     void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
     void visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position);
     void clear_node();
@@ -142,17 +142,19 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
+    int max_accel_iterations;
     std::atomic<int> replanning_counter_ = 0;
 
     // Tree variables
-    std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
-    std::shared_ptr<rrt_star::Node> previous_root;
-    std::shared_ptr<rrt_star::Node> next_best_node;
+    std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
+    std::shared_ptr<kino_rrt_star::Node> previous_root;
+    std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 
     // UAV variables
     bool is_initialized = false;
     Eigen::Vector4d pose;
+    Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
     mrs_msgs::Reference current_waypoint_;
@@ -164,8 +166,8 @@ private:
 
     // Visualization variables
     int node_id_counter_;
-    int edge_id_counter_;
-    int path_id_counter_;
+    int trajectory_id_counter_;
+    int best_trajectory_id_counter_;
     int collision_id_counter_;
     int iteration_;
 

@@ -1403,12 +1403,12 @@ void GainEvaluator::computeScore(std::shared_ptr<rrt_star::Node>& new_node, doub
     new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
 }
 
-void GainEvaluator::computeCost(std::shared_ptr<kino_rrt_star::Node>& new_node) {
-    new_node->cost = new_node->parent->cost + (new_node->point.head(3) - new_node->parent->point.head(3)).norm();
+void GainEvaluator::computeCost(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory) {
+    new_trajectory->cost = new_trajectory->parent->cost + new_trajectory->cost;
 }
 
-void GainEvaluator::computeScore(std::shared_ptr<kino_rrt_star::Node>& new_node, double lambda) {
-    new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
+void GainEvaluator::computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda) {
+    new_trajectory->score = new_trajectory->parent->score + new_trajectory->gain * exp(-lambda * new_trajectory->cost);
 }
 
 voxblox::CameraModel& GainEvaluator::getCameraModel() { return cam_model_; }

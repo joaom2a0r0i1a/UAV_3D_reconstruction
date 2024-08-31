@@ -87,7 +87,7 @@ add_library(NBVPlanner
  #src/RRT/rrt_star.cpp
  src/RRT/kino_rrt_star_kd.cpp
  #src/RRT/rrt_star_2D.cpp
- src/NBV/KinoNBVplanner.cpp
+ src/KinoNBV/KinoNBVplanner.cpp
  #src/NBV/NBVplanner_2D.cpp
  )
 
@@ -128,7 +128,7 @@ target_link_libraries(AEPlanner ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
 add_executable(NBV src/NBV/NBVplanner_node.cpp)
-add_executable(KinoNBV src/NBV/KinoNBVplanner_node.cpp)
+add_executable(KinoNBV src/KinoNBV/KinoNBVplanner_node.cpp)
 #add_executable(NBVMulti src/NBV/NBVMultiplanner_node.cpp)
 add_executable(AEP src/AEP/AEPlanner_node.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
