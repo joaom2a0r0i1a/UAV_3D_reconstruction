@@ -51,6 +51,7 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     //changeState(STATE_IDLE);
     state_ = STATE_IDLE;
     iteration_ = 0;
+    reset_velocity = true;
 
     // Get vertical FoV and setup camera
     vertical_fov = segment_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
@@ -191,10 +192,11 @@ void KinoNBVPlanner::KinoNBV() {
     }
     while (j < N_max || best_score_ == 0.0) {
         // Backtrack
-        if (collision_id_counter_ > 1000 * j) {
+        /*if (collision_id_counter_ > 1000 * j) {
             if (previous_root) {
                 //next_best_trajectory = previous_root;
                 rotate();
+                reset_velocity = true;
                 changeState(STATE_WAITING_INITIALIZE);
             } else {
                 ROS_INFO("[KinoNBVPlanner]: Enough");
@@ -202,7 +204,7 @@ void KinoNBVPlanner::KinoNBV() {
                 break;
             }
             return;
-        }
+        }*/
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -267,74 +269,84 @@ void KinoNBVPlanner::KinoNBV() {
         double max_velocity = 1.0;
         double max_accel = 1.0;
         int accel_iteration = 0;
-        //while (accel_iteration < max_accel_iterations) {
-        Eigen::Vector3d accel;
-        KinoRRTStar.computeAccelerationSampling(max_accel, accel);
-        //ROS_INFO("[KinoNBVPlanner]: accel: [%f, %f, %f]", accel[0], accel[1], accel[2]);
+        int accel_tries = 0;
+        while (accel_iteration < max_accel_iterations && accel_tries < 100 * max_accel_iterations) {
+            accel_tries++;
+            Eigen::Vector3d accel;
+            KinoRRTStar.computeAccelerationSampling(max_accel, accel);
+            //ROS_INFO("[KinoNBVPlanner]: accel: [%f, %f, %f]", accel[0], accel[1], accel[2]);
 
-        //new_trajectory[trajectory_size - 1]->point[3] = rand_point_yaw[3];
-        std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
-        new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
-        KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, accel, step_size, new_trajectory);
-        //int trajectory_size = sizeof(new_trajectory->TrajectoryPoints) / sizeof(new_trajectory->TrajectoryPoints[0]); 
+            //new_trajectory[trajectory_size - 1]->point[3] = rand_point_yaw[3];
+            std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
+            new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
+            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, accel, step_size, new_trajectory);
+            //int trajectory_size = sizeof(new_trajectory->TrajectoryPoints) / sizeof(new_trajectory->TrajectoryPoints[0]); 
 
-        //std::shared_ptr<kino_rrt_star::Node> new_node;
-        bool OutOfBounds = false;
-        /*for (size_t l = 0; l < new_trajectory->TrajectoryPoints.size(); ++l) {
-            if (new_trajectory->TrajectoryPoints[l]->point[0] > max_x || new_trajectory->TrajectoryPoints[l]->point[0] < min_x 
-            || new_trajectory->TrajectoryPoints[l]->point[1] < min_y || new_trajectory->TrajectoryPoints[l]->point[1] > max_y 
-            || new_trajectory->TrajectoryPoints[l]->point[2] < min_z || new_trajectory->TrajectoryPoints[l]->point[2] > max_z) {
+            //std::shared_ptr<kino_rrt_star::Node> new_node;
+            bool OutOfBounds = false;
+            /*for (size_t l = 0; l < new_trajectory->TrajectoryPoints.size(); ++l) {
+                if (new_trajectory->TrajectoryPoints[l]->point[0] > max_x || new_trajectory->TrajectoryPoints[l]->point[0] < min_x 
+                || new_trajectory->TrajectoryPoints[l]->point[1] < min_y || new_trajectory->TrajectoryPoints[l]->point[1] > max_y 
+                || new_trajectory->TrajectoryPoints[l]->point[2] < min_z || new_trajectory->TrajectoryPoints[l]->point[2] > max_z) {
+                    OutOfBounds = true;
+                    break;
+                }
+            }*/
+
+           if (new_trajectory->TrajectoryPoints.back()->point[0] > max_x || new_trajectory->TrajectoryPoints.back()->point[0] < min_x 
+                || new_trajectory->TrajectoryPoints.back()->point[1] < min_y || new_trajectory->TrajectoryPoints.back()->point[1] > max_y 
+                || new_trajectory->TrajectoryPoints.back()->point[2] < min_z || new_trajectory->TrajectoryPoints.back()->point[2] > max_z) {
                 OutOfBounds = true;
                 break;
             }
+
+            if (OutOfBounds) {
+                //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
+                continue;
+            }
+
+            // Collision Check
+            if (!isTrajectoryCollisionFree(new_trajectory)) {
+                collision_id_counter_++;
+                /*if (collision_id_counter_ > 1000 * j) {
+                    break;
+                }*/
+                continue;
+            }
+
+            visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
+            accel_iteration++;
+
+            //new_trajectory->TrajectoryPoints[trajectory_size - 1]->point[3] = rand_point_yaw[3];
+            eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
+            trajectory_point_gain.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
+            trajectory_point_gain.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
+            double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
+            new_trajectory->gain = result;
+
+            segment_evaluator.computeCost(new_trajectory);
+            segment_evaluator.computeScore(new_trajectory, lambda);
+
+            if (new_trajectory->score > best_score_) {
+                best_score_ = new_trajectory->score;
+                best_trajectory = new_trajectory;
+            }
+
+            //ROS_INFO("[KinoNBVPlanner]: Yaw: %f", new_trajectory->point[3]);
+            ROS_INFO("[KinoNBVPlanner]: Best Score: %f", new_trajectory->score);
+
+            KinoRRTStar.addKDTreeTrajectory(new_trajectory);
+            visualize_trajectory(new_trajectory, ns);
+
+        }
+
+        if (accel_iteration == 0) {
+            --j;
+        }
+
+        /*if (collision_id_counter_ > 1000 * j) {
+            continue;
         }*/
-
-        if (new_trajectory->TrajectoryPoints.back()->point[0] > max_x || new_trajectory->TrajectoryPoints.back()->point[0] < min_x 
-            || new_trajectory->TrajectoryPoints.back()->point[1] < min_y || new_trajectory->TrajectoryPoints.back()->point[1] > max_y 
-            || new_trajectory->TrajectoryPoints.back()->point[2] < min_z || new_trajectory->TrajectoryPoints.back()->point[2] > max_z) {
-            OutOfBounds = true;
-            break;
-        }
-
-        if (OutOfBounds) {
-            //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
-            continue;
-        }
-
-        // Collision Check
-        if (!isTrajectoryCollisionFree(new_trajectory)) {
-            collision_id_counter_++;
-            /*if (collision_id_counter_ > 1000 * j) {
-                break;
-            }*/
-            continue;
-        }
-
-        visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
-        //accel_iteration++;
-
-        //new_trajectory->TrajectoryPoints[trajectory_size - 1]->point[3] = rand_point_yaw[3];
-        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-        trajectory_point_gain.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
-        trajectory_point_gain.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
-        double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
-        new_trajectory->gain = result;
-
-        segment_evaluator.computeCost(new_trajectory);
-        segment_evaluator.computeScore(new_trajectory, lambda);
-
-        if (new_trajectory->score > best_score_) {
-            best_score_ = new_trajectory->score;
-            best_trajectory = new_trajectory;
-        }
-
-        //ROS_INFO("[KinoNBVPlanner]: Yaw: %f", new_trajectory->point[3]);
-        ROS_INFO("[KinoNBVPlanner]: Best Score: %f", new_trajectory->score);
-
-        KinoRRTStar.addKDTreeTrajectory(new_trajectory);
-        visualize_trajectory(new_trajectory, ns);
-
-        //}
 
         if (j > N_termination) {
             ROS_INFO("[KinoNBVPlanner]: KinoNBV Terminated");
@@ -348,7 +360,10 @@ void KinoNBVPlanner::KinoNBV() {
         ++j;
     }
 
+    //ROS_INFO("Reset Velocity: %s", reset_velocity ? "true" : "false");
+    
     if (best_trajectory) {
+        reset_velocity = false;
         next_best_trajectory = best_trajectory;
         KinoRRTStar.backtrackTrajectory(best_trajectory, best_branch, next_best_trajectory);
         visualize_best_trajectory(best_trajectory, ns);
@@ -530,6 +545,11 @@ void KinoNBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
     }
     ROS_INFO_ONCE("[KinoNBVPlanner]: getting ControlManager diagnostics");
     control_manager_diag = *msg;
+
+    // If planner stops, set velocity to zero
+    if (!control_manager_diag.tracker_status.have_goal) {
+        reset_velocity = true;
+    }
 }
 
 void KinoNBVPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {

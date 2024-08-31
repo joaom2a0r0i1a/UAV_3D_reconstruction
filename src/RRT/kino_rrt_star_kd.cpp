@@ -73,17 +73,23 @@ void kino_rrt_star::findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<
     //nearestNode = nearestTrajectory->TrajectoryPoints.back();
 }
 
-void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
+void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
     double dt = 0.1;
-    size_t trajectory_size = fromTrajectory->TrajectoryPoints.size(); 
-    Eigen::Vector3d current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
+    size_t trajectory_size = fromTrajectory->TrajectoryPoints.size();
+    Eigen::Vector3d current_velocity; 
+    if (!reset_velocity) {
+        current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
+    } else {
+        current_velocity = Eigen::Vector3d::Zero();
+    }
 
     std::shared_ptr<Node> currentNode = fromTrajectory->TrajectoryPoints.back();
     double distance = 0.0;
-    double time = 0.0;
-    double max_time = 1.0;
+    //double time = 0.0;
+    //double max_time = 1.0;
 
-    while (time < max_time) {
+    //while (time < max_time) {
+    while (distance < stepSize) {
         current_velocity += accel * dt;
 
         if (current_velocity.norm() > max_velocity) {
@@ -99,8 +105,8 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
         newTrajectory->TrajectoryPoints.push_back(newNode);
         newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
         
-        //distance += (new_position - currentNode->point.head<3>()).norm();
-        time += dt;
+        distance += (new_position - currentNode->point.head<3>()).norm();
+        //time += dt;
         currentNode = newNode;
     }
     newTrajectory->parent = fromTrajectory;

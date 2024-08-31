@@ -11,7 +11,7 @@
   <arg name="evaluate" default="true"/>
   <arg name="evaluate_volume" default="false"/>
   <arg name="error_histogram" default="false"/>
-  <arg name="create_meshes" default="true"/>
+  <arg name="create_meshes" default="false"/>
   <arg name="create_plots" default="true"/>
   <arg name="show_plots" default="false"/>
   <arg name="clear_voxblox_maps" default="false"/>
