@@ -38,7 +38,6 @@
       <remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" />
       <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
       <!-- Services clients-->
-      <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
       <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
       <!--remap from="~path_out" to="trajectory_generation/path" /-->
       <!-- Services servers-->

@@ -10,6 +10,7 @@
 #include <mrs_msgs/UavState.h>
 #include <mrs_msgs/TrackerCommand.h>
 #include <mrs_msgs/DynamicsConstraints.h>
+#include <mrs_msgs/MpcPredictionFullState.h>
 #include <mrs_msgs/Reference.h>
 #include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
@@ -66,6 +67,7 @@ public:
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
+    void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     //void timeoutControlManagerDiag(const std::string& topic, const ros::Time& last_msg);
     void timerMain(const ros::TimerEvent& event);
@@ -157,6 +159,7 @@ private:
     Eigen::Vector4d pose;
     Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
+    mrs_msgs::TrackerCommand tracker_cmd;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
     mrs_msgs::Reference current_waypoint_;
 
@@ -179,6 +182,7 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
+    mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand> sub_tracker_cmd;
     mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
 
     // Publishers

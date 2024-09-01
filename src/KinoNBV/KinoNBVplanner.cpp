@@ -99,6 +99,7 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &KinoNBVPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KinoNBVPlanner::callbackControlManagerDiag, this);
     //sub_control_manager_diag =  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", ros::Duration(3.0), &KinoNBVPlanner::timeoutControlManagerDiag, this);
+    sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &KinoNBVPlanner::callbackTrackerCmd, this);
     sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
@@ -106,7 +107,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     ss_stop = nh_private_.advertiseService("stop_in", &KinoNBVPlanner::callbackStop, this);
 
     /* Service Clients */
-    sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
     sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
 
     /* Timer */
@@ -187,10 +187,11 @@ void KinoNBVPlanner::KinoNBV() {
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
+    int expanded_num_nodes = 0;
     if (best_branch.size() > 0) {
         previous_root = best_branch[0]->TrajectoryPoints.front();
     }
-    while (j < N_max || best_score_ == 0.0) {
+    while (j < N_max || best_score_ <= 0.0) {
         // Backtrack
         /*if (collision_id_counter_ > 1000 * j) {
             if (previous_root) {
@@ -245,7 +246,7 @@ void KinoNBVPlanner::KinoNBV() {
             ++j;
         }
 
-        if (j >= N_max && best_score_ > 0) {
+        if (j >= N_max && best_score_ > 0.0) {
             break;
         }
     
@@ -279,7 +280,8 @@ void KinoNBVPlanner::KinoNBV() {
             //new_trajectory[trajectory_size - 1]->point[3] = rand_point_yaw[3];
             std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
             new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
-            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, accel, step_size, new_trajectory);
+            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, step_size, new_trajectory);
+            new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
             //int trajectory_size = sizeof(new_trajectory->TrajectoryPoints) / sizeof(new_trajectory->TrajectoryPoints[0]); 
 
             //std::shared_ptr<kino_rrt_star::Node> new_node;
@@ -302,6 +304,8 @@ void KinoNBVPlanner::KinoNBV() {
 
             if (OutOfBounds) {
                 //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
+                // Avoid Memory Leak
+                new_trajectory.reset();
                 continue;
             }
 
@@ -311,6 +315,8 @@ void KinoNBVPlanner::KinoNBV() {
                 /*if (collision_id_counter_ > 1000 * j) {
                     break;
                 }*/
+               // Avoid Memory Leak
+                new_trajectory.reset();
                 continue;
             }
 
@@ -341,8 +347,10 @@ void KinoNBVPlanner::KinoNBV() {
         }
 
         if (accel_iteration == 0) {
-            --j;
+            continue;
         }
+
+        expanded_num_nodes += accel_iteration;
 
         /*if (collision_id_counter_ > 1000 * j) {
             continue;
@@ -353,6 +361,8 @@ void KinoNBVPlanner::KinoNBV() {
             KinoRRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
+            best_trajectory.reset();
+            Root.reset();
             changeState(STATE_STOPPED);
             break;
         }
@@ -361,6 +371,9 @@ void KinoNBVPlanner::KinoNBV() {
     }
 
     //ROS_INFO("Reset Velocity: %s", reset_velocity ? "true" : "false");
+    ROS_INFO("[KinoNBVPlanner]: Final Best Score: %f", best_score_);
+    ROS_INFO("[KinoNBVPlanner]: Node Iterations: %d", j);
+    ROS_INFO("[KinoNBVPlanner]: Full Node Iterations: %d", expanded_num_nodes);
     
     if (best_trajectory) {
         reset_velocity = false;
@@ -552,6 +565,14 @@ void KinoNBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
     }
 }
 
+void KinoNBVPlanner::callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg) {
+    if (!is_initialized) {
+        return;
+    }
+    ROS_INFO_ONCE("[KinoNBVPlanner]: getting TrackerCmd diagnostics");
+    tracker_cmd = *msg;
+}
+
 void KinoNBVPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
     if (!is_initialized) {
         return;
@@ -573,9 +594,10 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 
     const bool got_control_manager_diag = sub_control_manager_diag.hasMsg() && (ros::Time::now() - sub_control_manager_diag.lastMsgTime()).toSec() < 2.0;
     const bool got_uav_state = sub_uav_state.hasMsg() && (ros::Time::now() - sub_uav_state.lastMsgTime()).toSec() < 2.0;
+    const bool got_tracker_cmd = sub_tracker_cmd.hasMsg() && (ros::Time::now() - sub_tracker_cmd.lastMsgTime()).toSec() < 2.0;
 
-    if (!got_control_manager_diag || !got_uav_state) {
-        ROS_INFO_THROTTLE(1.0, "[KinoNBVPlanner]: waiting for data: ControlManagerDiag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
+    if (!got_control_manager_diag || !got_uav_state || !got_tracker_cmd) {
+        ROS_INFO_THROTTLE(1.0, "[KinoNBVPlanner]: waiting for data: ControlManagerDiag = %s, UavState = %s, TrackerCmd = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE", got_tracker_cmd ? "TRUE" : "FALSE");
         return;
     } else {
         ready_to_plan_ = true;
@@ -640,6 +662,26 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
 
+            /*ros::Time path_stamp;
+            const mrs_msgs::MpcPredictionFullState prediction_full_state = sub_tracker_cmd.getMsg()->full_state_prediction;
+
+            if (prediction_full_state.stamps.size() == 0) {
+                ROS_WARN("[KinoNBVPlanner]: Setting current trajectory, prediction full state is empty");
+                path_stamp = ros::Time(0);
+            } else {
+                ROS_INFO("[KinoNBVPlanner]: Setting future trajectory");
+                path_stamp = prediction_full_state.stamps.back();
+                if (ros::Time::now() > path_stamp || !control_manager_diag.tracker_status.have_goal) {
+                    path_stamp = ros::Time(0);
+                }
+            }*/
+
+            /*ros::Time path_stamp = initial_condition.value().header.stamp;
+
+            if (ros::Time::now() > path_stamp || !control_manager_diag->tracker_status.have_goal) {
+                path_stamp = ros::Time(0);
+            }*/
+
             mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
 
             srv_trajectory_reference.request.trajectory.header.frame_id = ns + "/" + frame_id;
@@ -652,11 +694,21 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             mrs_msgs::Reference reference;
 
-            for (size_t i = 0; i < next_best_trajectory->TrajectoryPoints.size(); i++) {
-                reference.position.x = next_best_trajectory->TrajectoryPoints[i]->point[0];
-                reference.position.y = next_best_trajectory->TrajectoryPoints[i]->point[1];
-                reference.position.z = next_best_trajectory->TrajectoryPoints[i]->point[2];
-                reference.heading = next_best_trajectory->TrajectoryPoints[i]->point[3];
+            if (next_best_trajectory->parent) {
+                for (size_t i = 0; i < next_best_trajectory->parent->TrajectoryPoints.size(); i++) {
+                    reference.position.x = next_best_trajectory->parent->TrajectoryPoints[i]->point[0];
+                    reference.position.y = next_best_trajectory->parent->TrajectoryPoints[i]->point[1];
+                    reference.position.z = next_best_trajectory->parent->TrajectoryPoints[i]->point[2];
+                    reference.heading = next_best_trajectory->parent->TrajectoryPoints[i]->point[3];
+                    srv_trajectory_reference.request.trajectory.points.push_back(reference);
+                }
+            }
+
+            for (size_t j = 0; j < next_best_trajectory->TrajectoryPoints.size(); j++) {
+                reference.position.x = next_best_trajectory->TrajectoryPoints[j]->point[0];
+                reference.position.y = next_best_trajectory->TrajectoryPoints[j]->point[1];
+                reference.position.z = next_best_trajectory->TrajectoryPoints[j]->point[2];
+                reference.heading = next_best_trajectory->TrajectoryPoints[j]->point[3];
                 pub_reference.publish(reference);
                 srv_trajectory_reference.request.trajectory.points.push_back(reference);
             }

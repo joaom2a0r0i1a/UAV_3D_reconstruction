@@ -57,7 +57,7 @@ bounded_box:
   #planner_range: 3 # [m]
 
 rrt:
-  N_max: 10
+  N_max: 50
   N_termination: 300
   N_yaw_samples: 10
   radius: 2.0 # [m]

@@ -97,7 +97,7 @@ def compute_averages(velocity_magnitude_data, acceleration_magnitude_data):
 
 def main():
     #bag_file = '/mnt/c/Users/joaof/Documents/data/school/one_drone/AEP/tmp_bags/tmp_bag_2024-08-15-21-55-17.bag'
-    bag_file = '/home/joaomendes/motion_workspace/src/data/tmp_bags/tmp_bag_2024-08-31-21-30-27.bag'
+    bag_file = '/home/joaomendes/motion_workspace/src/data/tmp_bags/tmp_bag_2024-09-01-21-50-06.bag'
     state_topic = '/uav1/estimation_manager/uav_state'
     clock_topic = '/clock'
 

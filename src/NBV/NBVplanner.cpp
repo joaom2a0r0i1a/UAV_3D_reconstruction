@@ -103,6 +103,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &NBVPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &NBVPlanner::callbackControlManagerDiag, this);
     //sub_control_manager_diag =  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", ros::Duration(3.0), &NBVPlanner::timeoutControlManagerDiag, this);
+    sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &NBVPlanner::callbackTrackerCmd, this);
     sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
@@ -563,6 +564,14 @@ void NBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagno
     control_manager_diag = *msg;
 }
 
+void NBVPlanner::callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg) {
+    if (!is_initialized) {
+        return;
+    }
+    ROS_INFO_ONCE("[planner]: getting TrackerCmd diagnostics");
+    tracker_cmd = *msg;
+}
+
 void NBVPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
     if (!is_initialized) {
         return;
@@ -598,9 +607,10 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 
     const bool got_control_manager_diag = sub_control_manager_diag.hasMsg() && (ros::Time::now() - sub_control_manager_diag.lastMsgTime()).toSec() < 2.0;
     const bool got_uav_state = sub_uav_state.hasMsg() && (ros::Time::now() - sub_uav_state.lastMsgTime()).toSec() < 2.0;
+    const bool got_tracker_cmd = sub_tracker_cmd.hasMsg() && (ros::Time::now() - sub_tracker_cmd.lastMsgTime()).toSec() < 2.0;
 
-    if (!got_control_manager_diag || !got_uav_state) {
-        ROS_INFO_THROTTLE(1.0, "[planner]: waiting for data: ControlManagerDiag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
+    if (!got_control_manager_diag || !got_uav_state || !got_tracker_cmd) {
+        ROS_INFO_THROTTLE(1.0, "[planner]: waiting for data: ControlManagerDiag = %s, UavState = %s, TrackerCmd = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE", got_tracker_cmd ? "TRUE" : "FALSE");
         return;
     } else {
         ready_to_plan_ = true;
@@ -663,10 +673,33 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
+            /*ros::Time path_stamp;
+            const mrs_msgs::MpcPredictionFullState prediction_full_state = sub_tracker_cmd.getMsg()->full_state_prediction;
+
+            if (prediction_full_state.stamps.size() == 0) {
+                ROS_WARN("[planner]: Setting current trajectory, prediction full state is empty");
+                path_stamp = ros::Time(0);
+            } else {
+                ROS_INFO("[planner]: Setting future trajectory");
+                path_stamp = prediction_full_state.stamps.back();
+                std::stringstream ss;
+                ss << path_stamp.sec << "." << path_stamp.nsec;
+                std::cout << "Stamp: " << ss.str() << std::endl;
+                if (ros::Time::now() > path_stamp || !control_manager_diag.tracker_status.have_goal) {
+                    path_stamp = ros::Time(0);
+                }
+            }*/
+
+            /*ros::Time path_stamp = initial_condition.value().header.stamp;
+
+            if (ros::Time::now() > path_stamp || !control_manager_diag->tracker_status.have_goal) {
+                path_stamp = ros::Time(0);
+            }*/
+
             mrs_msgs::GetPathSrv srv_get_path;
 
             srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
-            srv_get_path.request.path.header.stamp = ros::Time::now();
+            srv_get_path.request.path.header.stamp = ros::Time::now(); //path_stamp;
             srv_get_path.request.path.fly_now = false;
             srv_get_path.request.path.use_heading = true;
 
