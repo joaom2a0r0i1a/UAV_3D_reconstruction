@@ -5,9 +5,9 @@ kino_rrt_star::kino_rrt_star() {}
 
 kino_rrt_star::Node::Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v) : point(p), velocity(v) {}
 
-kino_rrt_star::Trajectory::Trajectory() : parent(nullptr), cost(0), gain(0), score(0) {}
+kino_rrt_star::Trajectory::Trajectory() : parent(nullptr), cost(0.0), gain(0.0), score(0.0) {}
 
-kino_rrt_star::Trajectory::Trajectory(const std::shared_ptr<Node>& Node) : parent(nullptr), cost(0), gain(0), score(0) {TrajectoryPoints.push_back(Node);}
+kino_rrt_star::Trajectory::Trajectory(const std::shared_ptr<Node>& Node) : parent(nullptr), cost(0.0), gain(0.0), score(0.0) {TrajectoryPoints.push_back(Node);}
 
 // Add and clear Nodes
 void kino_rrt_star::KDTree_data::clear() {
@@ -53,12 +53,16 @@ void kino_rrt_star::computeAccelerationSampling(double a_max, Eigen::Vector3d& r
     while (!solutionFound) {
         a_x = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
         a_y = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
-        a_z = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);        
-        if (Eigen::Vector3d(a_x, a_y, a_z).norm() > a_max) {
+        //a_z = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);      
+        /*if (Eigen::Vector3d(a_x, a_y, a_z).norm() > a_max) {
+            continue;
+        }*/
+        if (Eigen::Vector2d(a_x, a_y).norm() > a_max) {
             continue;
         }
         solutionFound = true;
     }
+    a_z = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
     result = Eigen::Vector3d(a_x, a_y, a_z);
 }
 
@@ -112,7 +116,7 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
     newTrajectory->parent = fromTrajectory;
 }
 
-void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
+void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
     double dt = 0.1;
     size_t trajectory_size = fromTrajectory->TrajectoryPoints.size();
     Eigen::Vector3d current_velocity; 
@@ -133,11 +137,17 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
     double current_heading = fromTrajectory->TrajectoryPoints.back()->point[3];
     double current_heading_velocity = 0.0;
     double accel_heading;
-    if (target_heading - current_heading > 0) {
+
+    double heading_difference = fmod((target_heading - current_heading + M_PI), (2*M_PI)) - M_PI;
+    if (heading_difference < -M_PI) {
+        heading_difference = heading_difference + 2*M_PI;
+    }
+
+    if (heading_difference > 0) {
         accel_heading = max_heading_acceleration;
-    } else if (target_heading - current_heading < 0) {
+    } else if (heading_difference < 0) {
         accel_heading = -max_heading_acceleration;
-    } else if (target_heading - current_heading == 0) {
+    } else if (heading_difference == 0) {
         accel_heading = 0;
     }
 
@@ -149,8 +159,16 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
         current_velocity += accel * dt;
         current_heading_velocity += accel_heading * dt;
 
-        if (current_velocity.norm() > max_velocity) {
-            current_velocity = current_velocity.normalized() * max_velocity;
+        if (current_velocity.head(2).norm() > max_velocity) {
+            current_velocity.head(2) = current_velocity.head(2).normalized() * max_velocity;
+        }
+
+        if (current_velocity[2] > max_velocity) {
+            current_velocity[2] = max_velocity;
+            accel[2] = 0;
+        } else if (current_velocity[2] < -max_velocity) {
+            current_velocity[2] = -max_velocity;
+            accel[2] = 0;
         }
 
         if (current_heading_velocity > max_heading_velocity) {
@@ -159,7 +177,7 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
 
         Eigen::Vector3d new_position = currentNode->point.head<3>() + current_velocity*dt + 0.5*accel*dt*dt;
         double new_heading;
-        if(target_heading - current_heading > 0) {
+        if(heading_difference > 0) {
             if (target_heading - current_heading > heading_tolerance) {
                 new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
             } else {
@@ -172,6 +190,55 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
                 new_heading = current_heading;
             }
         }
+
+    /*double heading_difference = fmod((target_heading - current_heading + M_PI), (2*M_PI)) - M_PI;
+    if (heading_difference < -M_PI) {
+        heading_difference = heading_difference + 2*M_PI;
+    }
+
+    if (heading_difference > 0) {
+        accel_heading = max_heading_acceleration;
+    } else if (heading_difference < 0) {
+        accel_heading = -max_heading_acceleration;
+    } else if (heading_difference == 0) {
+        accel_heading = 0;
+    }
+
+    //while (time < max_time) {
+
+    bool in_heading_tolerance = false;
+    bool heading_tolerance = max_heading_velocity*dt;
+    while (distance < stepSize) {
+        current_velocity += accel * dt;
+        current_heading_velocity += accel_heading * dt;
+
+        if (current_velocity.head(2).norm() > max_velocity) {
+            current_velocity.head(2) = current_velocity.head(2).normalized() * max_velocity;
+        }
+
+        if (current_velocity[2] > max_velocity) {
+            current_velocity[2] = max_velocity;
+        }
+
+        if (current_heading_velocity > max_heading_velocity) {
+            current_heading_velocity = max_heading_velocity;
+        }
+
+        Eigen::Vector3d new_position = currentNode->point.head<3>() + current_velocity*dt + 0.5*accel*dt*dt;
+        double new_heading;
+        if(heading_difference > 0) {
+            if (target_heading - current_heading > heading_tolerance) {
+                new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
+            } else {
+                new_heading = current_heading;
+            }
+        } else {
+            if (target_heading - current_heading < -heading_tolerance) {
+                new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
+            } else {
+                new_heading = current_heading;
+            }
+        }*/
         /*double dx = new_position.x() - currentNode->point.x();
         double dy = new_position.y() - currentNode->point.y();
         double heading = std::atan2(dy, dx);*/

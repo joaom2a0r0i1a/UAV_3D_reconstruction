@@ -157,9 +157,10 @@ void KinoNBVPlanner::GetTransformation() {
 }
 
 void KinoNBVPlanner::KinoNBV() {
-    best_score_ = 0;
-    double node_size = 0.1;
+    best_score_ = 0.0;
     std::shared_ptr<kino_rrt_star::Trajectory> best_trajectory = nullptr;
+
+    double node_size = 0.2;
 
     std::shared_ptr<kino_rrt_star::Node> root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
@@ -171,8 +172,9 @@ void KinoNBVPlanner::KinoNBV() {
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
 
-    Root->cost = 0;
-    Root->score = Root->gain;
+    Root->cost = 0.0;
+    Root->score = 0.0;
+    //Root->score = Root->gain;
 
     if (Root->score > best_score_) {
         best_score_ = Root->score;
@@ -182,23 +184,24 @@ void KinoNBVPlanner::KinoNBV() {
     KinoRRTStar.clearKDTree();
     KinoRRTStar.addKDTreeTrajectory(Root);
     clearMarkers();
-    visualize_node(Root->TrajectoryPoints.back()->point, 3*node_size, ns);
+    visualize_node(Root->TrajectoryPoints.back()->point, 2*node_size, ns);
 
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
     if (best_branch.size() > 0) {
-        previous_root = best_branch[0]->TrajectoryPoints.front();
+        previous_trajectory = best_branch[0];
     }
     while (j < N_max || best_score_ <= 0.0) {
         // Backtrack
         /*if (collision_id_counter_ > 1000 * j) {
-            if (previous_root) {
-                //next_best_trajectory = previous_root;
-                rotate();
+            if (previous_trajectory) {
+                next_best_trajectory = previous_trajectory;
+                //rotate();
                 reset_velocity = true;
-                changeState(STATE_WAITING_INITIALIZE);
+                return;
+                //changeState(STATE_WAITING_INITIALIZE);
             } else {
                 ROS_INFO("[KinoNBVPlanner]: Enough");
                 collision_id_counter_ = 0;
@@ -233,11 +236,19 @@ void KinoNBVPlanner::KinoNBV() {
             segment_evaluator.computeCost(new_trajectory_best);
             segment_evaluator.computeScore(new_trajectory_best, lambda);
 
+            /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
+            // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
+            const double EPSILON = 0.000001;
+            if (std::abs(new_trajectory->score) < EPSILON) {
+                new_trajectory->score = 0.0;
+            }*/
+
             if (new_trajectory_best->score > best_score_) {
                 best_score_ = new_trajectory_best->score;
                 best_trajectory = new_trajectory_best;
             }
 
+            //ROS_INFO("[KinoNBVPlanner]: Best Score BB: %.12f", new_trajectory_best->score);
             ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", new_trajectory_best->score);
 
             KinoRRTStar.addKDTreeTrajectory(new_trajectory_best);
@@ -321,7 +332,7 @@ void KinoNBVPlanner::KinoNBV() {
             }
 
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
-            accel_iteration++;
+            ++accel_iteration;
 
             //new_trajectory->TrajectoryPoints[trajectory_size - 1]->point[3] = rand_point_yaw[3];
             eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
@@ -333,12 +344,20 @@ void KinoNBVPlanner::KinoNBV() {
             segment_evaluator.computeCost(new_trajectory);
             segment_evaluator.computeScore(new_trajectory, lambda);
 
+            /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
+            // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
+            const double EPSILON = 0.000001;
+            if (std::abs(new_trajectory->score) < EPSILON) {
+                new_trajectory->score = 0.0;
+            }*/
+
             if (new_trajectory->score > best_score_) {
                 best_score_ = new_trajectory->score;
                 best_trajectory = new_trajectory;
             }
 
             //ROS_INFO("[KinoNBVPlanner]: Yaw: %f", new_trajectory->point[3]);
+            //ROS_INFO("[KinoNBVPlanner]: Best Score: %.12f", new_trajectory->score);
             ROS_INFO("[KinoNBVPlanner]: Best Score: %f", new_trajectory->score);
 
             KinoRRTStar.addKDTreeTrajectory(new_trajectory);
@@ -560,7 +579,7 @@ void KinoNBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDi
     control_manager_diag = *msg;
 
     // If planner stops, set velocity to zero
-    if (!control_manager_diag.tracker_status.have_goal) {
+    if (!control_manager_diag.tracker_status.have_goal && !reset_velocity) {
         reset_velocity = true;
     }
 }

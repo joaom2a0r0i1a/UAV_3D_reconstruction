@@ -249,8 +249,8 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        series_dir = ["NBV", "AEP"]
-        colors = ['r', 'y']
+        series_dir = ["RH-NBV", "AEP", "Kinodynamic RH-NBV (ours)"]
+        colors = ['r', 'y', 'b']
         for idx, series in enumerate(series_dir):
             dir_expression = re.compile(r'\d{8}_\d{6}')
             subdirs = [

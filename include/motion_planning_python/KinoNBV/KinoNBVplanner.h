@@ -150,7 +150,7 @@ private:
 
     // Tree variables
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
-    std::shared_ptr<kino_rrt_star::Node> previous_root;
+    std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 

@@ -1,11 +1,11 @@
-#include "motion_planning_python/AEP/AEPlanner.h"
+#include "motion_planning_python/KinoAEP/KinoAEPlanner.h"
 
-AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
 
     //ns = "uav1";
 
     /* Parameter loading */
-    mrs_lib::ParamLoader param_loader(nh_private_, "AEPlanner");
+    mrs_lib::ParamLoader param_loader(nh_private_, "KinoAEPlanner");
 
     // Namespace
     param_loader.loadParam("uav_namespace", ns);
@@ -14,12 +14,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("frame_id", frame_id);
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
-    param_loader.loadParam("center/x", center_x);
-    param_loader.loadParam("center/y", center_y);
-    param_loader.loadParam("center/z", center_z);
-    param_loader.loadParam("dimensions/x", dimensions_x);
-    param_loader.loadParam("dimensions/y", dimensions_y);
-    param_loader.loadParam("dimensions/z", dimensions_z);
 
     // Bounded Box
     param_loader.loadParam("bounded_box/min_x", min_x);
@@ -53,15 +47,15 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
     param_loader.loadParam("path/lambda", lambda);
-    param_loader.loadParam("path/global_lambda", global_lambda);
+    param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
 
     // Timer
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
     state_ = STATE_IDLE;
-    //changeState(STATE_IDLE);
     iteration_ = 0;
+    reset_velocity = true;
 
     // Get vertical FoV and setup camera
     vertical_fov = segment_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
@@ -74,7 +68,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     segment_evaluator.setEsdfMap(esdf_map_);
             
     // Setup Tf Transformer
-    transformer_ = std::make_unique<mrs_lib::Transformer>("AEPlanner");
+    transformer_ = std::make_unique<mrs_lib::Transformer>("KinoAEPlanner");
     transformer_->setDefaultFrame(frame_id);
     transformer_->setDefaultPrefix(ns);
     transformer_->retryLookupNewest(true);
@@ -88,20 +82,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
-
-    // Open file in append mode
-    num_nodes_count = 0;
-    outfile.open("/home/joaomendes/motion_workspace/src/data/computation_time_gain.csv", std::ios_base::out);
-    if (!outfile.is_open()) {
-        ROS_ERROR("Failed to open the file: computation_time_gain.csv");
-        return;
-    }
-
-    if (outfile.tellp() == 0) {
-        outfile << "NumberNodes,GainComputationTime\n";
-    }
-    //std::ofstream outfile;
-    //outfile.open("computation_time_gain.csv", std::ios::out);
     
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 500);
@@ -115,35 +95,34 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
     shopts.nh                 = nh_private_;
-    shopts.node_name          = "AEPlanner";
+    shopts.node_name          = "KinoAEPlanner";
     shopts.no_message_timeout = mrs_lib::no_timeout;
     shopts.threadsafe         = true;
     shopts.autostart          = true;
     shopts.queue_size         = 10;
     shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
-    sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &AEPlanner::callbackUavState, this);
-    sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &AEPlanner::callbackControlManagerDiag, this);
+    sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &KinoAEPlanner::callbackUavState, this);
+    sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KinoAEPlanner::callbackControlManagerDiag, this);
     //sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
-    ss_start = nh_private_.advertiseService("start_in", &AEPlanner::callbackStart, this);
-    ss_stop = nh_private_.advertiseService("stop_in", &AEPlanner::callbackStop, this);
-    //ss_reevaluate = nh_private_.advertiseService("reevaluate_in", &AEPlanner::callbackReevaluate, this);
+    ss_start = nh_private_.advertiseService("start_in", &KinoAEPlanner::callbackStart, this);
+    ss_stop = nh_private_.advertiseService("stop_in", &KinoAEPlanner::callbackStop, this);
+    //ss_reevaluate = nh_private_.advertiseService("reevaluate_in", &KinoAEPlanner::callbackReevaluate, this);
 
     /* Service Clients */
     sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
     sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
     sc_best_node = mrs_lib::ServiceClientHandler<cache_nodes::BestNode>(nh_private_, "best_node_out");
-    sc_query = mrs_lib::ServiceClientHandler<cache_nodes::Query>(nh_private_, "gp_query_out");
 
     /* Timer */
-    timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &AEPlanner::timerMain, this);
+    timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &KinoAEPlanner::timerMain, this);
 
     is_initialized = true;
 }
 
-double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const {
+double KinoAEPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     if (!voxblox_server_.getEsdfMapPtr()) {
         return 0.0;
     }
@@ -154,7 +133,7 @@ double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool AEPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const {
+bool KinoAEPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const {
     for (const std::shared_ptr<rrt_star::Node>& node : path) {
         if (getMapDistance(node->point.head(3)) < uav_radius) {
             return false;
@@ -163,11 +142,11 @@ bool AEPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::
     return true;
 }
 
-void AEPlanner::GetTransformation() {
+void KinoAEPlanner::GetTransformation() {
     // From Body Frame to Camera Frame
     auto Message_C_B = transformer_->getTransform(body_frame_id, camera_frame_id, ros::Time(0));
     if (!Message_C_B) {
-        ROS_ERROR_THROTTLE(1.0, "[AEPlanner]: could not get transform from body frame to the camera frame!");
+        ROS_ERROR_THROTTLE(1.0, "[KinoAEPlanner]: could not get transform from body frame to the camera frame!");
         return;
     }
 
@@ -180,7 +159,7 @@ void AEPlanner::GetTransformation() {
     segment_evaluator.setCameraExtrinsics(T_C_B);
 }
 
-void AEPlanner::AEP() {
+void KinoAEPlanner::AEP() {
     localPlanner();
     if (goto_global_planning) {
         // Clear variables from possible previous iterations
@@ -188,7 +167,7 @@ void AEPlanner::AEP() {
         GlobalFrontiers.clear();
 
         // Compute the Global frontier and its path
-        ROS_INFO("[AEPlanner]: Getting Global Frontiers");
+        ROS_INFO("[KinoAEPlanner]: Getting Global Frontiers");
         getGlobalFrontiers(GlobalFrontiers);
         if (GlobalFrontiers.size() == 0) {
             changeState(STATE_STOPPED);
@@ -198,53 +177,49 @@ void AEPlanner::AEP() {
             std::cout << "Global Frontier: " << GlobalFrontiers[i] << std::endl;
             //std::cout << "Gain: " << GlobalFrontiers[i] << std::endl;
         }*/
-        ROS_INFO("[AEPlanner]: Planning Path to Global Frontiers");
+        ROS_INFO("[KinoAEPlanner]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
         next_best_node = best_global_node;
         goto_global_planning = false;
     }
 }
 
-void AEPlanner::localPlanner() {
+void KinoAEPlanner::localPlanner() {
     best_score_ = 0;
-    std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
-    std::shared_ptr<rrt_star::Node> root;
+    std::shared_ptr<kino_rrt_star::Trajectory> best_trajectory = nullptr;
+
+    double node_size = 0.2;
+
+    std::shared_ptr<kino_rrt_star::Node> root_node;
+    std::shared_ptr<kino_rrt_star::Trajectory> Root;
     if (best_branch.size() > 1) {
-        root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
+        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity);
+        Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     } else {
-        root = std::make_shared<rrt_star::Node>(pose);
+        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+        Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
-    trajectory_point.position_W = root->point.head(3);
-    trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-    root->gain = result.first;
-    root->point[3] = result.second;
-    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
+    
+    Root->cost = 0.0;
+    Root->score = 0.0;
+    //Root->score = Root->gain;
 
-    root->cost = 0;
-    root->score = root->gain;
-
-    if (root->score > best_score_) {
-        best_score_ = root->score;
-        best_node = root;
+    if (Root->score > best_score_) {
+        best_score_ = Root->score;
+        best_trajectory = Root;
     }
 
-    RRTStar.clearKDTree();
-    RRTStar.addKDTreeNode(root);
-    if (root->gain > g_zero) {
-        cacheNode(root);
-    }
-    //cacheNode(root);
+    KinoRRTStar.clearKDTree();
+    KinoRRTStar.addKDTreeTrajectory(Root);
     clearMarkers();
+    visualize_node(Root->TrajectoryPoints.back()->point, 2*node_size, ns);
 
-    visualize_node(root->point, ns);
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
+    int expanded_num_nodes = 0;
     if (best_branch.size() > 0) {
-        previous_root = best_branch[0];
+        previous_trajectory = best_branch[0];
     }
     while (j < N_max || best_score_ <= g_zero) {
         // Backtrack
@@ -254,7 +229,7 @@ void AEPlanner::localPlanner() {
                 rotate();
                 changeState(STATE_WAITING_INITIALIZE);
             } else {
-                ROS_INFO("[AEPlanner]: Enough");
+                ROS_INFO("[KinoAEPlanner]: Trying the existing Nodes");
                 collision_id_counter_ = 0;
                 break;
             }
@@ -268,68 +243,43 @@ void AEPlanner::localPlanner() {
                 continue; // Skip first iteration (root)
             }
             
-            const Eigen::Vector4d& node_position = best_branch[i]->point;
+            const Eigen::Vector4d& node_position = best_branch[i]->TrajectoryPoints.back()->point;
 
-            std::shared_ptr<rrt_star::Node> nearest_node_best;
-            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
+            std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory_best;
+            KinoRRTStar.findNearestKD(node_position.head(3), nearest_trajectory_best);
             
-            std::shared_ptr<rrt_star::Node> new_node_best;
-            new_node_best = std::make_shared<rrt_star::Node>(node_position);
-            new_node_best->parent = nearest_node_best;
+            std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory_best;
+            new_trajectory_best = best_branch[i];
+            new_trajectory_best->parent = nearest_trajectory_best;
+            visualize_node(new_trajectory_best->TrajectoryPoints.back()->point, node_size, ns);
 
-            /*std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_best;
-            trajectory_segment_best.push_back(new_node_best->parent);
-            trajectory_segment_best.push_back(new_node_best);
 
-            bool success_collision_best = false;
-            success_collision_best = isPathCollisionFree(trajectory_segment_best);
-
-            if (!success_collision_best) {
-                clear_node();
-                trajectory_segment_best.clear();
-                break;
-            }
-
-            trajectory_segment_best.clear();*/
-            visualize_node(new_node_best->point, ns);
-
-            auto start1 = std::chrono::high_resolution_clock::now();
-
-            trajectory_point.position_W = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+            trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
+            trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
+            std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
             //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
-            new_node_best->gain = result.first;
-            new_node_best->point[3] = result.second;
-
-            auto end1 = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> elapsed = end1 - start1;
-            num_nodes_count += 1;
-
-            // Write the iteration count and elapsed time to the file
-            outfile << num_nodes_count << "," << elapsed.count() << "\n";
+            new_trajectory_best->gain = result_best.first;
+            new_trajectory_best->point[3] = result_best.second;
 
             //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
-            segment_evaluator.computeCost(new_node_best);
-            segment_evaluator.computeScore(new_node_best, lambda);
+            segment_evaluator.computeCost(new_trajectory_best);
+            segment_evaluator.computeScore(new_trajectory_best, lambda);
 
-            if (new_node_best->score > best_score_) {
-                best_score_ = new_node_best->score;
-                best_node = new_node_best;
+            if (new_trajectory_best->score > best_score_) {
+                best_score_ = new_trajectory_best->score;
+                best_trajectory = new_trajectory_best;
             }
 
-            //ROS_INFO("[AEPlanner]: Best Gain Optimized BB: %f", new_node_best->gain);
-            //ROS_INFO("[AEPlanner]: Best Gain BB: %f", result2.first);
-            //ROS_INFO("[AEPlanner]: Best Cost BB: %f", new_node_best->cost);
-            ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
-            
+            //ROS_INFO("[KinoAEPlanner]: Best Gain Optimized BB: %f", new_node_best->gain);
+            //ROS_INFO("[KinoAEPlanner]: Best Gain BB: %f", result2.first);
+            //ROS_INFO("[KinoAEPlanner]: Best Cost BB: %f", new_node_best->cost);
+            ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", new_trajectory_best->score);
 
-            RRTStar.addKDTreeNode(new_node_best);
-            //tree.push_back(new_node_best);
-            visualize_edge(new_node_best, ns);
+            KinoRRTStar.addKDTreeTrajectory(new_trajectory_best);
+            visualize_trajectory(new_trajectory_best, ns);
 
             ++j;
         }
@@ -341,111 +291,107 @@ void AEPlanner::localPlanner() {
         best_branch.clear();
 
         Eigen::Vector3d rand_point;
-        RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
-        rand_point += root->point.head(3);
+        KinoRRTStar.computeSamplingDimensions(bounded_radius, rand_point);
+        rand_point += root_node->point.head(3);
 
-        std::shared_ptr<rrt_star::Node> nearest_node;
-        //RRTStar.findNearest(tree, rand_point, nearest_node);
-        RRTStar.findNearestKD(rand_point, nearest_node);
+        std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory;
+        KinoRRTStar.findNearestKD(rand_point, nearest_trajectory);
 
-        std::shared_ptr<rrt_star::Node> new_node;
-        RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
+        double max_velocity = 1.0;
+        double max_accel = 1.0;
+        int accel_iteration = 0;
+        int accel_tries = 0;
+        while (accel_iteration < max_accel_iterations && accel_tries < 100 * max_accel_iterations) {
+            accel_tries++;
+            Eigen::Vector3d accel;
+            KinoRRTStar.computeAccelerationSampling(max_accel, accel);
+            //ROS_INFO("[KinoNBVPlanner]: accel: [%f, %f, %f]", accel[0], accel[1], accel[2]);
 
-        if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
-            continue;
-        }
+            //new_trajectory[trajectory_size - 1]->point[3] = rand_point_yaw[3];
+            std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
+            new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
+            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, step_size, new_trajectory);
+            new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
+            //int trajectory_size = sizeof(new_trajectory->TrajectoryPoints) / sizeof(new_trajectory->TrajectoryPoints[0]); 
 
-        //std::shared_ptr<rrt_star::Node> new_node;
-        /*if (new_node->point[0] < 12 && new_node->point[0] > -12 && new_node->point[1] > -7.0 && new_node->point[1] < 7.0 && new_node->point[2] > 0 && new_node->point[2] < 12.5) {
-            continue;
-        }
+            //std::shared_ptr<kino_rrt_star::Node> new_node;
+            bool OutOfBounds = false;
+            /*for (size_t l = 0; l < new_trajectory->TrajectoryPoints.size(); ++l) {
+                if (new_trajectory->TrajectoryPoints[l]->point[0] > max_x || new_trajectory->TrajectoryPoints[l]->point[0] < min_x 
+                || new_trajectory->TrajectoryPoints[l]->point[1] < min_y || new_trajectory->TrajectoryPoints[l]->point[1] > max_y 
+                || new_trajectory->TrajectoryPoints[l]->point[2] < min_z || new_trajectory->TrajectoryPoints[l]->point[2] > max_z) {
+                    OutOfBounds = true;
+                    break;
+                }
+            }*/
 
-        if (new_node->point[2] < 0.5 || new_node->point[2] > 14.5) {
-            continue;
-        }*/
+           if (new_trajectory->TrajectoryPoints.back()->point[0] > max_x || new_trajectory->TrajectoryPoints.back()->point[0] < min_x 
+                || new_trajectory->TrajectoryPoints.back()->point[1] < min_y || new_trajectory->TrajectoryPoints.back()->point[1] > max_y 
+                || new_trajectory->TrajectoryPoints.back()->point[2] < min_z || new_trajectory->TrajectoryPoints.back()->point[2] > max_z) {
+                OutOfBounds = true;
+                break;
+            }
 
-        // Collision Check
-        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
-        //trajectory_segment.push_back(new_node->parent);
-        trajectory_segment.push_back(new_node);
+            if (OutOfBounds) {
+                //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
+                // Avoid Memory Leak
+                new_trajectory.reset();
+                continue;
+            }
 
-        bool success_collision = false;
-        success_collision = isPathCollisionFree(trajectory_segment);
+            // Collision Check
+            if (!isTrajectoryCollisionFree(new_trajectory)) {
+                collision_id_counter_++;
+                /*if (collision_id_counter_ > 1000 * j) {
+                    break;
+                }*/
+               // Avoid Memory Leak
+                new_trajectory.reset();
+                continue;
+            }
 
-        if (!success_collision) {
-            //clear_node();
-            trajectory_segment.clear();
-            collision_id_counter_++;
-            continue;
-        }
+            visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
+            ++accel_iteration;
 
-        trajectory_segment.clear();
-        visualize_node(new_node->point, ns);
+            trajectory_point_gain.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
+            trajectory_point_gain.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
+            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+            new_trajectory->gain = result.first;
+            new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
+
+            segment_evaluator.computeCost(new_trajectory);
+            segment_evaluator.computeScore(new_trajectory, lambda);
+
+            if (new_trajectory->score > best_score_) {
+                best_score_ = new_trajectory->score;
+                best_trajectory = new_trajectory;
+            }
+
+            ROS_INFO("[KinoAEPlanner]: Best Score: %f", new_trajectory->score);
+
+            KinoRRTStar.addKDTreeTrajectory(new_trajectory);
+            visualize_trajectory(new_trajectory, ns);
         
-        /*cache_nodes::Query srv;
-        srv.request.point.x = new_node->point[0];
-        srv.request.point.y = new_node->point[1];
-        srv.request.point.z = new_node->point[2];
-
-        bool success_query = sc_query.call(srv);
-
-        if (!success_query) {
-            ROS_WARN("[AEPlanner]: Service call for Gaussian process failed");
         }
 
-        if (success_query && srv.response.sigma < sigma_threshold) {
-            new_node->gain = srv.response.mu;
-            new_node->point[3] = srv.response.yaw;
-        } else {
-            segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        }*/
-
-        auto start2 = std::chrono::high_resolution_clock::now();
-
-        trajectory_point.position_W = new_node->point.head(3);
-        trajectory_point.setFromYaw(new_node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-        //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
-        new_node->gain = result.first;
-        new_node->point[3] = result.second;
-
-        auto end2 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed = end2 - start2;
-        num_nodes_count += 1;
-
-        // Write the iteration count and elapsed time to the file
-        outfile << num_nodes_count << "," << elapsed.count() << "\n";
-
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-
-        segment_evaluator.computeCost(new_node);
-        segment_evaluator.computeScore(new_node, lambda);
-
-        if (new_node->score > best_score_) {
-            best_score_ = new_node->score;
-            best_node = new_node;
+        if (accel_iteration == 0) {
+            continue;
         }
 
-        //ROS_INFO("[AEPlanner]: Best Gain Optimized: %f", new_node->gain);
-        //ROS_INFO("[AEPlanner]: Best Gain: %f", result2.first);
-        //ROS_INFO("[AEPlanner]: Best Cost: %f", new_node->cost);
-        ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
+        expanded_num_nodes += accel_iteration;
 
-        RRTStar.addKDTreeNode(new_node);
-        visualize_edge(new_node, ns);
-
-        if (new_node->gain > g_zero) {
-            cacheNode(new_node);
+        if (new_trajectory->gain > g_zero) {
+            cacheNode(new_node); // CHANGE HERE
         }
         //cacheNode(new_node);
 
         if (j > N_termination) {
-            ROS_INFO("[AEPlanner]: Going to Global Planning");
-            RRTStar.clearKDTree();
+            ROS_INFO("[KinoAEPlanner]: Going to Global Planning");
+            KinoRRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
+            best_trajectory.reset();
+            Root.reset();
             goto_global_planning = true;
             //changeState(STATE_STOPPED);
             return;
@@ -454,18 +400,15 @@ void AEPlanner::localPlanner() {
         ++j;
 
     }
-
-    if (num_nodes_count >= 10000 && outfile.is_open()) {
-        outfile.close();
-    }
     
-    if (best_node) {
-        next_best_node = best_node;
-        RRTStar.backtrackPathAEP(best_node, best_branch);
+    if (best_trajectory) { // CHANGE HERE
+        reset_velocity = false;
+        next_best_trajectory = best_trajectory;
+        KinoRRTStar.backtrackPathAEP(best_node, best_branch);
         visualize_path(best_node, ns);
     }
 
-    for (int k = 1; k < best_branch.size(); ++k) {
+    for (int k = 1; k < best_branch.size(); ++k) { // CHANGE HERE
         if (best_branch[k]->gain > g_zero) {
             next_best_node = best_branch[k];
             std::vector<std::shared_ptr<rrt_star::Node>>::iterator start = best_branch.begin() + k - 1;
@@ -477,9 +420,9 @@ void AEPlanner::localPlanner() {
     }
 }
 
-void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node) {
+void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node) {
     if (GlobalFrontiers.size() == 0) {
-        ROS_INFO("[AEPlanner]: Terminate AEP");
+        ROS_INFO("[KinoAEPlanner]: Terminate AEP");
 
         RRTStar.clearKDTree();
         best_branch.clear();
@@ -493,7 +436,7 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
     RRTStar.addKDTreeNode(root);
     std::vector<std::shared_ptr<rrt_star::Node>> all_global_goals;
 
-    //ROS_INFO("[AEPlanner]: I AM HERE");
+    //ROS_INFO("[KinoAEPlanner]: I AM HERE");
 
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
@@ -547,21 +490,20 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         bool goal_reached;
         goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star); // NEED TO ADD FRONTIER HERE
         if (goal_reached) {
-            segment_evaluator.computeScore(new_node_star, global_lambda);
             all_global_goals.push_back(new_node_star);
             goal_reached = false;
         }
         ++m;
     }
 
-    ROS_INFO("[AEPlanner]: Global Planner Ends");
+    ROS_INFO("[KinoAEPlanner]: Global Planner Ends");
 
     // ADD LOGIC TO GET THE BEST PATH FOR THE REACHED GOALS (SMALLEST COST, I.E., SHORTEST PATH)
     getBestGlobalPath(all_global_goals, best_global_node);
     all_global_goals.clear();
 }
 
-void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers) {
+void KinoAEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers) {
     cache_nodes::BestNode srv;
     srv.request.threshold = g_zero;
     if (sc_best_node.call(srv)) {
@@ -572,17 +514,17 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
             frontier[0] = srv.response.best_node[i].x;
             frontier[1] = srv.response.best_node[i].y;
             frontier[2] = srv.response.best_node[i].z;
-            /*if (best_global_gain < srv.response.gain[i]) {
+            if (best_global_gain < srv.response.gain[i]) {
                 best_global_gain = srv.response.gain[i];
                 best_global_frontier = frontier;
-                ROS_INFO("[AEPlanner]: Best Global Gains: %f", best_global_gain);
+                ROS_INFO("[KinoAEPlanner]: Best Global Gains: %f", best_global_gain);
                 GlobalFrontiers.push_back(best_global_frontier);
-            }*/
+            }
             // Remove all elements except the last two
             //if (GlobalFrontiers.size() > 4) {
             //    GlobalFrontiers.erase(GlobalFrontiers.begin(), GlobalFrontiers.end() - 4);
             //}
-            GlobalFrontiers.push_back(frontier);
+            //GlobalFrontiers.push_back(frontier);
         }
         return;
         //GlobalFrontiers.push_back(best_global_frontier);
@@ -592,7 +534,7 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
     }
 }
 
-bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<rrt_star::Node>& node) {
+bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<rrt_star::Node>& node) {
     // Initialize KD Tree
     goals_tree.clearKDTreePoints();
     for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
@@ -609,8 +551,8 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
     }
 
     if ((nearest_goal - node->point.head(3)).norm() < tolerance) {
-        ROS_INFO("[AEPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
-        ROS_INFO("[AEPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);
+        ROS_INFO("[KinoAEPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
+        ROS_INFO("[KinoAEPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);
         /*std::cout << "Goal X: " << nearest_goal[0] << std::endl;
         std::cout << "Goal Y: " << nearest_goal[1] << std::endl;
         std::cout << "Goal Z: " << nearest_goal[2] << std::endl;
@@ -628,7 +570,7 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
         std::pair<double, double> result_original = segment_evaluator.computeGainAEP(trajectory_point_global);
-        ROS_INFO("[AEPlanner]: Goal Best Gain: %f", result_original.first);
+        ROS_INFO("[KinoAEPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
     }
@@ -637,7 +579,7 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
     return false;
 }
 
-void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node) {
+void KinoAEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node) {
     if (global_goals.size() == 0) {
         best_global_node = nullptr;
         return;
@@ -645,26 +587,17 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
 
     best_global_node = global_goals[0];
 
-    /*// Cost Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->cost > global_goals[i]->cost) {
             best_global_node = global_goals[i];
         }
-    }*/
-
-    /*// Gain Criteria
-    for (int i = 0; i < global_goals.size(); ++i) {
-        if (best_global_node->gain < global_goals[i]->gain) {
-            best_global_node = global_goals[i];
-        }
-    }*/
-
-   // Score Criteria
-    for (int i = 0; i < global_goals.size(); ++i) {
-        if (best_global_node->score < global_goals[i]->score) {
-            best_global_node = global_goals[i];
-        }
     }
+
+    /*for (int i = 0; i < global_goals.size(); ++i) {
+        if (best_global_node->gain > global_goals[i]->gain) {
+            best_global_node = global_goals[i];
+        }
+    }*/
 
     std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
 
@@ -683,16 +616,16 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
     }
 
     for (size_t i = 0; i < global_goals.size(); ++i) {
-        ROS_INFO("[AEPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->point[0], global_goals[i]->point[1], global_goals[i]->point[2]);
-        ROS_INFO("[AEPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost, global_goals[i]->score);
+        ROS_INFO("[KinoAEPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->point[0], global_goals[i]->point[1], global_goals[i]->point[2]);
+        ROS_INFO("[KinoAEPlanner]: Obtained Goal Gain & Cost: [%f, %f]", global_goals[i]->gain, global_goals[i]->cost);
         /*std::cout << "Obtained Goal X: " << global_goals[i]->point[0] << std::endl;
         std::cout << "Obtained Goal Y: " << global_goals[i]->point[1] << std::endl;
         std::cout << "Obtained Goal Z: " << global_goals[i]->point[2] << std::endl;
         std::cout << "Obtained Goal Cost: " << global_goals[i]->cost << std::endl;*/
     }
 
-    ROS_INFO("[AEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
-    ROS_INFO("[AEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_node->gain, best_global_node->cost, best_global_node->score);
+    ROS_INFO("[KinoAEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
+    ROS_INFO("[KinoAEPlanner]: Chosen Goal Gain & Cost: [%f, %f]", best_global_node->gain, best_global_node->cost);
     /*std::cout << "Chosen Goal X: " << best_global_node->point[0] << std::endl;
     std::cout << "Chosen Goal Y: " << best_global_node->point[1] << std::endl;
     std::cout << "Chosen Goal Z: " << best_global_node->point[2] << std::endl;
@@ -702,7 +635,7 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
     visualize_path(best_global_node, ns);
 }
 
-void AEPlanner::cacheNode(std::shared_ptr<rrt_star::Node> Node) {
+void KinoAEPlanner::cacheNode(std::shared_ptr<rrt_star::Node> Node) { // CHANGE HERE
     if (!Node) {
         return;
     }
@@ -715,17 +648,17 @@ void AEPlanner::cacheNode(std::shared_ptr<rrt_star::Node> Node) {
     pub_node.publish(cached_node);
 }
 
-double AEPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
+double KinoAEPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
 
   return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
                                  vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
-void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
+void KinoAEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.header.frame_id = "uav1/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
 
-    ROS_INFO("[AEPlanner]: Flying 3 meters up");
+    ROS_INFO("[KinoAEPlanner]: Flying 3 meters up");
 
     initial_reference.reference.position.x = pose[0];
     initial_reference.reference.position.y = pose[1];
@@ -735,7 +668,7 @@ void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     // Max horizontal speed is 1 m/s so we wait 2 second between points
     ros::Duration(3).sleep();
 
-    ROS_INFO("[AEPlanner]: Rotating 360 degrees");
+    ROS_INFO("[KinoAEPlanner]: Rotating 360 degrees");
 
     for (double i = 0.0; i <= 2.0; i = i + 0.4) {
         initial_reference.reference.position.x = pose[0];
@@ -749,7 +682,7 @@ void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
 
     ros::Duration(0.5).sleep();
 
-    ROS_INFO("[AEPlanner]: Flying 2 meters down");
+    ROS_INFO("[KinoAEPlanner]: Flying 2 meters down");
 
     initial_reference.reference.position.x = pose[0];
     initial_reference.reference.position.y = pose[1];
@@ -758,60 +691,9 @@ void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
     ros::Duration(2).sleep();
-
-    /*// Initialization motion, necessary for the planning of initial paths.
-    // Move 10 meters in the z axis and then back to the initial position
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1];
-    initial_reference.reference.position.z = pose[2] + 12;
-    initial_reference.reference.heading = pose[3];
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 10 second between points
-    ros::Duration(12).sleep();
-
-    // Rotate 360 degrees
-    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
-        initial_reference.reference.position.x = pose[0];
-        initial_reference.reference.position.y = pose[1];
-        initial_reference.reference.position.z = pose[2] + 12;
-        initial_reference.reference.heading = pose[3] + M_PI * i;
-        pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
-    }
-
-    // Wait for rotation to finish
-    ros::Duration(0.5).sleep();
-
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1] - 2.5;;
-    initial_reference.reference.position.z = pose[2] + 12;
-    initial_reference.reference.heading = pose[3] - M_PI/2;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 4 seconds between points
-    ros::Duration(2.5).sleep();
-
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1] - 2.5;;
-    initial_reference.reference.position.z = pose[2] + 1;
-    initial_reference.reference.heading = pose[3] - M_PI/2;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 9 second between points
-    ros::Duration(11).sleep();
-
-    // Move 1 meter in the x axis and then back to the initial position
-    for (double j = -2.5; j <= 0.0; j = j + 0.5) {
-        initial_reference.reference.position.x = pose[0];
-        initial_reference.reference.position.y = pose[1] + j;
-        initial_reference.reference.position.z = pose[2] + 1;
-        initial_reference.reference.heading = pose[3];
-        pub_initial_reference.publish(initial_reference);
-        // Max horizontal speed is 1 m/s so we wait 1 second between points
-        ros::Duration(0.5).sleep();
-    }*/
 }
 
-void AEPlanner::rotate() {
+void KinoAEPlanner::rotate() {
     mrs_msgs::ReferenceStamped initial_reference;
     initial_reference.header.frame_id = "uav1/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
@@ -828,7 +710,7 @@ void AEPlanner::rotate() {
     }
 }
 
-bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
+bool KinoAEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
     if (!is_initialized) {
         res.success = false;
         res.message = "not initialized";
@@ -839,7 +721,7 @@ bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
-        ROS_ERROR_STREAM_THROTTLE(0.5, "[AEPlanner]: " << ss.str());
+        ROS_ERROR_STREAM_THROTTLE(0.5, "[KinoAEPlanner]: " << ss.str());
 
         res.success = false;
         res.message = ss.str();
@@ -855,7 +737,7 @@ bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
 
 }
 
-bool AEPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
+bool KinoAEPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
     if (!is_initialized) {
         res.success = false;
         res.message = "not initialized";
@@ -866,7 +748,7 @@ bool AEPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger:
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
-        ROS_ERROR_STREAM_THROTTLE(0.5, "[AEPlanner]: " << ss.str());
+        ROS_ERROR_STREAM_THROTTLE(0.5, "[KinoAEPlanner]: " << ss.str());
 
         res.success = false;
         res.message = ss.str();
@@ -883,43 +765,31 @@ bool AEPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger:
 
 }
 
-/*bool AEPlanner::callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res) {
-    ROS_DEBUG_STREAM("Reevaluation Start!");
-
-    for (std::vector<geometry_msgs::Point>::iterator iter = req.point.begin(); iter != req.point.end(); ++iter) {
-        Eigen::Vector4d pos(iter->x, iter->y, iter->z, 0);
-        std::shared_ptr<rrt_star::Node> node = std::make_shared<rrt_star::Node>(pos);
-        eth_mav_msgs::EigenTrajectoryPoint traj_point;
-        segment_evaluator.computeGainFromsampledYaw(node, num_yaw_samples, traj_point);
-        res.gain.push_back(node->gain);
-        res.yaw.push_back(node->point[3]);
-    }
-
-    ROS_DEBUG_STREAM("Reevaluation Finish!");
-
-    return true;
-}*/
-
-void AEPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
+void KinoAEPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
     if (!is_initialized) {
         return;
     }
-    ROS_INFO_ONCE("[AEPlanner]: getting ControlManager diagnostics");
+    ROS_INFO_ONCE("[KinoAEPlanner]: getting ControlManager diagnostics");
     control_manager_diag = *msg;
+
+    // If planner stops, set velocity to zero
+    if (!control_manager_diag.tracker_status.have_goal && !reset_velocity) {
+        reset_velocity = true;
+    }
 }
 
-void AEPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
+void KinoAEPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
     if (!is_initialized) {
         return;
     }
-    ROS_INFO_ONCE("[AEPlanner]: getting UavState diagnostics");
+    ROS_INFO_ONCE("[KinoAEPlanner]: getting UavState diagnostics");
     //uav_state = *msg;
     geometry_msgs::Pose uav_state = msg->pose;
     double yaw = mrs_lib::getYaw(uav_state);
     pose = {uav_state.position.x, uav_state.position.y, uav_state.position.z, yaw};
 }
 
-void AEPlanner::timerMain(const ros::TimerEvent& event) {
+void KinoAEPlanner::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
     }
@@ -930,7 +800,7 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
     const bool got_uav_state = sub_uav_state.hasMsg() && (ros::Time::now() - sub_uav_state.lastMsgTime()).toSec() < 2.0;
 
     if (!got_control_manager_diag || !got_uav_state) {
-        ROS_INFO_THROTTLE(1.0, "[AEPlanner]: waiting for data: ControlManager diag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
+        ROS_INFO_THROTTLE(1.0, "[KinoAEPlanner]: waiting for data: ControlManager diag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
         return;
     } else {
         ready_to_plan_ = true;
@@ -940,29 +810,29 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
     starter.data = true;
     pub_start.publish(starter);
 
-    ROS_INFO_ONCE("[AEPlanner]: main timer spinning");
+    ROS_INFO_ONCE("[KinoAEPlanner]: main timer spinning");
 
     if (!set_variables) {
         GetTransformation();
-        ROS_INFO("[AEPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
-        ROS_INFO("[AEPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
+        ROS_INFO("[KinoAEPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
+        ROS_INFO("[KinoAEPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
         set_variables = true;
     }
     
     switch (state_) {
         case STATE_IDLE: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[AEPlanner]: tracker has goal");
+                ROS_INFO("[KinoAEPlanner]: tracker has goal");
             } else {
-                ROS_INFO("[AEPlanner]: waiting for command");
+                ROS_INFO("[KinoAEPlanner]: waiting for command");
             }
             break;
         }
         case STATE_WAITING_INITIALIZE: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[AEPlanner]: tracker has goal");
+                ROS_INFO("[KinoAEPlanner]: tracker has goal");
             } else {
-                ROS_INFO("[AEPlanner]: waiting for command");
+                ROS_INFO("[KinoAEPlanner]: waiting for command");
                 changeState(STATE_PLANNING);
             }
             break;
@@ -983,71 +853,85 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            current_waypoint_.position.x = next_best_node->point[0];
-            current_waypoint_.position.y = next_best_node->point[1];
-            current_waypoint_.position.z = next_best_node->point[2];
-            current_waypoint_.heading = next_best_node->point[3];
+            current_waypoint_.position.x = next_best_trajectory->TrajectoryPoints.back()->point[0];
+            current_waypoint_.position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
+            current_waypoint_.position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
+            current_waypoint_.heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
 
-            visualize_frustum(next_best_node);
-            visualize_unknown_voxels(next_best_node);
+            visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
+            visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
 
-            mrs_msgs::GetPathSrv srv_get_path;
+            mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
 
-            srv_get_path.request.path.header.frame_id = "uav1/" + frame_id;
-            srv_get_path.request.path.header.stamp = ros::Time::now();
-            srv_get_path.request.path.fly_now = false;
-            srv_get_path.request.path.use_heading = true;
+            srv_trajectory_reference.request.trajectory.header.frame_id = ns + "/" + frame_id;
+            srv_trajectory_reference.request.trajectory.header.stamp = ros::Time::now();
+            srv_trajectory_reference.request.trajectory.input_id = iteration_;
+            srv_trajectory_reference.request.trajectory.fly_now = true;
+            srv_trajectory_reference.request.trajectory.use_heading = true;
+
+            srv_trajectory_reference.request.trajectory.dt = 0.1;
 
             mrs_msgs::Reference reference;
 
-            while (next_best_node && next_best_node->parent) {
-                reference.position.x = next_best_node->point[0];
-                reference.position.y = next_best_node->point[1];
-                reference.position.z = next_best_node->point[2];
-                reference.heading = next_best_node->point[3];
-                srv_get_path.request.path.points.push_back(reference);
-                next_best_node = next_best_node->parent;
+            while (next_best_trajectory && next_best_trajectory->parent) {
+                for (size_t i = 0; i < next_best_trajectory->parent->TrajectoryPoints.size(); i++) {
+                    reference.position.x = next_best_trajectory->parent->TrajectoryPoints[i]->point[0];
+                    reference.position.y = next_best_trajectory->parent->TrajectoryPoints[i]->point[1];
+                    reference.position.z = next_best_trajectory->parent->TrajectoryPoints[i]->point[2];
+                    reference.heading = next_best_trajectory->parent->TrajectoryPoints[i]->point[3];
+                    srv_trajectory_reference.request.trajectory.points.push_back(reference);
+                }
+                next_best_trajectory = next_best_trajectory->parent;
             }
 
-            reference.position.x = next_best_node->point[0];
-            reference.position.y = next_best_node->point[1];
-            reference.position.z = next_best_node->point[2];
-            reference.heading = next_best_node->point[3];
-            srv_get_path.request.path.points.push_back(reference);
-
-            std::reverse(srv_get_path.request.path.points.begin(), srv_get_path.request.path.points.end());
-
-            for (const auto& point : srv_get_path.request.path.points) {
-                pub_reference.publish(point);
+            while (next_best_node && next_best_node->parent) { // CHANGE HERE
+                reference.position.x = next_best_node->point[0]; // CHANGE HERE
+                reference.position.y = next_best_node->point[1]; // CHANGE HERE
+                reference.position.z = next_best_node->point[2]; // CHANGE HERE
+                reference.heading = next_best_node->point[3]; // CHANGE HERE
+                srv_get_path.request.path.points.push_back(reference); // CHANGE HERE
+                next_best_node = next_best_node->parent; // CHANGE HERE
             }
 
-            bool success = sc_trajectory_generation.call(srv_get_path);
+            reference.position.x = next_best_node->point[0]; // CHANGE HERE
+            reference.position.y = next_best_node->point[1]; // CHANGE HERE
+            reference.position.z = next_best_node->point[2]; // CHANGE HERE
+            reference.heading = next_best_node->point[3]; // CHANGE HERE
+            srv_get_path.request.path.points.push_back(reference); // CHANGE HERE
 
-            if (!success) {
-                ROS_ERROR("[AEPlanner]: service call for trajectory failed");
+            std::reverse(srv_get_path.request.path.points.begin(), srv_get_path.request.path.points.end()); // CHANGE HERE
+
+            for (const auto& point : srv_get_path.request.path.points) { // CHANGE HERE
+                pub_reference.publish(point); // CHANGE HERE
+            } // CHANGE HERE
+
+            bool success = sc_trajectory_generation.call(srv_get_path); 
+
+            if (!success) { // CHANGE HERE
+                ROS_ERROR("[KinoAEPlanner]: service call for trajectory failed"); 
                 changeState(STATE_STOPPED);
                 return;
             } else {
                 if (!srv_get_path.response.success) {
-                    ROS_ERROR("[AEPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
+                    ROS_ERROR("[KinoAEPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
                     changeState(STATE_STOPPED);
                     return;
                 }
             }
 
             mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
-            srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
+            srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory; // CHANGE HERE
             srv_trajectory_reference.request.trajectory.fly_now = true;
 
             bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
 
             if (!success_trajectory) {
-                ROS_ERROR("[AEPlanner]: service call for trajectory reference failed");
+                ROS_ERROR("[KinoAEPlanner]: service call for trajectory reference failed");
                 changeState(STATE_STOPPED);
                 return;
             } else {
                 if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[AEPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
+                    ROS_ERROR("[KinoAEPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
                     changeState(STATE_STOPPED);
                     return;
                 }
@@ -1061,49 +945,46 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
         }
         case STATE_MOVING: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[AEPlanner]: tracker has goal");
+                ROS_INFO("[KinoAEPlanner]: tracker has goal");
                 mrs_msgs::UavState::ConstPtr uav_state_here = sub_uav_state.getMsg();
                 geometry_msgs::Pose current_pose = uav_state_here->pose;
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
-                ROS_INFO("[AEPlanner]: Distance to waypoint: %.2f", dist);
+                ROS_INFO("[KinoAEPlanner]: Distance to waypoint: %.2f", dist);
                 if (dist <= 0.8*step_size && yaw_difference <= 0.6*M_PI) {
                     changeState(STATE_PLANNING);
                 }
             } else {
-                ROS_INFO("[AEPlanner]: waiting for command");
+                ROS_INFO("[KinoAEPlanner]: waiting for command");
                 changeState(STATE_PLANNING);
             }
             break;
         }
         case STATE_STOPPED: {
-            ROS_INFO_ONCE("[AEPlanner]: Total Iterations: %d", iteration_);
-            ROS_INFO("[AEPlanner]: Closing output file.");
-            if (outfile.is_open()) {
-                outfile.close();
-            }
-            ROS_INFO("[AEPlanner]: Shutting down.");
+            ROS_INFO_ONCE("[KinoAEPlanner]: Total Iterations: %d", iteration_);
+            ROS_INFO("[KinoAEPlanner]: Closing output file.");
+            ROS_INFO("[KinoAEPlanner]: Shutting down.");
             ros::shutdown();
             return;
         }
         default: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[AEPlanner]: tracker has goal");
+                ROS_INFO("[KinoAEPlanner]: tracker has goal");
             } else {
-                ROS_INFO("[AEPlanner]: waiting for command");
+                ROS_INFO("[KinoAEPlanner]: waiting for command");
             }
             break;
         }
     }
 }
 
-void AEPlanner::changeState(const State_t new_state) {
+void KinoAEPlanner::changeState(const State_t new_state) {
     const State_t old_state = state_;
 
     if (interrupted_ && old_state == STATE_STOPPED) {
-        ROS_WARN("[AEPlanner]: Planning interrupted, not changing state.");
+        ROS_WARN("[KinoAEPlanner]: Planning interrupted, not changing state.");
         return;
     }
 
@@ -1119,12 +1000,12 @@ void AEPlanner::changeState(const State_t new_state) {
         default: {break;}
     }
 
-    ROS_INFO("[AEPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());
+    ROS_INFO("[KinoAEPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());
 
     state_ = new_state;
 }
 
-void AEPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& ns) {
+void KinoAEPlanner::visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns) {
     visualization_msgs::Marker n;
     n.header.stamp = ros::Time::now();
     n.header.seq = node_id_counter_;
@@ -1142,9 +1023,9 @@ void AEPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& ns
     n.pose.orientation.z = 0;
     n.pose.orientation.w = 0;
 
-    n.scale.x = 0.2;
-    n.scale.y = 0.2;
-    n.scale.z = 0.2;
+    n.scale.x = size;
+    n.scale.y = size;
+    n.scale.z = size;
 
     n.color.r = 0.4;
     n.color.g = 0.7;
@@ -1158,96 +1039,79 @@ void AEPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& ns
     pub_markers.publish(n);
 }
 
-void AEPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
-    visualization_msgs::Marker e;
-    e.header.stamp = ros::Time::now();
-    e.header.seq = edge_id_counter_;
-    e.header.frame_id = ns + "/" + frame_id;
-    e.id = edge_id_counter_;
-    e.ns = "tree_branches";
-    e.type = visualization_msgs::Marker::ARROW;
-    e.action = visualization_msgs::Marker::ADD;
-    //ROS_INFO("[AEPlanner]: HERE 8");
-    e.pose.position.x = node->parent->point[0];
-    e.pose.position.y = node->parent->point[1];
-    e.pose.position.z = node->parent->point[2];
-    //ROS_INFO("[AEPlanner]: HERE 9");
-    Eigen::Quaternion<double> q;
-    Eigen::Vector3d init(1.0, 0.0, 0.0);
-    Eigen::Vector3d dir(node->point[0] - node->parent->point[0],
-                        node->point[1] - node->parent->point[1],
-                        node->point[2] - node->parent->point[2]);
-    q.setFromTwoVectors(init, dir);
-    q.normalize();
+void KinoAEPlanner::visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns) {
+    visualization_msgs::Marker trajectory_marker;
+    trajectory_marker.header.stamp = ros::Time::now();
+    trajectory_marker.header.frame_id = ns + "/" + frame_id;
+    trajectory_marker.id = trajectory_id_counter_;
+    trajectory_marker.ns = "trajectory";
+    trajectory_marker.type = visualization_msgs::Marker::LINE_STRIP;
+    trajectory_marker.action = visualization_msgs::Marker::ADD;
 
-    e.pose.orientation.x = q.x();
-    e.pose.orientation.y = q.y();
-    e.pose.orientation.z = q.z();
-    e.pose.orientation.w = q.w();
+    trajectory_marker.color.r = 1.0;
+    trajectory_marker.color.g = 0.3;
+    trajectory_marker.color.b = 0.7;
+    trajectory_marker.color.a = 1.0;
 
-    e.scale.x = dir.norm();
-    e.scale.y = 0.05;
-    e.scale.z = 0.05;
+    trajectory_marker.scale.x = 0.1;
+    trajectory_marker.scale.y = 0.1;
+    trajectory_marker.scale.z = 0.1;
 
-    e.color.r = 1.0;
-    e.color.g = 0.3;
-    e.color.b = 0.7;
-    e.color.a = 1.0;
+    for (const auto& node : trajectory->TrajectoryPoints) {
+        geometry_msgs::Point p;
+        p.x = node->point[0];
+        p.y = node->point[1];
+        p.z = node->point[2];
+        trajectory_marker.points.push_back(p);
+    }
 
-    edge_id_counter_++;
+    trajectory_marker.lifetime = ros::Duration(30.0);
+    trajectory_marker.frame_locked = false;
+    pub_markers.publish(trajectory_marker);
 
-    e.lifetime = ros::Duration(30.0);
-    e.frame_locked = false;
-    pub_markers.publish(e);
+    trajectory_id_counter_++;
 }
 
-void AEPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
-    std::shared_ptr<rrt_star::Node> current = node;
+void KinoAEPlanner::visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns) {
+    std::shared_ptr<kino_rrt_star::Trajectory> currentTrajectory = trajectory;
     
-    while (current->parent) {
-        visualization_msgs::Marker p;
-        p.header.stamp = ros::Time::now();
-        p.header.seq = path_id_counter_;
-        p.header.frame_id = ns + "/" + frame_id;
-        p.id = path_id_counter_;
-        p.ns = "path";
-        p.type = visualization_msgs::Marker::ARROW;
-        p.action = visualization_msgs::Marker::ADD;
-        p.pose.position.x = current->parent->point[0];
-        p.pose.position.y = current->parent->point[1];
-        p.pose.position.z = current->parent->point[2];
+    while (currentTrajectory->parent) {
+        visualization_msgs::Marker best_trajectory_marker;
+        best_trajectory_marker.header.stamp = ros::Time::now();
+        best_trajectory_marker.header.seq = best_trajectory_id_counter_;
+        best_trajectory_marker.header.frame_id = ns + "/" + frame_id;
+        best_trajectory_marker.id = best_trajectory_id_counter_;
+        best_trajectory_marker.ns = "best_trajectory";
+        best_trajectory_marker.type = visualization_msgs::Marker::LINE_STRIP;
+        best_trajectory_marker.action = visualization_msgs::Marker::ADD;
 
-        Eigen::Quaternion<double> q;
-        Eigen::Vector3d init(1.0, 0.0, 0.0);
-        Eigen::Vector3d dir(current->point[0] - current->parent->point[0],
-                            current->point[1] - current->parent->point[1],
-                            current->point[2] - current->parent->point[2]);
-        q.setFromTwoVectors(init, dir);
-        q.normalize();
-        p.pose.orientation.x = q.x();
-        p.pose.orientation.y = q.y();
-        p.pose.orientation.z = q.z();
-        p.pose.orientation.w = q.w();
+        best_trajectory_marker.color.r = 0.7;
+        best_trajectory_marker.color.g = 0.7;
+        best_trajectory_marker.color.b = 0.3;
+        best_trajectory_marker.color.a = 1.0;
 
-        p.scale.x = dir.norm();
-        p.scale.y = 0.07;
-        p.scale.z = 0.07;
+        best_trajectory_marker.scale.x = 0.2;
+        best_trajectory_marker.scale.y = 0.2;
+        best_trajectory_marker.scale.z = 0.2;
 
-        p.color.r = 0.7;
-        p.color.g = 0.7;
-        p.color.b = 0.3;
-        p.color.a = 1.0;
+        for (const auto& node : currentTrajectory->TrajectoryPoints) {
+            geometry_msgs::Point p;
+            p.x = node->point[0];
+            p.y = node->point[1];
+            p.z = node->point[2];
+            best_trajectory_marker.points.push_back(p);
+        }
 
-        p.lifetime = ros::Duration(100.0);
-        p.frame_locked = false;
-        pub_markers.publish(p);
+        best_trajectory_marker.lifetime = ros::Duration(100.0);
+        best_trajectory_marker.frame_locked = false;
+        pub_markers.publish(best_trajectory_marker);
 
-        current = current->parent;
-        path_id_counter_++;
+        currentTrajectory = currentTrajectory->parent;
+        best_trajectory_id_counter_++;
     }
 }
 
-void AEPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
+void KinoAEPlanner::visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
@@ -1276,7 +1140,7 @@ void AEPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
     pub_frustum.publish(frustum);
 }
 
-void AEPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position) {
+void KinoAEPlanner::visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
@@ -1313,7 +1177,7 @@ void AEPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> positio
     pub_voxels.publish(voxels_marker);
 }
 
-void AEPlanner::clear_node() {
+void KinoAEPlanner::clear_node() {
     visualization_msgs::Marker clear_node;
     clear_node.header.stamp = ros::Time::now();
     clear_node.ns = "nodes";
@@ -1323,7 +1187,7 @@ void AEPlanner::clear_node() {
     pub_markers.publish(clear_node);
 }
 
-void AEPlanner::clear_all_voxels() {
+void KinoAEPlanner::clear_all_voxels() {
     visualization_msgs::Marker clear_voxels;
     clear_voxels.header.stamp = ros::Time::now();
     clear_voxels.ns = "unknown_voxels";
@@ -1331,7 +1195,7 @@ void AEPlanner::clear_all_voxels() {
     pub_voxels.publish(clear_voxels);
 }
 
-void AEPlanner::clearMarkers() {
+void KinoAEPlanner::clearMarkers() {
     // Clear nodes
     visualization_msgs::Marker clear_nodes;
     clear_nodes.header.stamp = ros::Time::now();
@@ -1339,22 +1203,22 @@ void AEPlanner::clearMarkers() {
     clear_nodes.action = visualization_msgs::Marker::DELETEALL;
     pub_markers.publish(clear_nodes);
 
-    // Clear edges
-    visualization_msgs::Marker clear_edges;
-    clear_edges.header.stamp = ros::Time::now();
-    clear_edges.ns = "tree_branches";
-    clear_edges.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_edges);
+    // Clear trajectory
+    visualization_msgs::Marker clear_trajectory;
+    clear_trajectory.header.stamp = ros::Time::now();
+    clear_trajectory.ns = "trajectory";
+    clear_trajectory.action = visualization_msgs::Marker::DELETEALL;
+    pub_markers.publish(clear_trajectory);
 
-    // Clear path
-    visualization_msgs::Marker clear_path;
-    clear_path.header.stamp = ros::Time::now();
-    clear_path.ns = "path";
-    clear_path.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_path);
+    // Clear best trajectory
+    visualization_msgs::Marker clear_best_trajectory;
+    clear_best_trajectory.header.stamp = ros::Time::now();
+    clear_best_trajectory.ns = "best_trajectory";
+    clear_best_trajectory.action = visualization_msgs::Marker::DELETEALL;
+    pub_markers.publish(clear_best_trajectory);
 
     // Reset marker ID counters
     node_id_counter_ = 0;
-    edge_id_counter_ = 0;
-    path_id_counter_ = 0;
+    trajectory_id_counter_ = 0;
+    best_trajectory_id_counter_ = 0;
 }

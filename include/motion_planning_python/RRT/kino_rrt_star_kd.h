@@ -95,7 +95,7 @@ public:
 
     void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
-    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
     void backtrackTrajectory(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory, std::shared_ptr<Trajectory>& nextBestTrajectory);
 

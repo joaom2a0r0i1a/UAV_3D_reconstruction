@@ -52,9 +52,11 @@ class GainEvaluator {
   double evaluateExplorationGainWithRaycasting(
       const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
-  bool isRayIntersectingBoundingBox(const voxblox::Point& start, const voxblox::Point& end);
+  double computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
-  double computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  std::pair<double, double> computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   std::pair<double, double> computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
   
@@ -66,6 +68,10 @@ class GainEvaluator {
   std::pair<double, double> computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainFromSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
+
+  std::pair<double, double> computeGainFromOptimizedSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
 
   // Initialization for visualization
   void visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);

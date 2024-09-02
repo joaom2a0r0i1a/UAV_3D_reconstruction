@@ -1,5 +1,5 @@
-#ifndef AEP_PLANNER_H
-#define AEP_PLANNER_H
+#ifndef KINO_AEP_PLANNER_H
+#define KINO_AEP_PLANNER_H
 
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
@@ -38,6 +38,7 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
+#include <motion_planning_python/RRT/kino_rrt_star_kd.h>
 #include <motion_planning_python/RRT/rrt_star_kd.h>
 #include <motion_planning_python/kd_tree.h>
 #include <motion_planning_python/gain_evaluator.h>
@@ -59,9 +60,9 @@ const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING"
 
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
-class AEPlanner {
+class KinoAEPlanner {
 public:
-    AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+    KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const;
@@ -89,9 +90,9 @@ public:
     
     void changeState(const State_t new_state);
 
-    void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns);
-    void visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns);
+    void visualize_node(const Eigen::Vector4d& pos, double size = 0.2, const std::string& ns);
+    void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
+    void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
     void visualize_frustum(std::shared_ptr<rrt_star::Node> position);
     void visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position);
     void clear_node();
@@ -119,22 +120,12 @@ private:
     voxblox::Transformation T_C_B;
     geometry_msgs::TransformStamped T_B_C_message;
     voxblox::Transformation T_B_C;
-    geometry_msgs::TransformStamped T_C_W_message;
-    voxblox::Transformation T_C_W;
-    geometry_msgs::TransformStamped T_W_C_message;
-    voxblox::Transformation T_W_C;
 
     // Parameters
     std::string frame_id;
     std::string body_frame_id;
     std::string camera_frame_id;
     std::string ns;
-    double center_x;
-    double center_y;
-    double center_z;
-    double dimensions_x;
-    double dimensions_y;
-    double dimensions_z;
     double best_score_;
 
     // Bounded Box
@@ -157,10 +148,6 @@ private:
     double g_zero;
     double sigma_threshold;
 
-    // Log files
-    int num_nodes_count;
-    std::ofstream outfile;
-
     // RRT* Parameters
     int N_min_nodes;
     bool goto_global_planning;
@@ -179,20 +166,15 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
-    double global_lambda;
+    int max_accel_iterations;
+    bool reset_velocity;
     std::atomic<int> replanning_counter_ = 0;
-
-    // Bounds Parameters
-    // Bounds on the size of the map.
-    Eigen::Vector3d lower_bound_;
-    Eigen::Vector3d upper_bound_;
-    mrs_msgs::Reference current_waypoint_;
 
     // Local Planner variables
     //std::vector<std::shared_ptr<rrt_star::Node>> tree;
-    std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
-    std::shared_ptr<rrt_star::Node> previous_root;
-    std::shared_ptr<rrt_star::Node> next_best_node;
+    std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
+    std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
+    std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 
     // Global Planner variables
@@ -201,10 +183,12 @@ private:
 
     // UAV variables
     bool is_initialized = false;
-    Eigen::Vector4d pose;
     double distance_;
+    Eigen::Vector4d pose;
+    Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
+    mrs_msgs::Reference current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;
@@ -213,13 +197,14 @@ private:
 
     // Visualization variables
     int node_id_counter_;
-    int edge_id_counter_;
-    int path_id_counter_;
+    int trajectory_id_counter_;
+    int best_trajectory_id_counter_;
     int collision_id_counter_;
     int iteration_;
 
     // Instances
     GainEvaluator segment_evaluator;
+    kino_rrt_star KinoRRTStar;
     rrt_star RRTStar;
     kd_tree goals_tree;
 
@@ -246,10 +231,9 @@ private:
     mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
     mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
     mrs_lib::ServiceClientHandler<cache_nodes::BestNode> sc_best_node;
-    mrs_lib::ServiceClientHandler<cache_nodes::Query> sc_query;
 
     // Timers
     ros::Timer timer_main;
 };
 
-#endif // AEP_PLANNER_H
+#endif // KINO_AEP_PLANNER_H

@@ -266,6 +266,13 @@ void NBVPlanner::NBV() {
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
 
+            /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
+            // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
+            const double EPSILON = 0.000001;
+            if (std::abs(new_node_best->score) < EPSILON) {
+                new_node_best->score = 0.0;
+            }*/
+
             if (new_node_best->score > best_score_) {
                 best_score_ = new_node_best->score;
                 best_node = new_node_best;
@@ -353,6 +360,13 @@ void NBVPlanner::NBV() {
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
+
+        /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
+        // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
+        const double EPSILON = 0.000001;
+        if (std::abs(new_node->score) < EPSILON) {
+            new_node->score = 0.0;
+        }*/
 
         if (new_node->score > best_score_) {
             best_score_ = new_node->score;
