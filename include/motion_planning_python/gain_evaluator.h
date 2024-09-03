@@ -89,6 +89,8 @@ class GainEvaluator {
 
   void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
 
+  void computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
+
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;
 

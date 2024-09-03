@@ -87,15 +87,21 @@ public:
 
     void initializeKDTreeWithTrajectories(std::vector<std::shared_ptr<Trajectory>>& Trajectories);
 
+    void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
+
     void computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result);
     
     void computeAccelerationSampling(double a_max, Eigen::Vector3d& result);
 
     void findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Trajectory>& nearestTrajectory);
 
-    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, const Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
     void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+
+    void steer_trajectory_linear(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+
+    void steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, std::shared_ptr<Trajectory>& toChangeTrajectory);
 
     void backtrackTrajectory(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory, std::shared_ptr<Trajectory>& nextBestTrajectory);
 

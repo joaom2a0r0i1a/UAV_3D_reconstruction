@@ -8,7 +8,7 @@
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <node pkg="motion_planning_python" type="AEP" name="planner_node" output="screen">
+    <node pkg="motion_planning_python" type="KinoAEP" name="planner_node" output="screen">
       <rosparam file="$(find motion_planning_python)/config/KinoAEPlanner.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->

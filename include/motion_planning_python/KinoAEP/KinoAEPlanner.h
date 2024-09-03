@@ -11,6 +11,7 @@
 #include <mrs_msgs/TrackerCommand.h>
 #include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
+#include <mrs_msgs/ReferenceList.h>
 #include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/Vec1.h>
@@ -65,36 +66,36 @@ public:
     KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const;
+    bool isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const;
     void GetTransformation();
 
     void AEP();
     void localPlanner();
-    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node);
+    //void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<kino_rrt_star::Node> global_root_node, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
+    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
-    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<rrt_star::Node>& node);
-    void getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node);
+    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& trajectory);
+    void getBestGlobalTrajectory(const std::vector<std::shared_ptr<kino_rrt_star::Trajectory>>& global_goals, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
 
-    void cacheNode(std::shared_ptr<rrt_star::Node> Node);
+    void cacheNode(std::shared_ptr<kino_rrt_star::Trajectory> trajectory);
     double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
     
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-    //bool callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
     
     void changeState(const State_t new_state);
 
-    void visualize_node(const Eigen::Vector4d& pos, double size = 0.2, const std::string& ns);
+    void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
     void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
     void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_frustum(std::shared_ptr<rrt_star::Node> position);
-    void visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position);
+    void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
+    void visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -150,6 +151,7 @@ private:
 
     // RRT* Parameters
     int N_min_nodes;
+    int global_max_accel_iterations;
     bool goto_global_planning;
 
     // Timer Parameters
@@ -166,24 +168,27 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
+    double global_lambda;
     int max_accel_iterations;
     bool reset_velocity;
     std::atomic<int> replanning_counter_ = 0;
 
     // Local Planner variables
-    //std::vector<std::shared_ptr<rrt_star::Node>> tree;
+    //std::vector<std::shared_ptr<kino_rrt_star::Node>> tree;
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
     std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
+    std::shared_ptr<kino_rrt_star::Trajectory> previous_best_global_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 
     // Global Planner variables
-    std::shared_ptr<rrt_star::Node> best_global_node;
+    std::shared_ptr<kino_rrt_star::Trajectory> best_global_trajectory;
     std::vector<Eigen::Vector3d> GlobalFrontiers;
 
     // UAV variables
     bool is_initialized = false;
     double distance_;
+    double node_size;
     Eigen::Vector4d pose;
     Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
@@ -205,7 +210,6 @@ private:
     // Instances
     GainEvaluator segment_evaluator;
     kino_rrt_star KinoRRTStar;
-    rrt_star RRTStar;
     kd_tree goals_tree;
 
     // Subscribers

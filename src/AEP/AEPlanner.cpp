@@ -218,7 +218,7 @@ void AEPlanner::localPlanner() {
     }
     trajectory_point.position_W = root->point.head(3);
     trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+    std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
     root->gain = result.first;
     root->point[3] = result.second;
     //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
@@ -233,9 +233,9 @@ void AEPlanner::localPlanner() {
 
     RRTStar.clearKDTree();
     RRTStar.addKDTreeNode(root);
-    if (root->gain > g_zero) {
+    /*if (root->gain > g_zero) {
         cacheNode(root);
-    }
+    }*/
     //cacheNode(root);
     clearMarkers();
 
@@ -621,13 +621,13 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
         node->gain = result.first;
         node->point[3] = result.second;
 
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
-        std::pair<double, double> result_original = segment_evaluator.computeGainAEP(trajectory_point_global);
+        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
         ROS_INFO("[AEPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
@@ -1069,7 +1069,7 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
                 ROS_INFO("[AEPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.8*step_size && yaw_difference <= 0.6*M_PI) {
+                if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
                     changeState(STATE_PLANNING);
                 }
             } else {
