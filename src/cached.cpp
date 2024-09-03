@@ -102,7 +102,7 @@ public:
 
         ROS_WARN("Range max parameter not specified");
         ROS_WARN("Defaulting to 5 m...");
-        range = 5.0;
+        range = 10.0;
 
         bbx_min[0] = min[0];
         bbx_min[1] = min[1];
@@ -272,11 +272,11 @@ private:
             eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
             trajectory_point_gain.position_W = pos;
             trajectory_point_gain.setFromYaw(node.second.yaw);
-            std::pair<double, double> result = evaluator.computeGainAEP(trajectory_point_gain);
+            std::pair<double, double> result = evaluator.computeGainOptimizedAEP(trajectory_point_gain);
 
-            ROS_INFO("[MultiCached]: Point position: [%f, %f, %f]", node.second.position.x, node.second.position.y, node.second.position.z);
-            ROS_INFO("[MultiCached]: Old Point gain: %f", node.second.gain);
-            ROS_INFO("[MultiCached]: New Point gain: %f", result.first);
+            ROS_INFO("[Cached]: Point position: [%f, %f, %f]", node.second.position.x, node.second.position.y, node.second.position.z);
+            ROS_INFO("[Cached]: Old Point gain: %f", node.second.gain);
+            ROS_INFO("[Cached]: New Point gain: %f", result.first);
 
             cache_nodes::Node updated_node = node.second;
             updated_node.gain = result.first;
@@ -353,7 +353,7 @@ private:
             eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
             trajectory_point_gain.position_W = node->point.head(3);
             trajectory_point_gain.setFromYaw(node->point[3]);
-            std::pair<double, double> result = evaluator.computeGainAEP(trajectory_point_gain);
+            std::pair<double, double> result = evaluator.computeGainOptimizedAEP(trajectory_point_gain);
             node->gain = result.first;
             node->point[3] = result.second;
             //eth_mav_msgs::EigenTrajectoryPoint traj_point;
@@ -466,7 +466,7 @@ private:
         rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_n));
 
         for (const auto& value : result_n) {
-            //double gain = evaluator.computeGainAEP(value.second.gain); // Assuming computeGainAEP takes the current gain
+            //double gain = evaluator.computeGainOptimizedAEP(value.second.gain); // Assuming computeGainOptimizedAEP takes the current gain
             if (value.second.gain > req.threshold) {
                 res.best_node.push_back(value.second.position);
                 res.gain.push_back(value.second.gain);

@@ -56,6 +56,8 @@ class Evaluator {
 
   // Use sparse raycasting to discard occluded voxels, AEP-style implementation.
   std::pair<double, double> computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
   
   // Initialization for visualization
   void visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);
