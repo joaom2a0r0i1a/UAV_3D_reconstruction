@@ -249,8 +249,10 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)"]
-        colors = ['r', 'y', 'b']
+        #series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
+        series_dir = ["RH-NBVP/Connected", "RH-NBVP/Disconnected", "AEP/Connected", "AEP/Disconnected"]
+        #series_dir = ["Connected", "Disconnected"]
+        colors = ['r', 'y', 'b', 'g']
         for idx, series in enumerate(series_dir):
             dir_expression = re.compile(r'\d{8}_\d{6}')
             subdirs = [
@@ -286,8 +288,11 @@ class EvalPlotting(object):
 
             # Create common data timeline by averaging measurement times (these
             # should be similar)
+            #data_file = open(
+            #    os.path.join(target_dir, folder_name, "multi_series_data_%s.csv" % series), 'w')
+            # MultiUAV version
             data_file = open(
-                os.path.join(target_dir, folder_name, "multi_series_data_%s.csv" % series), 'w')
+                os.path.join(target_dir, folder_name, "multi_series_data_%d.csv" % idx), 'w')
             data_writer = csv.writer(data_file,
                                     delimiter=',',
                                     quotechar='|',
@@ -412,6 +417,16 @@ class EvalPlotting(object):
                 axes[0, 1].set_ylabel('Unknown Voxels [%]')
                 #axes[0, 1].set_ylim(0, 1)
                 axes[0, 1].set_ylim(0, 100)
+
+                #iven_y_25 = 6.494
+                #given_y_50 = 13.72
+                #given_y_95 = 30
+                #x_at_25 = np.interp(given_y_25, x, unknown)
+                #x_at_50 = np.interp(given_y_50, x, unknown)
+                #x_at_95 = np.interp(given_y_95, x, unknown)
+                #print(f"Unknown corresponding to Timing ={given_y_25} min is time={x_at_25:.2f}%.")
+                #print(f"Unknown corresponding to Timing ={given_y_50} min is time={x_at_50:.2f}%.")
+                #print(f"Unknown corresponding to Timing ={given_y_95} min is time={x_at_95:.2f}%.")
             else:
                 axes[0, 1].plot(x, means['Volume'], color=colors[idx], label=series)
                 axes[0, 1].fill_between(x,

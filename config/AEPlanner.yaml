@@ -69,7 +69,7 @@ bounded_box:
 local_planning:
   N_max: 50
   N_termination: 300
-  N_yaw_samples: 10
+  N_yaw_samples: 15
   radius: 4.0 # [m]
   step_size: 2.0 # [m]
   tolerance: 1.5 # [m]

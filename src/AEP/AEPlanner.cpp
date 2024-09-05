@@ -91,7 +91,15 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     // Open file in append mode
     num_nodes_count = 0;
-    outfile.open("/home/joaomendes/motion_workspace/src/data/computation_time_gain.csv", std::ios_base::out);
+
+    std::time_t now = std::time(nullptr);
+    std::tm* now_tm = std::localtime(&now);
+
+    // Create a string stream to format the date and time
+    std::stringstream ss;
+    ss << std::put_time(now_tm, "%Y%m%d_%H%M%S");
+
+    outfile.open("/home/joaomendes/motion_workspace/src/data/sparse_time/computation_time_gain_" + ss.str() + ".csv", std::ios_base::out);
     if (!outfile.is_open()) {
         ROS_ERROR("Failed to open the file: computation_time_gain.csv");
         return;
@@ -218,7 +226,7 @@ void AEPlanner::localPlanner() {
     }
     trajectory_point.position_W = root->point.head(3);
     trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+    std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
     root->gain = result.first;
     root->point[3] = result.second;
     //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
@@ -297,7 +305,7 @@ void AEPlanner::localPlanner() {
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
             //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
@@ -404,7 +412,7 @@ void AEPlanner::localPlanner() {
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
         //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
         //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
         //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);

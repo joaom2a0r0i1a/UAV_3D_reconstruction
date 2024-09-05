@@ -43,6 +43,9 @@
 #include <motion_planning_python/gain_evaluator.h>
 
 #include <fstream>
+#include <string>
+#include <ctime>
+#include <sstream>
 #include <chrono>
 
 typedef enum

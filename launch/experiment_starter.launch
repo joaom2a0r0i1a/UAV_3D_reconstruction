@@ -3,7 +3,7 @@
   <arg name="record_data" default="true"/>
   <arg name="data_directory" default="/home/joaomendes/motion_workspace/src/data"/>
   <arg name="data_frequency" default="40.0" />
-  <arg name="time_limit" default="40" />
+  <arg name="time_limit" default="30" />
 
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />

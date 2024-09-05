@@ -194,6 +194,7 @@ private:
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
     mrs_msgs::Reference current_waypoint_;
+    std::vector<mrs_msgs::Reference> past_waypoints_;
 
     // State variables
     std::atomic<State_t> state_;

@@ -181,7 +181,7 @@ void KinoAEPlanner::AEP() {
             if (GlobalFrontiers.size() == 0) {
                 g_zero = g_zero / 2;
                 // Ignore any gain smaller than 0.1
-                if (g_zero < 0.1) {
+                if (g_zero < 0.5) {
                     g_zero = 0.0;
                 }
             }
@@ -403,7 +403,7 @@ void KinoAEPlanner::localPlanner() {
 
             ROS_INFO("[KinoAEPlanner]: Best Score: %f", new_trajectory->score);
 
-            if (new_trajectory->gain > 0.0) {
+            if (new_trajectory->gain >= 0.5) {
                 cacheNode(new_trajectory);
             }
 
@@ -921,6 +921,8 @@ void KinoAEPlanner::timerMain(const ros::TimerEvent& event) {
             current_waypoint_.position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
             current_waypoint_.position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
             current_waypoint_.heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
+
+            //past_waypoints_.push_back(current_waypoint_);
 
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
