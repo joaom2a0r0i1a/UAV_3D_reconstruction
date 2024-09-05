@@ -9,7 +9,7 @@ visualize:
   resolution: 0.5
 
 local_planning:
-  g_zero: 0.1
+  g_zero: 0.5
   num_yaw_samples: 10
 
 frame_id: "world_origin"
