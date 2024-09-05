@@ -14,6 +14,7 @@ import rospy
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from std_srvs.srv import Empty
+from scipy.interpolate import interp1d
 
 
 class EvalPlotting(object):
@@ -418,15 +419,23 @@ class EvalPlotting(object):
                 #axes[0, 1].set_ylim(0, 1)
                 axes[0, 1].set_ylim(0, 100)
 
-                #iven_y_25 = 6.494
-                #given_y_50 = 13.72
-                #given_y_95 = 30
-                #x_at_25 = np.interp(given_y_25, x, unknown)
-                #x_at_50 = np.interp(given_y_50, x, unknown)
-                #x_at_95 = np.interp(given_y_95, x, unknown)
-                #print(f"Unknown corresponding to Timing ={given_y_25} min is time={x_at_25:.2f}%.")
-                #print(f"Unknown corresponding to Timing ={given_y_50} min is time={x_at_50:.2f}%.")
-                #print(f"Unknown corresponding to Timing ={given_y_95} min is time={x_at_95:.2f}%.")
+                interp_function = interp1d(unknown, x)
+                std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'], x)
+                std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'], x)
+                y_value_25 = 75
+                y_value_50 = 50
+                y_value_95 = 5
+                x_value_25 = interp_function(y_value_25)
+                x_std_value_25 = np.max([np.fabs(x_value_25 - std_interp_function_1(y_value_25)), np.fabs(x_value_25 - std_interp_function_2(y_value_25))]) 
+                x_value_50 = interp_function(y_value_50)
+                x_std_value_50 = np.max([np.fabs(x_value_50 - std_interp_function_1(y_value_50)), np.fabs(x_value_50 - std_interp_function_2(y_value_50))]) 
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes.")
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes.")
+                if series != "RH-NBVP":
+                    x_value_95 = interp_function(y_value_95)
+                    x_std_value_95 = np.max([np.fabs(x_value_95 - std_interp_function_1(y_value_95)), np.fabs(x_value_95 - std_interp_function_2(y_value_95))]) 
+                    print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes.")
+
             else:
                 axes[0, 1].plot(x, means['Volume'], color=colors[idx], label=series)
                 axes[0, 1].fill_between(x,

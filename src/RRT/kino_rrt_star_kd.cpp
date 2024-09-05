@@ -173,6 +173,9 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
 
     //while (time < max_time) {
 
+    int num_points = 0;
+    double max_velocity_modulus = sqrt(pow(max_velocity, 2) + pow(max_velocity, 2));
+
     bool in_heading_tolerance = false;
     bool heading_tolerance = max_heading_velocity*dt;
     while (distance < stepSize) {
@@ -215,13 +218,17 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
 
         std::shared_ptr<Node> newNode = std::make_shared<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), new_heading), current_velocity);
         newTrajectory->TrajectoryPoints.push_back(newNode);
+        //newTrajectory->cost += dt;
         newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
+        //newTrajectory->cost += (max_velocity_modulus - current_velocity.norm());
         
         distance += (new_position - currentNode->point.head<3>()).norm();
         //time += dt;
         currentNode = newNode;
         current_heading = new_heading;
+        num_points += 1;
     }
+    //newTrajectory->cost =  newTrajectory->cost / num_points;
     newTrajectory->parent = fromTrajectory;
 }
 
@@ -237,6 +244,8 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
 
     std::shared_ptr<Node> currentNode = fromTrajectory->TrajectoryPoints.back();
     double distance = 0.0;
+    int num_points = 0;
+    double max_velocity_modulus = sqrt(pow(max_velocity, 2) + pow(max_velocity, 2));
     //double time = 0.0;
     //double max_time = 1.0;
 
@@ -263,12 +272,17 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
 
         std::shared_ptr<Node> newNode = std::make_shared<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), heading), current_velocity);
         newTrajectory->TrajectoryPoints.push_back(newNode);
+        //newTrajectory->cost += dt;
         newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
+        //newTrajectory->cost += (max_velocity_modulus - current_velocity.norm());
         
         distance += (new_position - currentNode->point.head<3>()).norm();
         //time += dt;
         currentNode = newNode;
+        num_points += 1;
     }
+    // Compute mean of the velocities
+    //newTrajectory->cost =  newTrajectory->cost / num_points;
     newTrajectory->parent = fromTrajectory;
 }
 

@@ -184,6 +184,7 @@ void KinoAEPlanner::AEP() {
                 if (g_zero < 0.5) {
                     g_zero = 0.0;
                 }
+                ROS_INFO("[KinoAEPlanner]: Changed g_zero to %f", g_zero);
             }
         }
         if (GlobalFrontiers.size() == 0) {

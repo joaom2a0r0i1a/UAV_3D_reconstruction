@@ -124,8 +124,8 @@ def compute_averages(velocity_magnitude_data, acceleration_magnitude_data):
     return average_velocity_magnitude, average_acceleration_magnitude
 
 def main():
-    bag_file = '/mnt/c/Users/joaof/Documents/data/school/one_drone/Kinodynamic AEP (ours)/tmp_bags/tmp_bag_2024-09-04-12-02-33.bag'
-    #bag_file = '/home/joaomendes/motion_workspace/src/data/tmp_bags/tmp_bag_2024-09-04-09-16-42.bag'
+    #bag_file = '/mnt/c/Users/joaof/Documents/data/school/one_drone/Kinodynamic AEP (ours)/tmp_bags/tmp_bag_2024-09-04-12-02-33.bag'
+    bag_file = '/home/joaomendes/motion_workspace/src/data/tmp_bags/tmp_bag_2024-09-05-17-34-32.bag'
     #directory_bags = '/mnt/c/Users/joaof/Documents/data/school/three_drones'
     state_topic = '/uav1/estimation_manager/uav_state'
     #state_topic = ['/uav1/estimation_manager/uav_state', '/uav2/estimation_manager/uav_state', '/uav3/estimation_manager/uav_state']
@@ -134,6 +134,7 @@ def main():
     (time_data, velocity_x_data, velocity_y_data, velocity_z_data, velocity_magnitude_data,
     acceleration_x_data, acceleration_y_data, acceleration_z_data, acceleration_magnitude_data) = extract_data(bag_file, state_topic, time_limit=1000)
 
+    average_velocity_magnitude, average_acceleration_magnitude = compute_averages(velocity_magnitude_data, acceleration_magnitude_data)
 
     '''for directory in os.listdir(directory_bags):
         #directory_aux = os.path.join(directory_bags, directory, "tmp_bags")
@@ -175,6 +176,9 @@ def main():
         print(f"Mean Distance Travelled: {distance_mean:.3f} +/- {distance_standard_deviation:.3f} m")'''
 
     # Plot data
+    print(f"Average Velocity Magnitude: {average_velocity_magnitude:.2f} m/s")
+    #print(f"Average Acceleration Magnitude: {average_acceleration_magnitude:.2f} m/s^2")
+
     plot_data(time_data, velocity_x_data, velocity_y_data, velocity_z_data, velocity_magnitude_data,
               acceleration_x_data, acceleration_y_data, acceleration_z_data, acceleration_magnitude_data)
 
