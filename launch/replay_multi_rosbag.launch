@@ -2,7 +2,7 @@
     <param name="use_sim_time" value="true"/>
 
     <!-- Play the rosbag -->
-    <node name="rosbag_play" pkg="rosbag" type="play" args="-r 4 /mnt/c/Users/joaof/Documents/data/tmp_bags/tmp_bag_2024-08-05-19-01-52.bag" />
+    <node name="rosbag_play" pkg="rosbag" type="play" args="-r 4 /mnt/c/Users/joaof/Documents/data/school/three_drones/AEP/Disconnected/tmp_bags/tmp_bag_2024-08-17-10-11-53.bag" />
 
     <!-- Run the path processing node for UAV 1 -->
     <node name="path_publisher_uav1" pkg="motion_planning_python" type="eval_paths.py" output="screen">
@@ -20,5 +20,5 @@
     </node>
 
     <!-- RViz node -->
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find motion_planning_python)/config/rviz/eval_config_multi.rviz" />
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find motion_planning_python)/config/rviz/eval_config.rviz" />
 </launch>
