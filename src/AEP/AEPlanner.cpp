@@ -99,7 +99,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     std::stringstream ss;
     ss << std::put_time(now_tm, "%Y%m%d_%H%M%S");
 
-    outfile.open("/home/joaomendes/motion_workspace/src/data/sparse_time/computation_time_gain_" + ss.str() + ".csv", std::ios_base::out);
+    outfile.open("/home/joaomendes/motion_workspace/src/data/raycast_optimized/computation_time_gain_" + ss.str() + ".csv", std::ios_base::out);
     if (!outfile.is_open()) {
         ROS_ERROR("Failed to open the file: computation_time_gain.csv");
         return;
@@ -305,10 +305,10 @@ void AEPlanner::localPlanner() {
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
+            //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -412,10 +412,10 @@ void AEPlanner::localPlanner() {
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
+        //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
         //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-        //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
@@ -626,10 +626,21 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         std::cout << "Real Goal Y: " << node->point[1] << std::endl;
         std::cout << "Real Goal Z: " << node->point[2] << std::endl;*/
 
+        auto start3 = std::chrono::high_resolution_clock::now();            
+
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        //std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+
+        auto end3 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end3 - start3;
+        num_nodes_count += 1;
+
+        // Write the iteration count and elapsed time to the file
+        outfile << num_nodes_count << "," << elapsed.count() << "\n";
+
         node->gain = result.first;
         node->point[3] = result.second;
 
@@ -653,12 +664,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
 
     best_global_node = global_goals[0];
 
-    /*// Cost Criteria
+    // Cost Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->cost > global_goals[i]->cost) {
             best_global_node = global_goals[i];
         }
-    }*/
+    }
 
     /*// Gain Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
@@ -667,12 +678,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
         }
     }*/
 
-   // Score Criteria
+    /*// Score Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->score < global_goals[i]->score) {
             best_global_node = global_goals[i];
         }
-    }
+    }*/
 
     std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
 

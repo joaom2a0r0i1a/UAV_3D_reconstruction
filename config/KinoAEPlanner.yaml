@@ -88,6 +88,8 @@ camera:
 path:
   uav_radius: 1.5 # [m]
   lambda: 0.5 # (tunning factor)
+  lambda2: 0.5 # (tunning factor)
   global_lambda: 0.05 # (tunning factor)
-  max_acceleration_iterations: 3
+  global_lambda2: 0.05 # (tunning factor)
+  max_acceleration_iterations: 4
 

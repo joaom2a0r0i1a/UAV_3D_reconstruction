@@ -107,22 +107,28 @@ def compute_and_plot_bar_graph(directory):
     directory_name = []
     
     for filename in os.listdir(directory):
-        if filename.startswith('sparse'):
+        if filename.startswith('raycast'):
             directory_aux = os.path.join(directory, filename)
             directory_name.append(filename)
             overall_avg, std_dev = compute_overall_stats(directory_aux)
             total_overall_avg.append(overall_avg)
-            total_std_dev.append(total_std_dev)
+            total_std_dev.append(std_dev)
 
     print(f"New Time is: {total_overall_avg[0]/total_overall_avg[1]:.2f} times faster.")
 
+    print(f"Average {total_overall_avg[0]:.5f}.")
+    print(f"Deviation {total_std_dev[0]:.5f}.")
+    print(f"Average {total_overall_avg[1]:.5f}.")
+    print(f"Deviation {total_std_dev[1]:.5f}.")
+    #print(f"Average {total_overall_avg[1]:.2f} +/- {total_std_dev[1]:.2f}.")
+
     plt.figure(figsize=(8, 6))
 
-    plt.bar(directory_name, total_overall_avg, yerr=std_dev, capsize=5, color='r', alpha=0.9)
+    plt.bar(['Yaw Optimization', 'Informed Yaw Optimization'], total_overall_avg, yerr=total_std_dev, capsize=5, color='b', alpha=0.9)
     
-    plt.xlabel('Raycasting Methods')
+    #plt.xlabel('Yaw Optimization Methods')
     plt.ylabel('Computation Time (s)')
-    plt.title('Mean and Standard Deviation of Gain Computation Time')
+    #plt.title('Mean and Standard Deviation of Gain Computation Time')
     #plt.legend()
     plt.grid(False)
     plt.tight_layout()
@@ -136,8 +142,8 @@ compute_and_plot_bar_graph(directory)
 #print(f"Overall Average: {overall_avg}")
 #print(f"Standard Deviation: {std_dev}")
 
-#csv_file_path = '/home/joaomendes/motion_workspace/src/data/sparse_time_optimized/computation_time_gain_20240904_151932.csv'
-#csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/sparse_time_optimized_array/computation_time_gain_20240904_134548.csv'
+#csv_file_path = '/home/joaomendes/motion_workspace/src/data/raycast/computation_time_gain_20240911_210449.csv'
+#csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/raycast_optimized/computation_time_gain_20240911_212512.csv'
 
 # Plot the data
 #plot_csv(csv_file_path)

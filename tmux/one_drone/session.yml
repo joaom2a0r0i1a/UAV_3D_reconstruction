@@ -89,7 +89,7 @@ windows:
       panes:
         #- waitForControl; roslaunch motion_planning_python voxblox.launch
         - waitForControl; roslaunch motion_planning_python processed_voxblox.launch
-        #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/workspace1/src/motion_planning_python/data/20240703_232612/voxblox_maps/00060.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP(ours)/20240904_120233/voxblox_maps/00045.vxblx'
         #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/gt_school.tsdf'
         #- 'history -s rosservice call /uav1/voxblox_node/generate_mesh'
   - processed_pointclouds:

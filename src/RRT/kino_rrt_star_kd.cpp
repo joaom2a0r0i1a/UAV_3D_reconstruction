@@ -5,9 +5,9 @@ kino_rrt_star::kino_rrt_star() {}
 
 kino_rrt_star::Node::Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v) : point(p), velocity(v) {}
 
-kino_rrt_star::Trajectory::Trajectory() : parent(nullptr), cost(0.0), gain(0.0), score(0.0) {}
+kino_rrt_star::Trajectory::Trajectory() : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {}
 
-kino_rrt_star::Trajectory::Trajectory(const std::shared_ptr<Node>& Node) : parent(nullptr), cost(0.0), gain(0.0), score(0.0) {TrajectoryPoints.push_back(Node);}
+kino_rrt_star::Trajectory::Trajectory(const std::shared_ptr<Node>& Node) : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {TrajectoryPoints.push_back(Node);}
 
 // Add and clear Nodes
 void kino_rrt_star::KDTree_data::clear() {
@@ -236,15 +236,17 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
     double dt = 0.1;
     size_t trajectory_size = fromTrajectory->TrajectoryPoints.size();
     Eigen::Vector3d current_velocity; 
-    if (!reset_velocity) {
+    current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
+    /*if (!reset_velocity) {
         current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
     } else {
         current_velocity = Eigen::Vector3d::Zero();
-    }
+    }*/
 
     std::shared_ptr<Node> currentNode = fromTrajectory->TrajectoryPoints.back();
     double distance = 0.0;
     int num_points = 0;
+    double velocity_sum = 0.0;
     double max_velocity_modulus = sqrt(pow(max_velocity, 2) + pow(max_velocity, 2));
     //double time = 0.0;
     //double max_time = 1.0;
@@ -273,8 +275,9 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
         std::shared_ptr<Node> newNode = std::make_shared<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), heading), current_velocity);
         newTrajectory->TrajectoryPoints.push_back(newNode);
         //newTrajectory->cost += dt;
-        newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
+        //newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
         //newTrajectory->cost += (max_velocity_modulus - current_velocity.norm());
+        velocity_sum += current_velocity.norm();
         
         distance += (new_position - currentNode->point.head<3>()).norm();
         //time += dt;
@@ -283,6 +286,8 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
     }
     // Compute mean of the velocities
     //newTrajectory->cost =  newTrajectory->cost / num_points;
+    double average_velocity =  velocity_sum / num_points;
+    newTrajectory->cost1 =  (max_velocity_modulus - average_velocity);
     newTrajectory->parent = fromTrajectory;
 }
 
@@ -306,6 +311,8 @@ void kino_rrt_star::steer_trajectory_angular(const std::shared_ptr<Trajectory>& 
     } else if (heading_difference == 0) {
         accel_heading = 0;
     }
+
+    toChangeTrajectory->cost2 = abs(heading_difference);
 
     bool in_heading_tolerance = false;
     bool heading_tolerance = max_heading_velocity*dt;

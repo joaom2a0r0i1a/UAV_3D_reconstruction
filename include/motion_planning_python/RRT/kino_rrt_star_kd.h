@@ -27,6 +27,9 @@ public:
         double gain;
         double score;
 
+        double cost1;
+        double cost2;
+
         // Constructors
         Trajectory();
         Trajectory(const std::shared_ptr<Node>& Node);
@@ -41,6 +44,9 @@ public:
             cost = 0.0;
             gain = 0.0;
             score = 0.0;
+
+            cost1 = 0.0;
+            cost2 = 0.0;
         }
     };
 

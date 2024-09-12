@@ -48,7 +48,9 @@ KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& n
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
     param_loader.loadParam("path/lambda", lambda);
+    param_loader.loadParam("path/lambda2", lambda2);
     param_loader.loadParam("path/global_lambda", global_lambda);
+    param_loader.loadParam("path/global_lambda2", global_lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
 
     // Timer
@@ -210,10 +212,18 @@ void KinoAEPlanner::localPlanner() {
     std::shared_ptr<kino_rrt_star::Node> root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
     if (best_branch.size() > 1) {
-        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity);
+        if (!reset_velocity) {
+            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity);
+        } else {
+            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, Eigen::Vector3d::Zero());
+        }
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     } else {
-        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+        if (!reset_velocity) {
+            root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+        } else {
+            root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero());
+        }
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
     
@@ -291,8 +301,11 @@ void KinoAEPlanner::localPlanner() {
 
             //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
-            segment_evaluator.computeCost(new_trajectory_best);
-            segment_evaluator.computeScore(new_trajectory_best, lambda);
+            //segment_evaluator.computeCost(new_trajectory_best);
+            //segment_evaluator.computeScore(new_trajectory_best, lambda);
+
+            segment_evaluator.computeCostTwo(new_trajectory_best);
+            segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
 
             if (new_trajectory_best->score > best_score_) {
                 best_score_ = new_trajectory_best->score;
@@ -394,8 +407,11 @@ void KinoAEPlanner::localPlanner() {
             // Make sure the heading of the last node is correct
             new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
 
-            segment_evaluator.computeCost(new_trajectory);
-            segment_evaluator.computeScore(new_trajectory, lambda);
+            //segment_evaluator.computeCost(new_trajectory);
+            //segment_evaluator.computeScore(new_trajectory, lambda);
+
+            segment_evaluator.computeCostTwo(new_trajectory);
+            segment_evaluator.computeScore(new_trajectory, lambda, lambda2);
 
             if (new_trajectory->score > best_score_) {
                 best_score_ = new_trajectory->score;
@@ -474,8 +490,13 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
 
     std::shared_ptr<kino_rrt_star::Node> global_root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> global_root;
+
+    if (!reset_velocity) {
+        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+    } else {
+        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero());
+    }
     
-    global_root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
     global_root = std::make_shared<kino_rrt_star::Trajectory>(global_root_node);
     KinoRRTStar.addKDTreeTrajectory(global_root); 
 
@@ -529,7 +550,8 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
             visualize_node(global_new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
 
-            segment_evaluator.computeCost(global_new_trajectory);
+            //segment_evaluator.computeCost(global_new_trajectory);
+            segment_evaluator.computeCostTwo(global_new_trajectory);
 
             KinoRRTStar.addKDTreeTrajectory(global_new_trajectory);
             visualize_trajectory(global_new_trajectory, ns);
@@ -537,7 +559,7 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
             bool goal_reached;
             goal_reached = getGlobalGoal(GlobalFrontiers, global_new_trajectory);
             if (goal_reached) {
-                segment_evaluator.computeSingleScore(global_new_trajectory, global_lambda);
+                segment_evaluator.computeSingleScore(global_new_trajectory, global_lambda, global_lambda2);
                 all_global_goals.push_back(global_new_trajectory);
                 goal_reached = false;
             }
@@ -656,7 +678,7 @@ void KinoAEPlanner::getBestGlobalTrajectory(const std::vector<std::shared_ptr<ki
         }
     }*/
 
-   // Score Criteria
+    // Score Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_trajectory->score < global_goals[i]->score) {
             best_global_trajectory = global_goals[i];

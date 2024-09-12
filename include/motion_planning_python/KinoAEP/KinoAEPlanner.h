@@ -168,7 +168,9 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
+    double lambda2;
     double global_lambda;
+    double global_lambda2;
     int max_accel_iterations;
     bool reset_velocity;
     std::atomic<int> replanning_counter_ = 0;
