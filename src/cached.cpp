@@ -463,7 +463,12 @@ private:
         //rtree.query(bgi::nearest(Point(req.pos.x, req.pos.y, req.pos.z), 5), std::back_inserter(result_n));
 
         // Retrieve all nodes in the RTree
-        rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_n));
+        //rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_n));
+
+        rtree.query(bgi::satisfies([this](RTreeValue const& v) {
+            bool above_g_zero = v.second.gain > g_zero;
+            return(above_g_zero);
+        }), std::back_inserter(result_n));
 
         for (const auto& value : result_n) {
             //double gain = evaluator.computeGainOptimizedAEP(value.second.gain); // Assuming computeGainOptimizedAEP takes the current gain
