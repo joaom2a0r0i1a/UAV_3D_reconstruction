@@ -59,7 +59,7 @@
       <param name="publish_tsdf_map" value="true" />
       <param name="publish_esdf_map" value="true" />
 
-      <!--param name="mesh_filename" value="/home/joaomendes/gt_school.ply" /-->
+      <!--param name="mesh_filename" value="/home/joaomendes/gt_police_station.ply" /-->
 
       <!--param name="clear_sphere_for_planning" value="true" /-->
       <!--param name="clear_sphere_radius" value="1.2" /-->

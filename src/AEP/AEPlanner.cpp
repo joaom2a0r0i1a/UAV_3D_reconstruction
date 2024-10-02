@@ -664,12 +664,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
 
     best_global_node = global_goals[0];
 
-    // Cost Criteria
+    /*// Cost Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->cost > global_goals[i]->cost) {
             best_global_node = global_goals[i];
         }
-    }
+    }*/
 
     /*// Gain Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
@@ -678,12 +678,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
         }
     }*/
 
-    /*// Score Criteria
+    // Score Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->score < global_goals[i]->score) {
             best_global_node = global_goals[i];
         }
-    }*/
+    }
 
     std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
 
@@ -763,7 +763,7 @@ void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -843,7 +843,7 @@ void AEPlanner::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 

@@ -42,6 +42,7 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
     param_loader.loadParam("path/lambda", lambda);
+    param_loader.loadParam("path/lambda2", lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
 
     // Timer
@@ -132,6 +133,30 @@ bool KinoNBVPlanner::isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_st
             return false;
         }
     }*/
+    /*std::vector<std::shared_ptr<kino_rrt_star::Node>> nodes;
+    int size = trajectory->TrajectoryPoints.size();
+    int half_size = std::ceil(size/2);
+    nodes.push_back(trajectory->TrajectoryPoints[half_size]);
+    nodes.push_back(trajectory->TrajectoryPoints.back());
+
+    for (const std::shared_ptr<kino_rrt_star::Node>& node : nodes) {
+        if (getMapDistance(node->point.head(3)) < uav_radius) {
+            return false;
+        }
+    }*/
+
+    /*int size = trajectory->TrajectoryPoints.size();
+    int half_size = std::ceil(size/2);
+    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator start = trajectory->TrajectoryPoints.begin() + half_size;
+    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator end = trajectory->TrajectoryPoints.end();
+    std::vector<std::shared_ptr<kino_rrt_star::Node>> sliced_nodes(start, end);
+
+    for (const std::shared_ptr<kino_rrt_star::Node>& node : sliced_nodes) {
+        if (getMapDistance(node->point.head(3)) < uav_radius) {
+            return false;
+        }
+    }*/
+    
     std::shared_ptr<kino_rrt_star::Node>& node = trajectory->TrajectoryPoints.back();
     if (getMapDistance(node->point.head(3)) < uav_radius) {
         return false;
@@ -233,8 +258,11 @@ void KinoNBVPlanner::KinoNBV() {
             double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
             new_trajectory_best->gain = result_best;
 
-            segment_evaluator.computeCost(new_trajectory_best);
-            segment_evaluator.computeScore(new_trajectory_best, lambda);
+            //segment_evaluator.computeCost(new_trajectory_best);
+            //segment_evaluator.computeScore(new_trajectory_best, lambda);
+
+            segment_evaluator.computeCostTwo(new_trajectory_best);
+            segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
 
             /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
             // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
@@ -341,8 +369,11 @@ void KinoNBVPlanner::KinoNBV() {
             double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
             new_trajectory->gain = result;
 
-            segment_evaluator.computeCost(new_trajectory);
-            segment_evaluator.computeScore(new_trajectory, lambda);
+            //segment_evaluator.computeCost(new_trajectory);
+            //segment_evaluator.computeScore(new_trajectory, lambda);
+
+            segment_evaluator.computeCostTwo(new_trajectory);
+            segment_evaluator.computeScore(new_trajectory, lambda, lambda2);
 
             /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
             // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
@@ -432,7 +463,7 @@ void KinoNBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -512,7 +543,7 @@ void KinoNBVPlanner::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 

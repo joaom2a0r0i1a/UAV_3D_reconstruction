@@ -36,14 +36,14 @@ bounded_box:
   #max_z: 20.0 # [m]
   #planner_range: 3 # [m]
 
-# Grocery Store
+# Maze
 #bounded_box:
-  #min_x: -25.0 # [m]
-  #max_x: 25.0 # [m]
-  #min_y: -20.0 # [m]
-  #max_y: 15.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 20.0 # [m]
+  #min_x: -10.0 # [m]
+  #max_x: 10.0 # [m]
+  #min_y: -9.0 # [m]
+  #max_y: 9.0 # [m]
+  #min_z: 0.2 # [m]
+  #max_z: 2.5 # [m]
   #planner_range: 3 # [m]
 
 # House
@@ -62,7 +62,7 @@ rrt:
   N_yaw_samples: 10
   radius: 2.0 # [m]
   step_size: 2.0 # [m]
-  tolerance: 0.5 # [m]
+  tolerance: 1.5 # [m]
 
 camera:
   #frame_id: "rgbd/aligned_depth_to_color_optical"
@@ -80,6 +80,7 @@ camera:
 
 path:
   uav_radius: 1.5 # [m]
-  lambda: 0.5 # (tunning factor)
-  max_acceleration_iterations: 5
+  lambda: 0.25 # (tunning factor)
+  lambda2: 0.5 # (tunning factor)
+  max_acceleration_iterations: 3
 

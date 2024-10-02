@@ -250,14 +250,14 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        #series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
+        series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
         #series_dir = ["RH-NBVP/Connected", "RH-NBVP/Disconnected", "AEP/Connected", "AEP/Disconnected"]
         #series_dir = ["Cost", "Gain", "Score"]
-        series_dir = ["Distance", "Time"]
+        #series_dir = ["Distance", "Time"]
         #series_dir = ["Connected", "Disconnected"]
-        #colors = ['r', 'y', 'b', 'g']
+        colors = ['r', 'y', 'b', 'g']
         #colors = ['r', 'y', 'b']
-        colors = ['r', 'y']
+        #colors = ['r', 'y']
         for idx, series in enumerate(series_dir):
             dir_expression = re.compile(r'\d{8}_\d{6}')
             subdirs = [
@@ -435,20 +435,41 @@ class EvalPlotting(object):
                 x_std_value_50 = np.max([np.fabs(x_value_50 - std_interp_function_1(y_value_50)), np.fabs(x_value_50 - std_interp_function_2(y_value_50))]) 
                 print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes.")
                 print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes.")
-                if series != "RH-NBVP":
-                    x_value_95 = interp_function(y_value_95)
-                    x_std_value_95 = np.max([np.fabs(x_value_95 - std_interp_function_1(y_value_95)), np.fabs(x_value_95 - std_interp_function_2(y_value_95))]) 
-                    print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes.")
+                #if series != "RH-NBVP":
+                x_value_95 = interp_function(y_value_95)
+                x_std_value_95 = np.max([np.fabs(x_value_95 - std_interp_function_1(y_value_95)), np.fabs(x_value_95 - std_interp_function_2(y_value_95))]) 
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes.")
 
             else:
-                axes[0, 1].plot(x, means['Volume'], color=colors[idx], label=series)
+                known = means['Volume']
+                unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
+                std_deviations = 100 * ((std_devs['Volume']/ (20 * 18 * 2.6)))
+                axes[0, 1].plot(x, unknown, color=colors[idx], label=series)
                 axes[0, 1].fill_between(x,
-                                        means['Volume'] - std_devs['Volume'],
-                                        means['Volume'] + std_devs['Volume'],
+                                        unknown - std_deviations,
+                                        unknown + std_deviations,
                                         facecolor=colors[idx],
                                         alpha=.2)
-                axes[0, 1].set_ylabel('Explored Volume [m3]')
-                axes[0, 1].set_ylim(0, 40 * 40 * 3)
+                axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
+                axes[0, 1].set_ylim(0, 100)
+
+                interp_function = interp1d(unknown, x)
+                std_interp_function_1 = interp1d(unknown - std_deviations, x)
+                std_interp_function_2 = interp1d(unknown + std_deviations, x)
+                y_value_25 = 75
+                y_value_50 = 50
+                y_value_95 = 5
+                x_value_25 = interp_function(y_value_25)
+                x_std_value_25 = np.max([np.fabs(x_value_25 - std_interp_function_1(y_value_25)), np.fabs(x_value_25 - std_interp_function_2(y_value_25))]) 
+                x_value_50 = interp_function(y_value_50)
+                x_std_value_50 = np.max([np.fabs(x_value_50 - std_interp_function_1(y_value_50)), np.fabs(x_value_50 - std_interp_function_2(y_value_50))]) 
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes.")
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes.")
+                #if series != "RH-NBVP":
+                x_value_95 = interp_function(y_value_95)
+                x_std_value_95 = np.max([np.fabs(x_value_95 - std_interp_function_1(y_value_95)), np.fabs(x_value_95 - std_interp_function_2(y_value_95))]) 
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes.")
+
             axes[0, 1].set_xlim(left=0, right=x[-1])
             axes[0, 1].set_xlabel("Simulated Time [%s]" % unit)
             axes[1, 1].plot(x, means['NPointclouds'], color=colors[idx], label=series)
@@ -667,14 +688,17 @@ class EvalPlotting(object):
             #axes[0, 1].set_ylim(0, 1)
             axes[0, 1].set_ylim(0, 100)
         else:
-            axes[0, 1].plot(x, means['Volume'], 'g-')
+            known = means['Volume']
+            unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
+            std_deviations = 100 * ((std_devs['Volume']/ (20 * 18 * 2.6)))
+            axes[0, 1].plot(x, unknown, 'g-')
             axes[0, 1].fill_between(x,
-                                    means['Volume'] - std_devs['Volume'],
-                                    means['Volume'] + std_devs['Volume'],
+                                    unknown - std_deviations,
+                                    unknown + std_deviations,
                                     facecolor='g',
                                     alpha=.2)
-            axes[0, 1].set_ylabel('Explored Volume [m3]')
-            axes[0, 1].set_ylim(0, 40 * 40 * 3)
+            axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
+            axes[0, 1].set_ylim(0, 100)
         axes[0, 1].set_xlim(left=0, right=x[-1])
         axes[0, 1].set_xlabel("Simulated Time [%s]" % unit)
         axes[1, 1].plot(x, means['NPointclouds'], 'k-')
@@ -771,9 +795,11 @@ class EvalPlotting(object):
             axes[0, 1].set_ylim(0, 100)
             #axes[0, 1].set_ylim(0, 1)
         else:
-            unknown = np.array(data['Volume'], dtype=float)
-            axes[0, 1].set_ylabel('Explored Volume [m3]')
-            axes[0, 1].set_ylim(0, 40 * 40 * 3)
+            known = np.array(data['Volume'], dtype=float)
+            unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
+            #unknown = np.array(data['Volume'], dtype=float)
+            axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
+            axes[0, 1].set_ylim(0, 100)
         axes[0, 1].plot(x, unknown, 'g-')
         axes[0, 1].set_xlim(left=0, right=x[-1])
         axes[0, 1].set_xlabel("Simulated Time [%s]" % unit)

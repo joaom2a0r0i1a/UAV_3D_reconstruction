@@ -431,7 +431,7 @@ void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -511,7 +511,7 @@ void NBVPlanner::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 

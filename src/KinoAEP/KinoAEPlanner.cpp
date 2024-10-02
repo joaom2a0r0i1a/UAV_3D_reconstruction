@@ -144,10 +144,34 @@ bool KinoAEPlanner::isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_sta
             return false;
         }
     }*/
-    std::shared_ptr<kino_rrt_star::Node>& node = trajectory->TrajectoryPoints.back();
+    /*std::vector<std::shared_ptr<kino_rrt_star::Node>> nodes;
+    int size = trajectory->TrajectoryPoints.size();
+    int half_size = std::ceil(size/2);
+    nodes.push_back(trajectory->TrajectoryPoints[half_size]);
+    nodes.push_back(trajectory->TrajectoryPoints.back());
+
+    for (const std::shared_ptr<kino_rrt_star::Node>& node : nodes) {
+        if (getMapDistance(node->point.head(3)) < uav_radius) {
+            return false;
+        }
+    }*/
+
+    int size = trajectory->TrajectoryPoints.size();
+    int half_size = std::floor(size/2);
+    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator start = trajectory->TrajectoryPoints.begin() + half_size;
+    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator end = trajectory->TrajectoryPoints.end();
+    std::vector<std::shared_ptr<kino_rrt_star::Node>> sliced_nodes(start, end);
+
+    for (const std::shared_ptr<kino_rrt_star::Node>& node : sliced_nodes) {
+        if (getMapDistance(node->point.head(3)) < uav_radius) {
+            return false;
+        }
+    }
+    
+    /*std::shared_ptr<kino_rrt_star::Node>& node = trajectory->TrajectoryPoints.back();
     if (getMapDistance(node->point.head(3)) < uav_radius) {
         return false;
-    }
+    }*/
     return true;
 }
 
@@ -583,6 +607,7 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
 void KinoAEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers) {
     cache_nodes::BestNode srv;
     srv.request.threshold = g_zero;
+    GlobalFrontiers.clear();
     if (sc_best_node.call(srv)) {
         double best_global_gain = -1.0;
         Eigen::Vector3d best_global_frontier = Eigen::Vector3d::Zero();
@@ -593,12 +618,11 @@ void KinoAEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFront
             frontier[2] = srv.response.best_node[i].z;
             GlobalFrontiers.push_back(frontier);
         }
-        return;
+        //return;
         //GlobalFrontiers.push_back(best_global_frontier);
-    }
-    else {
+    } /*else {
         return;
-    }
+    }*/
 }
 
 bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) {
@@ -762,8 +786,8 @@ void KinoAEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.position.z = pose[2] + 3;
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        // Max yaw rate is 2.0 rad/s so we wait 0.2*M_PI seconds between points
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -791,8 +815,8 @@ void KinoAEPlanner::rotate() {
         initial_reference.reference.position.z = pose[2];
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        // Max yaw rate is 2.0 rad/s so we wait 0.2*M_PI seconds between points
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 

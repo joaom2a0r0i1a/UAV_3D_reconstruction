@@ -17,6 +17,8 @@ windows:
       panes:
         #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_fire_station gui:=true
         - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school_full gui:=false
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_police_station_full gui:=false
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_maze gui:=true
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-rangefinder --enable-mobius-camera-front"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 -3.0 --enable-realsense-front --enable-velodyne use_gpu:=True update_rate:=1"
@@ -27,6 +29,10 @@ windows:
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -11 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         # SCHOOL 
         - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # POLICE STATION 
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -12 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # MAZE
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 8.5 7.5 0.5 3.14 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -10 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn " --f450 --help"
         #- waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME
@@ -61,8 +67,8 @@ windows:
         #- 'history -s python3 eval_paths.py'
         #- waitForControl; roslaunch motion_planning_python motion_planner.launch
         #- waitForControl; roslaunch motion_planning_python AEPlanner.launch
-        #- waitForControl; roslaunch motion_planning_python KinoNBVPlanner.launch
-        - waitForControl; roslaunch motion_planning_python KinoAEPlanner.launch
+        - waitForControl; roslaunch motion_planning_python KinoNBVPlanner.launch
+        #- waitForControl; roslaunch motion_planning_python KinoAEPlanner.launch
         - waitForControl; roslaunch motion_planning_python experiment_starter.launch
         #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
         #- waitForControl; roslaunch motion_planning_python motion_planner_python.launch
@@ -80,17 +86,17 @@ windows:
         #- 'history -s rosservice call /$UAV_NAME/cover_planner/fly_to_first_waypoint'
         #- 'history -s rosservice call /$UAV_NAME/cover_planner/start_waypoints_following'
         #- 'history -s rosservice call /$UAV_NAME/cover_planner/stop_waypoints_following'
-  - cached_nodes:
-      layout: tiled
-      panes:
-        - waitForControl; roslaunch cache_nodes cache.launch
+  #- cached_nodes:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch cache_nodes cache.launch
   - voxblox:
       layout: tiled
       panes:
         #- waitForControl; roslaunch motion_planning_python voxblox.launch
         - waitForControl; roslaunch motion_planning_python processed_voxblox.launch
         #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP(ours)/20240904_120233/voxblox_maps/00045.vxblx'
-        #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/gt_school.tsdf'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/police_station_gt.tsdf'
         #- 'history -s rosservice call /uav1/voxblox_node/generate_mesh'
   - processed_pointclouds:
       layout: tiled

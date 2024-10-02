@@ -140,17 +140,17 @@ bool EvaluationNode::evaluate(std_srvs::Empty::Request& req,
   nh_private_.param("truncation_distance", p_truncation_distance_, 0.0);
   nh_private_.param("error_histogram", p_error_histogram_, true);
   nh_private_.param("evaluate_volume", p_evaluate_volume_, true);
-  nh_private_.param("bounded_box/x_min",
+  nh_private_.param("bounded_box/min_x",
                     p_target_bounding_volume_[0], 0.0);
-  nh_private_.param("bounded_box/x_max",
+  nh_private_.param("bounded_box/max_x",
                     p_target_bounding_volume_[1], 0.0);
-  nh_private_.param("bounded_box/y_min",
+  nh_private_.param("bounded_box/min_y",
                     p_target_bounding_volume_[2], 0.0);
-  nh_private_.param("bounded_box/y_max",
+  nh_private_.param("bounded_box/max_y",
                     p_target_bounding_volume_[3], 0.0);
-  nh_private_.param("bounded_box/z_min",
+  nh_private_.param("bounded_box/min_z",
                     p_target_bounding_volume_[4], 0.0);
-  nh_private_.param("bounded_box/z_max",
+  nh_private_.param("bounded_box/max_z",
                     p_target_bounding_volume_[5], 0.0);
 
   // Check not previously evaluated
@@ -331,67 +331,6 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
 
       float weight = 0.0;
 
-      /*// Helper function to check if a voxel is unknown
-      auto isUnknownVoxel = [&](const voxblox::Point& point) {
-        if (!interpolator->getNearestDistanceAndWeight(point, &distance, &weight) ||
-            weight <= min_weight) {
-          return true;
-        }
-        return false;
-      };
-
-      // Check the current voxel and its 6 neighbors
-      if (isUnknownVoxel(point)) {
-        // Define the 6 neighbors (assuming a grid-aligned voxel space)
-        std::vector<voxblox::Point> neighbors = {
-          point + voxblox::Point(voxel_size, 0, 0),
-          point + voxblox::Point(-voxel_size, 0, 0),
-          point + voxblox::Point(0, voxel_size, 0),
-          point + voxblox::Point(0, -voxel_size, 0),
-          point + voxblox::Point(0, 0, voxel_size),
-          point + voxblox::Point(0, 0, -voxel_size),
-          point + voxblox::Point(2*voxel_size, 0, 0),
-          point + voxblox::Point(-2*voxel_size, 0, 0),
-          point + voxblox::Point(0, 2*voxel_size, 0),
-          point + voxblox::Point(0, -2*voxel_size, 0),
-          point + voxblox::Point(0, 0, 2*voxel_size),
-          point + voxblox::Point(0, 0, -2*voxel_size)
-        };
-
-        // Generate all 26 neighboring voxel offsets
-        std::vector<voxblox::Point> neighbors;
-        for (int dx = -2; dx <= 2; ++dx) {
-          for (int dy = -2; dy <= 2; ++dy) {
-            for (int dz = -2; dz <= 2; ++dz) {
-              // Skip the center point itself
-              if (dx == 0 && dy == 0 && dz == 0) continue;
-              voxblox::Point neighbor = point + voxblox::Point(dx * voxel_size, dy * voxel_size, dz * voxel_size);
-              neighbors.emplace_back(neighbor);
-            }
-          }
-        }
-
-        bool all_neighbors_unknown = true;
-        for (const auto& neighbor : neighbors) {
-          if (!isUnknownVoxel(neighbor)) {
-            all_neighbors_unknown = false;
-            break;
-          }
-        }
-
-        if (all_neighbors_unknown) {
-          unknown_voxels++;
-        }
-      } else {
-        interpolator->getDistance(point, &distance, interpolate);
-        if (std::abs(distance) > truncation_distance) {
-          distance = truncation_distance;
-        }
-        abserror.push_back(std::abs(distance));
-      }
-      total_evaluated_voxels++;*/
-
-
       // We will do multiple lookups -- the first is to determine whether the
       // voxel exists.      
       if (!interpolator->getNearestDistanceAndWeight(point, &distance,
@@ -424,7 +363,7 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
       voxblox::Block<voxblox::TsdfVoxel>& block =
           tsdf_layer->getBlockByIndex(index);
       for (size_t linear_index = 0; linear_index < num_voxels_per_block;
-           ++linear_index) {
+            ++linear_index) {
         voxblox::TsdfVoxel& voxel = block.getVoxelByLinearIndex(linear_index);
         // Voxel parsing
         voxblox::Point voxel_center =

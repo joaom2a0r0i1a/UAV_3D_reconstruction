@@ -126,7 +126,7 @@ def compute_averages(velocity_magnitude_data, acceleration_magnitude_data):
 def main():
     #bag_file = '/mnt/c/Users/joaof/Documents/data/school/one_drone/Kinodynamic AEP (ours)/tmp_bags/tmp_bag_2024-09-04-12-02-33.bag'
     #bag_file = '/home/joaomendes/motion_workspace/src/data/tmp_bags/tmp_bag_2024-09-05-17-34-32.bag'
-    directory_bags = '/mnt/c/Users/joaof/Documents/data/school/one_drone/GlobalCost'
+    directory_bags = '/mnt/c/Users/joaof/Documents/data/police_station/one_drone'
     state_topic = '/uav1/estimation_manager/uav_state'
     #state_topic = ['/uav1/estimation_manager/uav_state', '/uav2/estimation_manager/uav_state', '/uav3/estimation_manager/uav_state']
     clock_topic = '/clock'
@@ -145,7 +145,7 @@ def main():
             # Extract data
             filename_aux = os.path.join(directory_aux, filename)
             (time_data, velocity_x_data, velocity_y_data, velocity_z_data, velocity_magnitude_data,
-            acceleration_x_data, acceleration_y_data, acceleration_z_data, acceleration_magnitude_data) = extract_data(filename_aux, state_topic, time_limit=1000)
+            acceleration_x_data, acceleration_y_data, acceleration_z_data, acceleration_magnitude_data) = extract_data(filename_aux, state_topic, time_limit=900)
 
             distance = 0.0
             #for state in state_topic:

@@ -46,14 +46,14 @@ bounded_box:
   #max_z: 20.0 # [m]
   #planner_range: 3 # [m]
 
-# Grocery Store
+# Maze
 #bounded_box:
-  #min_x: -25.0 # [m]
-  #max_x: 25.0 # [m]
-  #min_y: -20.0 # [m]
-  #max_y: 15.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 20.0 # [m]
+  #min_x: -10.0 # [m]
+  #max_x: 10.0 # [m]
+  #min_y: -9.0 # [m]
+  #max_y: 9.0 # [m]
+  #min_z: 0.2 # [m]
+  #max_z: 2.5 # [m]
   #planner_range: 3 # [m]
 
 # House
@@ -70,8 +70,8 @@ local_planning:
   N_max: 50
   N_termination: 300
   N_yaw_samples: 15
-  radius: 4.0 # [m]
-  step_size: 2.0 # [m]
+  radius: 2.0 # [m]
+  step_size: 1.0 # [m]
   tolerance: 1.5 # [m]
   g_zero: 5.0
   sigma_thresh: 0.2

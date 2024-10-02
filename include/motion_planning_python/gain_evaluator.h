@@ -12,8 +12,6 @@
 #include <cmath>
 #include <chrono>
 
-//namespace mav_planning {
-
 enum VoxelStatus {kUnknown = 0, kOccupied, kFree};
 
 class GainEvaluator {
@@ -121,7 +119,5 @@ class GainEvaluator {
   int voxels_per_side_;
   float voxels_per_side_inv_;
 };
-
-//}  // namespace mav_planning
 
 #endif  // VOXBLOX_PLANNING_COMMON_GAIN_EVALUATOR_H_

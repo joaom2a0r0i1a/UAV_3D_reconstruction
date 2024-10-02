@@ -2,7 +2,21 @@
     <param name="use_sim_time" value="true"/>
 
     <!-- Play the rosbag -->
-    <node name="rosbag_play" pkg="rosbag" type="play" args=" -r 20 -u 1800 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/school/one_drone/RH-NBVP/tmp_bags/tmp_bag_2024-07-11-17-52-12.bag" />
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 1 -u 530 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/maze/KinodynamicRH-NBVP/tmp_bags/tmp_bag_2024-09-14-23-35-24.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 1 -u 650 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/maze/RH-NBVP/tmp_bags/tmp_bag_2024-09-14-17-01-41.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 1 -u 270 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/tmp_bag_2024-09-19-21-14-24.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 1 -u 395 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/maze/AEP/tmp_bags/tmp_bag_2024-09-14-14-01-16.bag" /-->
+
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 900 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/police_station/one_drone/KinodynamicRH-NBVP/tmp_bags/tmp_bag_2024-09-13-19-45-22.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 900 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/police_station/one_drone/RH-NBVP/tmp_bags/tmp_bag_2024-09-13-20-01-11.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 750 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/police_station/one_drone/KinodynamicAEP/tmp_bags/tmp_bag_2024-09-13-17-50-11.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 900 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/police_station/one_drone/AEP/tmp_bags/tmp_bag_2024-09-13-23-19-24.bag" /-->
+
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 1800 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicRH-NBVP/tmp_bags/tmp_bag_2024-09-02-17-34-28.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 1700 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/tmp_bag_2024-09-20-15-23-40.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 1800 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP/tmp_bags/tmp_bag_2024-09-04-12-02-33.bag" /-->
+    <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 4 -u 1800 /uav1/reference_out:=/uav1/reference_out /mnt/c/Users/joaof/Documents/data/school/one_drone/AEP/tmp_bags/tmp_bag_2024-09-03-09-20-08.bag" /-->
+
     <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 20 -u 1800 /uav1/reference_out:=/uav2/reference_out /mnt/c/Users/joaof/Documents/data/school/one_drone/AEP/tmp_bags/tmp_bag_2024-09-03-09-20-08.bag" /-->
     <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 20 -u 1800 /uav1/estimation_manager/uav_state:=/uav3/estimation_manager/uav_state /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicRH-NBVP/tmp_bags/tmp_bag_2024-09-02-18-44-49.bag" /-->
     <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 20 -u 1800 /uav1/estimation_manager/uav_state:=/uav4/estimation_manager/uav_state /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP/tmp_bags/tmp_bag_2024-09-11-12-17-01.bag" /-->

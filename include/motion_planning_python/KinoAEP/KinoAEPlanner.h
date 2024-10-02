@@ -11,7 +11,7 @@
 #include <mrs_msgs/TrackerCommand.h>
 #include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/ReferenceList.h>
+//#include <mrs_msgs/ReferenceList.h>
 #include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/Vec1.h>
