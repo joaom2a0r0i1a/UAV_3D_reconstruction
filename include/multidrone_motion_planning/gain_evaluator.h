@@ -5,12 +5,12 @@
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/core/esdf_map.h>
 #include <voxblox/utils/camera_model.h>
+
 #include <multidrone_motion_planning/RRT/rrt_star.h>
+#include <multidrone_motion_planning/RRT/kino_rrt_star_kd.h>
 
 #include <cmath>
 #include <chrono>
-
-//namespace mav_planning {
 
 enum VoxelStatus {kUnknown = 0, kOccupied, kFree};
 
@@ -50,13 +50,27 @@ class GainEvaluator {
   double evaluateExplorationGainWithRaycasting(
       const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
-  bool isRayIntersectingBoundingBox(const voxblox::Point& start, const voxblox::Point& end);
+  double computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
+  
+  std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
 
   double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   // Use sparse raycasting to discard occluded voxels, AEP-style implementation.
   std::pair<double, double> computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
-  
+
+  std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
+  std::pair<double, double> computeGainFromSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
+
+  std::pair<double, double> computeGainFromOptimizedSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
+
   // Initialization for visualization
   void visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);
   
@@ -68,6 +82,18 @@ class GainEvaluator {
   void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
 
   void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
+
+  void computeCost(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory);
+  
+  void computeCostTwo(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory);
+
+  void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
+
+  void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2);
+
+  void computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
+
+  void computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;
@@ -85,13 +111,13 @@ class GainEvaluator {
   double fov_y_rad_, fov_p_rad_;
   double r_max_;
 
+  int yaw_samples;
+
   // Cached parameters of the layer.
   float voxel_size_;
   float voxel_size_inv_;
   int voxels_per_side_;
   float voxels_per_side_inv_;
 };
-
-//}  // namespace mav_planning
 
 #endif  // VOXBLOX_PLANNING_COMMON_GAIN_EVALUATOR_H_

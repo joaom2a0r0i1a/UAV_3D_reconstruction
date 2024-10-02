@@ -1002,6 +1002,8 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 pub_reference.publish(point);
                 segment.uav_path.push_back(point.position);
             }
+            ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
+                << " with path points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
             bool success = sc_trajectory_generation.call(srv_get_path);

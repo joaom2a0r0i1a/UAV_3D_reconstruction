@@ -40,7 +40,9 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   NBVMultiPlanner
+  KinoNBVPMultiPlanner
   AEPMultiPlanner
+  KinoAEPMultiPlanner
 )
 
   # Define Catkin package
@@ -69,6 +71,12 @@ add_library(NBVMultiPlanner
   src/NBVMultiplanner.cpp
 )
 
+add_library(KinoNBVPMultiPlanner 
+  src/gain_evaluator.cpp
+  src/RRT/kino_rrt_star_kd.cpp
+  src/KinoNBVPMultiplanner.cpp
+)
+
 add_library(AEPMultiPlanner 
  src/gain_evaluator.cpp
  src/RRT/rrt_star_kd.cpp
@@ -76,21 +84,36 @@ add_library(AEPMultiPlanner
  src/AEPMultiplanner.cpp
 )
 
+add_library(KinoAEPMultiPlanner 
+  src/gain_evaluator.cpp
+  src/RRT/kino_rrt_star_kd.cpp
+  src/kd_tree.cpp
+  src/KinoAEPMultiplanner.cpp
+)
+
  # Add dependencies for library targets
 add_dependencies(NBVMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KinoNBVPMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(AEPMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KinoAEPMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
 target_link_libraries(NBVMultiPlanner ${catkin_LIBRARIES})
+target_link_libraries(KinoNBVPMultiPlanner ${catkin_LIBRARIES})
 target_link_libraries(AEPMultiPlanner ${catkin_LIBRARIES})
+target_link_libraries(KinoAEPMultiPlanner ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
 add_executable(NBVMulti src/NBVMultiplanner_node.cpp)
+add_executable(KinoNBVPMulti src/KinoNBVPMultiplanner_node.cpp)
 add_executable(AEPMulti src/AEPMultiplanner_node.cpp)
+add_executable(KinoAEPMulti src/KinoAEPMultiplanner_node.cpp)
 
  # Link executable against required libraries
 target_link_libraries(NBVMulti ${catkin_LIBRARIES} NBVMultiPlanner)
+target_link_libraries(KinoNBVPMulti ${catkin_LIBRARIES} KinoNBVPMultiPlanner)
 target_link_libraries(AEPMulti ${catkin_LIBRARIES} AEPMultiPlanner)
+target_link_libraries(KinoAEPMulti ${catkin_LIBRARIES} KinoAEPMultiPlanner)
 
  ## --------------------------------------------------------------
  ## |                           Install                          |
