@@ -9,6 +9,7 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
 
     // Namespace
     param_loader.loadParam("uav_namespace", ns);
+    param_loader.loadParam("uav_id", uav_id);
 
     // Frames, Coordinates and Dimensions
     param_loader.loadParam("frame_id", frame_id);
@@ -533,13 +534,11 @@ void AEPMultiPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFro
             frontier[0] = srv.response.best_node[i].x;
             frontier[1] = srv.response.best_node[i].y;
             frontier[2] = srv.response.best_node[i].z;
-            Eigen::Vector4d collision_check(frontier[0], frontier[1], frontier[2], 0.0);
-            if (best_global_gain < srv.response.gain[i] && !multiagent::isInCollision(collision_check, uav_radius, segments_)) {
-                best_global_gain = srv.response.gain[i];
-                best_global_frontier = frontier;
-                ROS_INFO("[AEPMultiPlanner]: Best Global Gains: %f", best_global_gain);
-                GlobalFrontiers.push_back(best_global_frontier);
-            }
+            GlobalFrontiers.push_back(frontier);
+            /*Eigen::Vector4d collision_check(frontier[0], frontier[1], frontier[2], 0.0);
+            if (!multiagent::isInCollision(collision_check, uav_radius, segments_)) {
+                GlobalFrontiers.push_back(frontier);
+            }*/
             // Remove all elements except the last two
             //if (GlobalFrontiers.size() > 4) {
             //    GlobalFrontiers.erase(GlobalFrontiers.begin(), GlobalFrontiers.end() - 4);
@@ -583,13 +582,15 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_global);
+        //std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+
         node->gain = result.first;
         node->point[3] = result.second;
 
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
-        std::pair<double, double> result_original = segment_evaluator.computeGainAEP(trajectory_point_global);
+        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
         ROS_INFO("[AEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
@@ -607,17 +608,26 @@ void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_st
 
     best_global_node = global_goals[0];
 
+    /*// Cost Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->cost > global_goals[i]->cost) {
             best_global_node = global_goals[i];
         }
-    }
+    }*/
 
-    /*for (int i = 0; i < global_goals.size(); ++i) {
-        if (best_global_node->gain > global_goals[i]->gain) {
+    /*// Gain Criteria
+    for (int i = 0; i < global_goals.size(); ++i) {
+        if (best_global_node->gain < global_goals[i]->gain) {
             best_global_node = global_goals[i];
         }
     }*/
+
+    // Score Criteria
+    for (int i = 0; i < global_goals.size(); ++i) {
+        if (best_global_node->score < global_goals[i]->score) {
+            best_global_node = global_goals[i];
+        }
+    }
 
     std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
 
@@ -637,7 +647,7 @@ void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_st
 
     for (size_t i = 0; i < global_goals.size(); ++i) {
         ROS_INFO("[AEPMultiPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->point[0], global_goals[i]->point[1], global_goals[i]->point[2]);
-        ROS_INFO("[AEPMultiPlanner]: Obtained Goal Gain & Cost: [%f, %f]", global_goals[i]->gain, global_goals[i]->cost);
+        ROS_INFO("[AEPMultiPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost, global_goals[i]->score);
         /*std::cout << "Obtained Goal X: " << global_goals[i]->point[0] << std::endl;
         std::cout << "Obtained Goal Y: " << global_goals[i]->point[1] << std::endl;
         std::cout << "Obtained Goal Z: " << global_goals[i]->point[2] << std::endl;
@@ -645,7 +655,7 @@ void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_st
     }
 
     ROS_INFO("[AEPMultiPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
-    ROS_INFO("[AEPMultiPlanner]: Chosen Goal Gain & Cost: [%f, %f]", best_global_node->gain, best_global_node->cost);
+    ROS_INFO("[AEPMultiPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_node->gain, best_global_node->cost, best_global_node->score);
     /*std::cout << "Chosen Goal X: " << best_global_node->point[0] << std::endl;
     std::cout << "Chosen Goal Y: " << best_global_node->point[1] << std::endl;
     std::cout << "Chosen Goal Z: " << best_global_node->point[2] << std::endl;

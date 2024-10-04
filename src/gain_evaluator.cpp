@@ -13,7 +13,7 @@ GainEvaluator::GainEvaluator() {
   min_z_ = 0.0;
   max_z_ = 11.5;*/
 
-  // School
+  /*// School
   min_x_ = -17;
   max_x_ = 17;
   min_y_ = -12;
@@ -21,7 +21,7 @@ GainEvaluator::GainEvaluator() {
   min_z_ = 0.0;
   max_z_ = 14.5;
 
-  /*min_x_ = -17;
+  min_x_ = -17;
   max_x_ = 17;
   min_y_ = -12;
   max_y_ = 7.0;
@@ -36,13 +36,13 @@ GainEvaluator::GainEvaluator() {
   min_z_ = 0.0;
   max_z_ = 2.5;*/
 
-  /*// Police Station
+  // Police Station
   min_x_ = -7;
   max_x_ = 7;
   min_y_ = -8.5;
   max_y_ = 8.5;
   min_z_ = 0.0;
-  max_z_ = 9.0;*/
+  max_z_ = 9.0;
 
   /*min_x_ = -7;
   max_x_ = 7;

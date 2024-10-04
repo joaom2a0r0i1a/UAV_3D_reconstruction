@@ -9,6 +9,7 @@ KinoAEPMultiPlanner::KinoAEPMultiPlanner(const ros::NodeHandle& nh, const ros::N
 
     // Namespace
     param_loader.loadParam("uav_namespace", ns);
+    param_loader.loadParam("uav_id", uav_id);
 
     // Frames, Coordinates and Dimensions
     param_loader.loadParam("frame_id", frame_id);
@@ -319,7 +320,7 @@ void KinoAEPMultiPlanner::localPlanner() {
                 best_trajectory = new_trajectory_best;
             }
 
-            ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", new_trajectory_best->score);
+            ROS_INFO("[KinoAEPMultiPlanner]: Best Score BB: %f", new_trajectory_best->score);
 
             KinoRRTStar.addKDTreeTrajectory(new_trajectory_best);
             visualize_trajectory(new_trajectory_best, ns);
@@ -348,7 +349,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             accel_tries++;
             Eigen::Vector3d accel;
             KinoRRTStar.computeAccelerationSampling(max_accel, accel);
-            //ROS_INFO("[KinoNBVPlanner]: accel: [%f, %f, %f]", accel[0], accel[1], accel[2]);
+            //ROS_INFO("[KinoAEPMultiPlanner]: accel: [%f, %f, %f]", accel[0], accel[1], accel[2]);
 
             //new_trajectory[trajectory_size - 1]->point[3] = rand_point_yaw[3];
             std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
@@ -375,7 +376,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             }
 
             if (OutOfBounds) {
-                //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
+                //ROS_INFO("[KinoAEPMultiPlanner]: Out of Bounds");
                 // Avoid Memory Leak
                 new_trajectory.reset();
                 continue;
@@ -392,6 +393,7 @@ void KinoAEPMultiPlanner::localPlanner() {
                 continue;
             }
 
+            bool in_collision = false;
             for (int k = 1; k < new_trajectory->TrajectoryPoints.size(); k++) {
                 if (multiagent::isInCollision(new_trajectory->TrajectoryPoints[k-1]->point, new_trajectory->TrajectoryPoints[k]->point, uav_radius, segments_)) {
                     collision_id_counter_++;
@@ -400,8 +402,13 @@ void KinoAEPMultiPlanner::localPlanner() {
                     }*/
                 // Avoid Memory Leak
                     new_trajectory.reset();
-                    continue;
+                    in_collision = true;
+                    break;
                 }
+            }
+
+            if (in_collision) {
+                continue;
             }
 
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
@@ -434,7 +441,7 @@ void KinoAEPMultiPlanner::localPlanner() {
                 best_trajectory = new_trajectory;
             }
 
-            ROS_INFO("[KinoAEPlanner]: Best Score: %f", new_trajectory->score);
+            ROS_INFO("[KinoAEPMultiPlanner]: Best Score: %f", new_trajectory->score);
 
             if (new_trajectory->gain >= 0.5) {
                 cacheNode(new_trajectory);
@@ -452,7 +459,7 @@ void KinoAEPMultiPlanner::localPlanner() {
         expanded_num_nodes += accel_iteration;
 
         if (j > N_termination) {
-            ROS_INFO("[KinoAEPlanner]: Going to Global Planning");
+            ROS_INFO("[KinoAEPMultiPlanner]: Going to Global Planning");
             KinoRRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
@@ -467,9 +474,9 @@ void KinoAEPMultiPlanner::localPlanner() {
 
     }
     
-    ROS_INFO("[KinoAEPlanner]: Final Best Score: %f", best_score_);
-    ROS_INFO("[KinoAEPlanner]: Node Iterations: %d", j);
-    ROS_INFO("[KinoAEPlanner]: Full Node Iterations: %d", expanded_num_nodes);
+    ROS_INFO("[KinoAEPMultiPlanner]: Final Best Score: %f", best_score_);
+    ROS_INFO("[KinoAEPMultiPlanner]: Node Iterations: %d", j);
+    ROS_INFO("[KinoAEPMultiPlanner]: Full Node Iterations: %d", expanded_num_nodes);
     
     if (best_trajectory) {
         reset_velocity = false;
@@ -493,7 +500,7 @@ void KinoAEPMultiPlanner::localPlanner() {
 
 void KinoAEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory) {//const std::shared_ptr<kino_rrt_star::Node> global_root_node, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory) {
     if (GlobalFrontiers.size() == 0) {
-        ROS_INFO("[KinoAEPlanner]: Terminate AEP");
+        ROS_INFO("[KinoAEPMultiPlanner]: Terminate AEP");
 
         KinoRRTStar.clearKDTree();
         best_branch.clear();
@@ -548,31 +555,37 @@ void KinoAEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& Glob
             }
 
             if (OutOfBounds) {
-                //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
+                //ROS_INFO("[KinoAEPMultiPlanner]: Out of Bounds");
                 // Avoid Memory Leak
                 global_new_trajectory.reset();
                 continue;
             }
 
             // Collision Check
-            if (!isTrajectoryCollisionFree(global_new_trajectory)) {
+            if (!isTrajectoryCollisionFree(global_new_trajectory) || multiagent::isInCollision(global_new_trajectory->TrajectoryPoints.front()->point, global_new_trajectory->TrajectoryPoints.back()->point, uav_radius, segments_)) {
                 collision_id_counter_++;
                // Avoid Memory Leak
                 global_new_trajectory.reset();
                 continue;
             }
 
+            /*bool in_collision = false;
             for (int k = 1; k < global_new_trajectory->TrajectoryPoints.size(); k++) {
                 if (multiagent::isInCollision(global_new_trajectory->TrajectoryPoints[k-1]->point, global_new_trajectory->TrajectoryPoints[k]->point, uav_radius, segments_)) {
-                    collision_id_counter_++;
+                    collision_id_counter_++;*/
                     /*if (collision_id_counter_ > 1000 * j) {
                         break;
                     }*/
-                // Avoid Memory Leak
+                /*// Avoid Memory Leak
                     global_new_trajectory.reset();
-                    continue;
+                    in_collision = true;
+                    break;
                 }
             }
+
+            if (in_collision) {
+                continue;
+            }*/
 
             visualize_node(global_new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
@@ -600,7 +613,7 @@ void KinoAEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& Glob
         ++m;
     }
 
-    ROS_INFO("[KinoAEPlanner]: Global Planner Ends");
+    ROS_INFO("[KinoAEPMultiPlanner]: Global Planner Ends");
 
     // ADD LOGIC TO GET THE BEST PATH FOR THE REACHED GOALS (SMALLEST COST, I.E., SHORTEST PATH)
     getBestGlobalTrajectory(all_global_goals, best_global_trajectory);
@@ -619,10 +632,11 @@ void KinoAEPMultiPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& Globa
             frontier[0] = srv.response.best_node[i].x;
             frontier[1] = srv.response.best_node[i].y;
             frontier[2] = srv.response.best_node[i].z;
-            Eigen::Vector4d collision_check(frontier[0], frontier[1], frontier[2], 0.0);
+            GlobalFrontiers.push_back(frontier);
+            /*Eigen::Vector4d collision_check(frontier[0], frontier[1], frontier[2], 0.0);
             if (!multiagent::isInCollision(collision_check, uav_radius, segments_)) {
-                GlobalFrontiers.push_back(best_global_frontier);
-            }
+                GlobalFrontiers.push_back(frontier);
+            }*/
         }
         return;
     }
@@ -645,8 +659,8 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
     }
 
     if ((nearest_goal - trajectory->TrajectoryPoints.back()->point.head(3)).norm() < tolerance) {
-        ROS_INFO("[KinoAEPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
-        ROS_INFO("[KinoAEPlanner]: RRT* Goal: [%f, %f, %f]", trajectory->TrajectoryPoints.back()->point[0], trajectory->TrajectoryPoints.back()->point[1], trajectory->TrajectoryPoints.back()->point[2]);
+        ROS_INFO("[KinoAEPMultiPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
+        ROS_INFO("[KinoAEPMultiPlanner]: RRT* Goal: [%f, %f, %f]", trajectory->TrajectoryPoints.back()->point[0], trajectory->TrajectoryPoints.back()->point[1], trajectory->TrajectoryPoints.back()->point[2]);
         /*std::cout << "Goal X: " << nearest_goal[0] << std::endl;
         std::cout << "Goal Y: " << nearest_goal[1] << std::endl;
         std::cout << "Goal Z: " << nearest_goal[2] << std::endl;
@@ -674,7 +688,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
         std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-        ROS_INFO("[KinoAEPlanner]: Goal Best Gain: %f", result_original.first);
+        ROS_INFO("[KinoAEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
     }
@@ -729,16 +743,16 @@ void KinoAEPMultiPlanner::getBestGlobalTrajectory(const std::vector<std::shared_
     }*/
 
     for (size_t i = 0; i < global_goals.size(); ++i) {
-        ROS_INFO("[KinoAEPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->TrajectoryPoints.back()->point[0], global_goals[i]->TrajectoryPoints.back()->point[1], global_goals[i]->TrajectoryPoints.back()->point[2]);
-        ROS_INFO("[KinoAEPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost, global_goals[i]->score);
+        ROS_INFO("[KinoAEPMultiPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->TrajectoryPoints.back()->point[0], global_goals[i]->TrajectoryPoints.back()->point[1], global_goals[i]->TrajectoryPoints.back()->point[2]);
+        ROS_INFO("[KinoAEPMultiPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost2, global_goals[i]->score);
         /*std::cout << "Obtained Goal X: " << global_goals[i]->point[0] << std::endl;
         std::cout << "Obtained Goal Y: " << global_goals[i]->point[1] << std::endl;
         std::cout << "Obtained Goal Z: " << global_goals[i]->point[2] << std::endl;
         std::cout << "Obtained Goal Cost: " << global_goals[i]->cost << std::endl;*/
     }
 
-    ROS_INFO("[KinoAEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_trajectory->TrajectoryPoints.back()->point[0], best_global_trajectory->TrajectoryPoints.back()->point[1], best_global_trajectory->TrajectoryPoints.back()->point[2]);
-    ROS_INFO("[KinoAEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_trajectory->gain, best_global_trajectory->cost, best_global_trajectory->score);
+    ROS_INFO("[KinoAEPMultiPlanner]: Chosen Goal: [%f, %f, %f]", best_global_trajectory->TrajectoryPoints.back()->point[0], best_global_trajectory->TrajectoryPoints.back()->point[1], best_global_trajectory->TrajectoryPoints.back()->point[2]);
+    ROS_INFO("[KinoAEPMultiPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_trajectory->gain, best_global_trajectory->cost2, best_global_trajectory->score);
     /*std::cout << "Chosen Goal X: " << best_global_trajectory->point[0] << std::endl;
     std::cout << "Chosen Goal Y: " << best_global_trajectory->point[1] << std::endl;
     std::cout << "Chosen Goal Z: " << best_global_trajectory->point[2] << std::endl;
@@ -1045,18 +1059,18 @@ void KinoAEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 segment.uav_path.push_back(point.position);
             }
             ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
-                << " with path points=" << segment.uav_path.size());
+                << " with trajectory points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
             bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
 
             if (!success_trajectory) {
-                ROS_ERROR("[KinoAEPlanner]: service call for trajectory reference failed");
+                ROS_ERROR("[KinoAEPMultiPlanner]: service call for trajectory reference failed");
                 changeState(STATE_STOPPED);
                 return;
             } else {
                 if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[KinoAEPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
+                    ROS_ERROR("[KinoAEPMultiPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
                     changeState(STATE_STOPPED);
                     return;
                 }

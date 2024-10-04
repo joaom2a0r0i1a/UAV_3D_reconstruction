@@ -6,7 +6,7 @@ attach: false
 tmux_options: -f /etc/ctu-mrs/tmux.conf
 # you can modify these
 pre_window: export RUN_TYPE=simulation; export UAV_TYPE=f450; export PLATFORM_CONFIG=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml; export CUSTOM_CONFIG=./config/custom_config.yaml; export WORLD_CONFIG=./config/world_config.yaml; export NETWORK_CONFIG=./config/network_config.yaml
-startup_window: status
+startup_window: takeoff
 windows:
   - roscore:
       layout: tiled
@@ -15,14 +15,14 @@ windows:
   - gazebo:
       layout: tiled
       panes:
-        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school_full gui:=false
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_police_station_full gui:=false
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 2 3 --$UAV_TYPE --pos-file `rospack find multidrone_motion_planning`/tmux/three_drones/config/initial_pos.yaml --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 2 3 --$UAV_TYPE --pos-file `rospack find multidrone_motion_planning`/tmux/three_drones/config/initial_pos.yaml --enable-ground-truth --enable-realsense-front-pitched"
         #- export UAV_NAME=uav1; waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME
   - gz_rate:
       layout: tiled
       panes:
-        - export UAV_NAME=uav3; waitForControl; sleep 5; gz physics -u 225.0
+        - export UAV_NAME=uav3; waitForControl; sleep 5; gz physics -u 150.0
   #- status:
       #layout: tiled
       #panes:
@@ -66,12 +66,12 @@ windows:
         #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning NBVPlannerMulti.launch
         #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning NBVPlannerMulti.launch
         #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning NBVPlannerMulti.launch
-        - export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning KinoNBVPlannerMulti.launch
-        - export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning KinoNBVPlannerMulti.launch
-        - export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning KinoNBVPlannerMulti.launch
-        #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
-        #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
-        #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
+        #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning KinoNBVPlannerMulti.launch
+        #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning KinoNBVPlannerMulti.launch
+        #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning KinoNBVPlannerMulti.launch
+        - export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
+        - export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
+        - export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning AEPlannerMulti.launch
         #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multidrone_motion_planning KinoAEPlannerMulti.launch
         #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multidrone_motion_planning KinoAEPlannerMulti.launch
         #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multidrone_motion_planning KinoAEPlannerMulti.launch
@@ -101,17 +101,17 @@ windows:
         - export UAV_NAME=uav1; waitForControl; roslaunch multidrone_motion_planning ProcessFullPointclouds.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml
         - export UAV_NAME=uav2; waitForControl; roslaunch multidrone_motion_planning ProcessFullPointclouds.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml
         - export UAV_NAME=uav3; waitForControl; roslaunch multidrone_motion_planning ProcessFullPointclouds.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml
-  - rviz:
-      layout: tiled
-      panes:
-        - export UAV_NAME=uav1; waitForControl; rosrun rviz rviz -d ./config/rviz.rviz
-        - export UAV_NAME=uav1; waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
-  - rviz_uav_models:
-      layout: tiled
-      panes:
-        - export UAV_NAME=uav1; waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
-        - export UAV_NAME=uav2; waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
-        - export UAV_NAME=uav3; waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+  #- rviz:
+      #layout: tiled
+      #panes:
+        #- export UAV_NAME=uav1; waitForControl; rosrun rviz rviz -d ./config/rviz.rviz
+        #- export UAV_NAME=uav1; waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
+  #- rviz_uav_models:
+      #layout: tiled
+      #panes:
+        #- export UAV_NAME=uav1; waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        #- export UAV_NAME=uav2; waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        #- export UAV_NAME=uav3; waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
   #- layout:
       #layout: tiled
       #panes:

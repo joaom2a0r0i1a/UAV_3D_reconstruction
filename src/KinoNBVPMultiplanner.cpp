@@ -329,6 +329,7 @@ void KinoNBVPMultiPlanner::KinoNBV() {
                 continue;
             }
 
+            bool in_collision = false;
             for (int k = 1; k < new_trajectory->TrajectoryPoints.size(); k++) {
                 if (multiagent::isInCollision(new_trajectory->TrajectoryPoints[k-1]->point, new_trajectory->TrajectoryPoints[k]->point, uav_radius, segments_)) {
                     collision_id_counter_++;
@@ -337,8 +338,13 @@ void KinoNBVPMultiPlanner::KinoNBV() {
                     }*/
                 // Avoid Memory Leak
                     new_trajectory.reset();
-                    continue;
+                    in_collision = true;
+                    break;
                 }
+            }
+
+            if (in_collision) {
+                continue;
             }
 
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
@@ -432,7 +438,7 @@ void KinoNBVPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_referen
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -461,7 +467,7 @@ void KinoNBVPMultiPlanner::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 
@@ -680,7 +686,7 @@ void KinoNBVPMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 segment.uav_path.push_back(point.position);
             }
             ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
-                << " with path points=" << segment.uav_path.size());
+                << " with trajectory points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
             bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
