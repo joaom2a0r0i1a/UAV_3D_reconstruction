@@ -250,12 +250,12 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
-        #series_dir = ["RH-NBVP/Connected", "RH-NBVP/Disconnected", "AEP/Connected", "AEP/Disconnected"]
+        #series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
+        series_dir = ["RH-NBVP/JS", "RH-NBVP/SS", "AEP/JS", "AEP/SS", "Kinodynamic RH-NBVP (ours)/JS", "Kinodynamic RH-NBVP (ours)/SS", "Kinodynamic AEP (ours)/JS", "Kinodynamic AEP (ours)/SS"]
         #series_dir = ["Cost", "Gain", "Score"]
         #series_dir = ["Distance", "Time"]
         #series_dir = ["Connected", "Disconnected"]
-        colors = ['r', 'y', 'b', 'g']
+        colors = ['r', 'y', 'b', 'g', 'c', 'm', 'tab:pink', 'tab:gray']
         #colors = ['r', 'y', 'b']
         #colors = ['r', 'y']
         for idx, series in enumerate(series_dir):

@@ -727,7 +727,7 @@ void KinoAEPlanner::getBestGlobalTrajectory(const std::vector<std::shared_ptr<ki
 
     for (size_t i = 0; i < global_goals.size(); ++i) {
         ROS_INFO("[KinoAEPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->TrajectoryPoints.back()->point[0], global_goals[i]->TrajectoryPoints.back()->point[1], global_goals[i]->TrajectoryPoints.back()->point[2]);
-        ROS_INFO("[KinoAEPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost, global_goals[i]->score);
+        ROS_INFO("[KinoAEPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost2, global_goals[i]->score);
         /*std::cout << "Obtained Goal X: " << global_goals[i]->point[0] << std::endl;
         std::cout << "Obtained Goal Y: " << global_goals[i]->point[1] << std::endl;
         std::cout << "Obtained Goal Z: " << global_goals[i]->point[2] << std::endl;
@@ -735,7 +735,7 @@ void KinoAEPlanner::getBestGlobalTrajectory(const std::vector<std::shared_ptr<ki
     }
 
     ROS_INFO("[KinoAEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_trajectory->TrajectoryPoints.back()->point[0], best_global_trajectory->TrajectoryPoints.back()->point[1], best_global_trajectory->TrajectoryPoints.back()->point[2]);
-    ROS_INFO("[KinoAEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_trajectory->gain, best_global_trajectory->cost, best_global_trajectory->score);
+    ROS_INFO("[KinoAEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_trajectory->gain, best_global_trajectory->cost2, best_global_trajectory->score);
     /*std::cout << "Chosen Goal X: " << best_global_trajectory->point[0] << std::endl;
     std::cout << "Chosen Goal Y: " << best_global_trajectory->point[1] << std::endl;
     std::cout << "Chosen Goal Z: " << best_global_trajectory->point[2] << std::endl;
