@@ -214,7 +214,12 @@ private:
         std::vector<RTreeValue> result_n;
 
         // Retrieve all nodes in the RTree
-        rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_n));
+        //rtree.query(bgi::satisfies([](RTreeValue const& v) { return true; }), std::back_inserter(result_n));
+
+        rtree.query(bgi::satisfies([this](RTreeValue const& v) {
+            bool above_g_zero = v.second.gain > g_zero;
+            return(above_g_zero);
+        }), std::back_inserter(result_n));
 
         for (const auto& value : result_n) {
             if (value.second.gain > req.threshold) {
