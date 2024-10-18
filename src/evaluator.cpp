@@ -29,21 +29,21 @@ Evaluator::Evaluator() {
   min_z_ = 0.0;
   max_z_ = 14.5;*/
 
-  /*// Maze
+  // Maze
   min_x_ = -10.0;
   max_x_ = 10.0;
   min_y_ = -9.0;
   max_y_ = 9.0;
   min_z_ = 0.0;
-  max_z_ = 2.5;*/
+  max_z_ = 2.5;
 
-  // Police Station
+  /*// Police Station
   min_x_ = -7;
   max_x_ = 7;
   min_y_ = -8.5;
   max_y_ = 8.5;
   min_z_ = 0.0;
-  max_z_ = 9.0;
+  max_z_ = 9.0;*/
 
   /*min_x_ = -7;
   max_x_ = 7;
