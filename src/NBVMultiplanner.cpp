@@ -168,6 +168,7 @@ void NBVMultiPlanner::NBV() {
     }
     if (k < agentsId_.size()) {
         segments_[k]->clear();
+        segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
     }
 
     // Finds root node
@@ -425,7 +426,7 @@ void NBVMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.reference.heading = pose[3];
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(3).sleep();
+    ros::Duration(1).sleep();
 
     ROS_INFO("[NBVMultiPlanner]: Rotating 360 degrees");
 
@@ -436,7 +437,7 @@ void NBVMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -449,7 +450,7 @@ void NBVMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.reference.heading = pose[3];
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(2).sleep();
+    ros::Duration(1).sleep();
 }
 
 void NBVMultiPlanner::rotate() {
@@ -465,7 +466,7 @@ void NBVMultiPlanner::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 
@@ -728,7 +729,7 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
                 ROS_INFO("[NBVMultiPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
+                if (dist <= 0.4*step_size && yaw_difference <= 0.2*M_PI) {
                     changeState(STATE_PLANNING);
                 }
             } else {

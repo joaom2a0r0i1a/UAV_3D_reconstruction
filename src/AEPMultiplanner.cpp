@@ -48,6 +48,7 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
     param_loader.loadParam("path/lambda", lambda);
+    param_loader.loadParam("path/global_lambda", global_lambda);
 
     // Timer
     param_loader.loadParam("timer_main/rate", timer_main_rate);
@@ -200,6 +201,7 @@ void AEPMultiPlanner::localPlanner() {
     }
     if (k < agentsId_.size()) {
         segments_[k]->clear();
+        segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
     }
     
     //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
@@ -510,6 +512,7 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
         bool goal_reached;
         goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star); // NEED TO ADD FRONTIER HERE
         if (goal_reached) {
+            segment_evaluator.computeScore(new_node_star, global_lambda);
             all_global_goals.push_back(new_node_star);
             goal_reached = false;
         }
@@ -696,7 +699,7 @@ void AEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.reference.heading = pose[3];
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(3).sleep();
+    ros::Duration(1).sleep();
 
     ROS_INFO("[AEPMultiPlanner]: Rotating 360 degrees");
 
@@ -707,7 +710,7 @@ void AEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -720,7 +723,7 @@ void AEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.reference.heading = pose[3];
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(2).sleep();
+    ros::Duration(1).sleep();
 
     /*// Initialization motion, necessary for the planning of initial paths.
     // Move 10 meters in the z axis and then back to the initial position
@@ -787,7 +790,7 @@ void AEPMultiPlanner::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
+        ros::Duration(0.4*M_PI).sleep();
     }
 }
 
@@ -1068,7 +1071,7 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
                 ROS_INFO("[AEPMultiPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.8*step_size && yaw_difference <= 0.6*M_PI) {
+                if (dist <= 0.4*step_size && yaw_difference <= 0.2*M_PI) {
                     changeState(STATE_PLANNING);
                 }
             } else {

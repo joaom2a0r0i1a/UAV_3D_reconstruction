@@ -17,24 +17,24 @@ timer_main:
   #planner_range: 3 # [m]
 
 # School
-#bounded_box:
-  #min_x: -25.0 # [m]
-  #max_x: 25.0 # [m]
-  #min_y: -20.0 # [m]
-  #max_y: 15.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 20.0 # [m]
-  #planner_range: 3 # [m]
-
-# Police Station
 bounded_box:
-  min_x: -15.0 # [m]
-  max_x: 15.0 # [m]
+  min_x: -25.0 # [m]
+  max_x: 25.0 # [m]
   min_y: -20.0 # [m]
   max_y: 15.0 # [m]
   min_z: 1.0 # [m]
   max_z: 20.0 # [m]
   planner_range: 3 # [m]
+
+# Police Station
+#bounded_box:
+  #min_x: -15.0 # [m]
+  #max_x: 15.0 # [m]
+  #min_y: -20.0 # [m]
+  #max_y: 15.0 # [m]
+  #min_z: 1.0 # [m]
+  #max_z: 20.0 # [m]
+  #planner_range: 3 # [m]
 
 # Maze
 #bounded_box:

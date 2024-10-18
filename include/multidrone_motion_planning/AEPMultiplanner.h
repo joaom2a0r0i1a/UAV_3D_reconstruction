@@ -168,6 +168,7 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
+    double global_lambda;
     std::atomic<int> replanning_counter_ = 0;
 
     // Multi Drone Collision Avoidance

@@ -1,28 +1,75 @@
 uav1:
   id: 1
-  x: 12 
+  x: -22 
   y: 0
   z: 0.5
-  heading: 3.14159
+  heading: 0
 
 uav2:
   id: 2
-  x: 12
+  x: -22
   y: 4
   z: 0.5
-  heading: 3.14159
+  heading: 0
 
 uav3:
   id: 3
-  x: 12
+  x: -22
   y: -4
   z: 0.5
-  heading: 3.14159
+  heading: 0
+
+####################################################################################
+################################### MAZE ###########################################
+####################################################################################
+# 1st layout -> Joint Start 1
+#uav1:
+#  id: 1
+#  x: 8.5 
+#  y: 7.5
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 0.0 
+#  y: 7.5
+#  z: 0.5
+#  heading: 3.14159
+
+#uav3:
+#  id: 3
+#  x: -8.5 
+#  y: 7.5
+#  z: 0.5
+#  heading: -1.57079
+
+# 2nd layout -> Separated Start 1
+#uav1:
+#  id: 1
+#  x: 8.5 
+#  y: 7.5
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 8.5 
+#  y: 4.0
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: -8.5 
+#  y: -7.5
+#  z: 0.5
+#  heading: 0.0
 
 ####################################################################################
 ############################ POLICE STATION ########################################
 ####################################################################################
-# 1st layout -> connected 1
+# 1st layout -> Joint Start 1
 #uav1:
 #  id: 1
 #  x: -12
@@ -44,7 +91,7 @@ uav3:
 #  z: 0.5
 #  heading: 0
 
-# 2st layout -> connected 2
+# 2st layout -> Joint Start 2
 #uav1:
 #  id: 1
 #  x: 12 
@@ -66,7 +113,7 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 3rd layout -> connected 3
+# 3rd layout -> Joint Start 3
 #uav1:
 #  id: 1
 #  x: 0 
@@ -88,7 +135,7 @@ uav3:
 #  z: 0.5
 #  heading: 1.57079
 
-# 4th layout -> connected 4
+# 4th layout -> Joint Start 4
 #uav1:
 #  id: 1
 #  x: 0 
@@ -110,7 +157,7 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 5th layout -> unconnected 1
+# 5th layout -> Separated Start 1
 #uav1:
 #  id: 1
 #  x: -12 
@@ -132,7 +179,7 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 6th layout -> unconnected 2
+# 6th layout -> Separated Start 2
 #uav1:
 #  id: 1
 #  x: -12 
@@ -154,7 +201,7 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 7th layout -> unconnected 3
+# 7th layout -> Separated Start 3
 #uav1:
 #  id: 1
 #  x: -12 
@@ -176,7 +223,7 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 8th layout -> unconnected 4
+# 8th layout -> Separated Start 4
 #uav1:
 #  id: 1
 #  x: 12 
@@ -202,7 +249,7 @@ uav3:
 ####################################################################################
 ############################ SCHOOL ################################################
 ####################################################################################
-# 1st layout -> connected 1 #(Done 2x (06/08, 16/08) NBVP, Done 2x (15/08, 16/08) AEP)
+# 1st layout -> Joint Start 1 #(Done 2x (06/08, 16/08) NBVP, Done 2x (15/08, 16/08) AEP)
 #uav1:
 #  id: 1
 #  x: -22 
@@ -224,7 +271,7 @@ uav3:
 #  z: 0.5
 #  heading: 0
 
-# 2st layout -> connected 2 #(Done 1x (07/08) NBVP, Done 1x (16/08) AEP)
+# 2st layout -> Joint Start 2 #(Done 1x (07/08) NBVP, Done 1x (16/08) AEP)
 #uav1:
 #  id: 1
 #  x: 22 
@@ -246,7 +293,7 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 3rd layout -> connected 3 #(Done 1x (08/08) NBVP, Done 1x (17/08) AEP)
+# 3rd layout -> Joint Start 3 #(Done 1x (08/08) NBVP, Done 1x (17/08) AEP)
 #uav1:
 #  id: 1
 #  x: 0 
@@ -268,7 +315,7 @@ uav3:
 #  z: 0.5
 #  heading: 1.57079
 
-# 4th layout -> connected 4 #(Done 1x (08/08) NBVP, Done 1x (17/08) AEP)
+# 4th layout -> Joint Start 4 #(Done 1x (08/08) NBVP, Done 1x (17/08) AEP)
 #uav1:
 #  id: 1
 #  x: 0 
@@ -290,7 +337,7 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 5th layout -> unconnected 1 #(Done 2x (05/08) NBVP, Done 2x (16/08, 17/08) AEP)
+# 5th layout -> Separated Start 1 #(Done 2x (05/08) NBVP, Done 2x (16/08, 17/08) AEP)
 #uav1:
 #  id: 1
 #  x: -22 
@@ -312,7 +359,7 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 6th layout -> unconnected 2 #(Done 1x (16/08) NBVP, Done 1x (16/08) AEP)
+# 6th layout -> Separated Start 2 #(Done 1x (16/08) NBVP, Done 1x (16/08) AEP)
 #uav1:
 #  id: 1
 #  x: -22 
@@ -334,7 +381,7 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 7th layout -> unconnected 3 #(Done 1x (16/08) NBVP, Done 1x (16/08) AEP)
+# 7th layout -> Separated Start 3 #(Done 1x (16/08) NBVP, Done 1x (16/08) AEP)
 #uav1:
 #  id: 1
 #  x: -22 
@@ -356,7 +403,7 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 8th layout -> unconnected 4 #(Done 1x (16/08) NBVP, Done 1x (17/08) AEP)
+# 8th layout -> Separated Start 4 #(Done 1x (16/08) NBVP, Done 1x (17/08) AEP)
 #uav1:
 #  id: 1
 #  x: 22 

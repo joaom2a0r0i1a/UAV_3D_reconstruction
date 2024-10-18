@@ -31,4 +31,4 @@ safety_area:
     frame_name: "world_origin"
 
     max_z: 25.0
-    min_z: 0.5
+    min_z: 0.0

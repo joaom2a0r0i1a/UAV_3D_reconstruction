@@ -223,6 +223,7 @@ void KinoAEPMultiPlanner::localPlanner() {
     }
     if (k < agentsId_.size()) {
         segments_[k]->clear();
+        segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
     }
     
     std::shared_ptr<kino_rrt_star::Node> root_node;
@@ -793,7 +794,7 @@ void KinoAEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_referenc
     initial_reference.reference.heading = pose[3];
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(3).sleep();
+    ros::Duration(1).sleep();
 
     ROS_INFO("[KinoAEPMultiPlanner]: Rotating 360 degrees");
 
@@ -817,7 +818,7 @@ void KinoAEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_referenc
     initial_reference.reference.heading = pose[3];
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(2).sleep();
+    ros::Duration(1).sleep();
 }
 
 void KinoAEPMultiPlanner::rotate() {
