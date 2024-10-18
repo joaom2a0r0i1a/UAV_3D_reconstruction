@@ -1,12 +1,12 @@
 <launch>
   <!-- Data source Data, -->
-  <arg name="target_directory" default="/mnt/c/Users/joaof/Documents/data/police_station/three_drones" />
-  <arg name="gt_file_path" default="/mnt/c/Users/joaof/Documents/data/gt_police_station_processed.ply"/>
-  <arg name="experiment_config" default="PoliceStation.yaml"/>
+  <arg name="target_directory" default="/home/joaomendes/motion_workspace/src/data" />
+  <arg name="gt_file_path" default="/mnt/c/Users/joaof/Documents/data/gt_school_processed.ply"/>
+  <arg name="experiment_config" default="School.yaml"/>
   <arg name="method" default="recent"/>
 
   <!-- what to evaluate -->
-  <arg name="multi_series" default="true"/>
+  <arg name="multi_series" default="false"/>
   <arg name="series" default="false"/>
   <arg name="evaluate" default="true"/>
   <arg name="evaluate_volume" default="false"/>

@@ -24,6 +24,8 @@
   <depend>cache_nodes</depend>
   <depend>process_pointcloud</depend>
   <depend>multiagent_collision_check</depend>
+  <depend>mavros</depend>
+  <depend>mavros_msgs</depend>
 
   <export>
   </export>

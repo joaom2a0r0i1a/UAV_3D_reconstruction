@@ -12,6 +12,7 @@
 
     <!-- custom configs -->
     <arg name="config_pcl_filter_rs_front_pitched" default="" />
+    <arg name="config_pcl_freespace" default="" />
 
     <!-- NodeletManager //{ -->
     <include file="$(find mrs_octomap_mapping_planning)/launch/nodelet_manager.launch">
@@ -38,6 +39,16 @@
         <arg name="debug" value="false" />
         <arg name="name_suffix" value="rs_front_pitched" />
         <arg name="topic_3d_lidar_in" value="rgbd_front_pitched/aligned_depth_to_color/points" />
+    </include>
+
+    <!--Realsense Freespace Pointcloud-->
+    <include file="$(find pcl_tools)/launch/create_freespace_pointcloud.launch">
+        <arg name="standalone" value="$(arg standalone)" />
+        <arg name="nodelet_manager_name" value="$(arg nodelet_manager_name)" />
+        <arg name="custom_config" value="$(arg config_pcl_freespace)" />
+        <arg name="debug" value="false" />
+        <arg name="name_suffix" value="rs_front_pitched" />
+        <arg name="topic_3d_lidar_in" value="rgbd_front_pitched/aligned_depth_to_color/image_raw" />
     </include>
 
 </launch>
