@@ -26,6 +26,7 @@
   <depend>multiagent_collision_check</depend>
   <depend>mavros</depend>
   <depend>mavros_msgs</depend>
+  <depend>geographic_msgs</depend>
 
   <export>
   </export>
