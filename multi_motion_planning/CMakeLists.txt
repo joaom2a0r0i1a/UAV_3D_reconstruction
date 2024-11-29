@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15.0)
-project(multidrone_motion_planning)
+project(multi_motion_planning)
 
 # Enable parallel build
 set(CMAKE_BUILD_PARALLEL_LEVEL 4)
@@ -22,7 +22,7 @@ set(CATKIN_DEPENDENCIES
   cache_nodes
   process_pointcloud
   multiagent_collision_check
-  motion_planning_python
+  motion_planning
   )
   
 find_package(catkin REQUIRED COMPONENTS

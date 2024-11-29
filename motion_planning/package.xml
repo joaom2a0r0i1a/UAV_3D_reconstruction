@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>motion_planning_python</name>
+  <name>motion_planning</name>
   <version>0.0.0</version>
   <description>The motion planner</description>
 

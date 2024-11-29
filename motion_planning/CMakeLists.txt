@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15.0)
-project(motion_planning_python)
+project(motion_planning)
 
 # Enable parallel build
 set(CMAKE_BUILD_PARALLEL_LEVEL 8)
