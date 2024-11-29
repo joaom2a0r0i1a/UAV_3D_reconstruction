@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+  <arg name="voxel_size" default="0.2"/>
+  <arg name="voxels_per_side" default="16" />
+  <arg name="truncation_distance" default="1" />
+  <arg name="method" default="fast"/>
+  <arg name="ray_length" default="5" />
+
+  <!-- defines name of the namespace of the drone -->
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+
+  <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
+
+  <group ns="$(arg UAV_NAME)">
+
+    <!--Voxblox Mapping-->
+    <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr" clear_params="true">
+      <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+      <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+
+      <param name="mesh_filename" value="$(find motion_planning_python)/gt_fire_station.ply" />
+      <!--param name="load_map" value="~/workspace1/src/motion_planning_python/src/map/fire_station.tsdf" /-->
+      <!--param name="truncation_distance" value="$(arg truncation_distance)" /-->
+      <param name="method" value="$(arg method)" />
+      <param name="max_ray_length_m" value="$(arg ray_length)" />
+
+      <param name="publish_tsdf_map" value="true" />
+      <param name="publish_esdf_map" value="true" />
+
+      <param name="color_mode" value="color" />
+      <param name="use_tf_transforms" value="true" />
+      <param name="update_mesh_every_n_sec" value="1.0" />
+      <param name="min_time_between_msgs_sec" value="0.0" />
+      <param name="use_const_weight" value="false" />
+      <param name="allow_clear" value="true" />
+
+      <param name="verbose" value="true" />
+      <param name="world_frame" value="$(arg world_frame)" />
+    </node>
+
+  </group>
+
+</launch>
+

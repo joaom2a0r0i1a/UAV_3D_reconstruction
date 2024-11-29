@@ -1,6 +1,7 @@
 {
     "configurations": [
         {
+<<<<<<< HEAD
             "browse": {
                 "databaseFilename": "${default}",
                 "limitSymbolsToIncludedHeaders": false
@@ -28,6 +29,24 @@
             "cStandard": "gnu11",
             "cppStandard": "c++14",
             "compileCommands": "~/motion_workspace/build/cache_nodes/compile_commands.json"
+=======
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/opt/ros/noetic/include",
+                "/usr/include/eigen3",
+                "/usr/include/pcl-1.10",
+                "/home/joaomendes/git/trajectory_generation/include",
+                "${workspaceFolder}/include",
+                "/home/joaomendes/voxblox/src/voxblox/voxblox/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "~/motion_workspace/build/motion_planning_python/compile_commands.json"
+>>>>>>> master-holder
         }
     ],
     "version": 4

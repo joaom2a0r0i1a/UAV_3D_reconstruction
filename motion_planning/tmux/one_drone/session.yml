@@ -1,0 +1,126 @@
+# do not modify these
+root: ./
+name: simulation
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0
+startup_window: motion_planner
+windows:
+  - roscore:
+      layout: tiled
+      panes:
+        - roscore
+  - gazebo:
+      layout: tiled
+      panes:
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_fire_station gui:=true
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school gui:=false
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_police_station_full gui:=false
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_maze gui:=true
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-rangefinder --enable-mobius-camera-front"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 -3.0 --enable-realsense-front --enable-velodyne use_gpu:=True update_rate:=1"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -14 -11 0.5 -3.1415927 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 0 -14 0.5 1.57 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 0 -15 0.5 1.57 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # HOUSE 
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -11 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # SCHOOL 
+        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # POLICE STATION 
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -12 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # MAZE
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 8.5 7.5 0.5 3.14 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -10 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn " --f450 --help"
+        #- waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME
+  #- gz_rate:
+    #layout: tiled
+    #panes:
+      #- waitForOdometry; sleep 5; gz physics -u 175
+  - status:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_status status.launch
+  - hw_api:
+      layout: tiled
+      panes:
+        - waitForTime; roslaunch mrs_uav_px4_api api.launch custom_config:=./config/hw_api.yaml
+  - core:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_core core.launch
+          platform_config:=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml
+          custom_config:=./config/custom_config.yaml
+          world_config:=./config/world_config.yaml
+          network_config:=./config/network_config.yaml
+  - takeoff:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_autostart automatic_start.launch custom_config:=./config/automatic_start.yaml
+        - 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
+  - motion_planner:
+      layout: tiled
+      panes:
+        #- 'history -s python3 eval_paths.py'
+        #- waitForControl; roslaunch motion_planning_python motion_planner.launch
+        #- waitForControl; roslaunch motion_planning_python AEPlanner.launch
+        - waitForControl; roslaunch motion_planning_python KinoNBVPlanner.launch
+        #- waitForControl; roslaunch motion_planning_python KinoAEPlanner.launch
+        - waitForControl; roslaunch motion_planning_python experiment_starter.launch
+        #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
+        #- waitForControl; roslaunch motion_planning_python motion_planner_python.launch
+        #- 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
+  #- Boustrophedon:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch boustrophedon_server boustrophedon_server.launch
+        #- 'history -s rosrun boustrophedon_server boustrophedon_planner_client'
+  #- cover_planner:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch cover_planner cover_planner.launch
+        #- waitForControl; roslaunch motion_planning_python experiment_starter_cover.launch
+        #- 'history -s rosservice call /$UAV_NAME/cover_planner/fly_to_first_waypoint'
+        #- 'history -s rosservice call /$UAV_NAME/cover_planner/start_waypoints_following'
+        #- 'history -s rosservice call /$UAV_NAME/cover_planner/stop_waypoints_following'
+  #- cached_nodes:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch cache_nodes cache.launch
+  - voxblox:
+      layout: tiled
+      panes:
+        #- waitForControl; roslaunch motion_planning_python voxblox.launch
+        - waitForControl; roslaunch motion_planning_python processed_voxblox.launch
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP(ours)/20240904_120233/voxblox_maps/00045.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/police_station_gt.tsdf'
+        #- 'history -s rosservice call /uav1/voxblox_node/generate_mesh'
+  - processed_pointclouds:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_python process_pointcloud.launch 
+          config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
+          config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+        #- waitForControl; roslaunch motion_planning_python freespace.launch 
+        #  config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+  #- voxblox_evaluate:
+  #    layout: tiled
+  #    panes:
+  #      - waitForControl; roslaunch motion_planning_python voxblox_eval.launch
+  #- rqt_plot:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch motion_planning_python rqt_plot_velocity.launch
+  - rviz:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_python rviz.launch
+        - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
+  - layout:
+      layout: tiled
+      panes:
+        - waitForControl; sleep 5; ~/.i3/layout_manager.sh ./layout.json

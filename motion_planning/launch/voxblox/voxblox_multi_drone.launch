@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+    <arg name="voxel_size" default="0.2"/>
+    <arg name="voxels_per_side" default="16" />
+    <arg name="truncation_distance" default="0.6" />
+    <arg name="method" default="fast"/>
+    <arg name="ray_length" default="5" />
+    <arg name="min_ray_length" default="0.1" />
+    <arg name="num_agents" default="3" />
+
+    <!-- Defines name of the namespace of the drones -->
+    <arg name="UAV_NAME_1" default="uav1" />
+    <arg name="UAV_NAME_2" default="uav2" />
+    <arg name="UAV_NAME_3" default="uav3" />
+    <arg name="world_frame" default="common_origin" />
+
+    <!--Depth camera PointCloud-->
+    <!--node pkg="nodelet" type="nodelet" name="standalone_nodelet" args="manager" /-->
+
+    <!--Make Depth camera PointCloud for UAV 1 -->
+    <!--node pkg="nodelet" type="nodelet" name="point_cloud_xyz_uav1" args="load depth_image_proc/point_cloud_xyz standalone_nodelet">
+        <remap from="camera_info" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/camera_info"/>
+        <remap from="image_rect" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/image_raw"/>
+        <remap from="points" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+        <param name="queue_size" value="3" />
+    </node-->
+
+    <!-- Make Depth camera PointCloud for UAV 2 -->
+    <!--node pkg="nodelet" type="nodelet" name="point_cloud_xyz_uav2" args="load depth_image_proc/point_cloud_xyz standalone_nodelet">
+        <remap from="camera_info" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/camera_info"/>
+        <remap from="image_rect" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/image_raw"/>
+        <remap from="points" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+        <param name="queue_size" value="3" />
+    </node-->
+
+    <!-- Make Depth camera PointCloud for UAV 3 -->
+    <!--node pkg="nodelet" type="nodelet" name="point_cloud_xyz_uav3" args="load depth_image_proc/point_cloud_xyz standalone_nodelet">
+        <remap from="camera_info" to="/$(arg UAV_NAME_3)/rgbd_front_pitched/aligned_depth_to_color/camera_info"/>
+        <remap from="image_rect" to="/$(arg UAV_NAME_3)/rgbd_front_pitched/aligned_depth_to_color/image_raw"/>
+        <remap from="points" to="/$(arg UAV_NAME_3)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+        <param name="queue_size" value="3" />
+    </node>
+
+    <group ns="$(arg UAV_NAME_1)">
+        <node name="pcl_process" pkg="process_pointcloud" type="process_node">
+            <param name="uav_namespace" value="$(arg UAV_NAME_1)" />
+            <remap from="pointcloud_in" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+            <remap from="transformed_pointcloud_out" to="/$(arg UAV_NAME_1)/transformed_points"/>
+        </node>
+    </group>
+
+    <group ns="$(arg UAV_NAME_2)">
+        <node name="pcl_process" pkg="process_pointcloud" type="process_node">
+            <param name="uav_namespace" value="$(arg UAV_NAME_2)" />
+            <remap from="pointcloud_in" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+            <remap from="transformed_pointcloud_out" to="/$(arg UAV_NAME_2)/transformed_points"/>
+        </node>
+    </group>
+
+    <group ns="$(arg UAV_NAME_3)">
+        <node name="pcl_process" pkg="process_pointcloud" type="process_node">
+            <param name="uav_namespace" value="$(arg UAV_NAME_3)" />
+            <remap from="pointcloud_in" to="/$(arg UAV_NAME_3)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+            <remap from="transformed_pointcloud_out" to="/$(arg UAV_NAME_3)/transformed_points"/>
+        </node>
+    </group-->
+
+    <!-- Voxblox Server Node -->
+    <node name="voxblox_node" pkg="voxblox_ros" type="esdf_pose_graph_server" output="screen" args="-alsologtostderr" clear_params="true">
+        <remap from="pointcloud_transform0" to="/$(arg UAV_NAME_1)/transformed_points"/>
+        <remap from="pointcloud_transform1" to="/$(arg UAV_NAME_2)/transformed_points"/>
+        <remap from="pointcloud_transform2" to="/$(arg UAV_NAME_3)/transformed_points"/>
+
+        <param name="use_tf_transforms" value="true"/>
+        <param name="world_frame" value="$(arg world_frame)" />
+        <param name="num_agents" value="$(arg num_agents)"/>
+
+        <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+        <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+
+        <param name="method" value="$(arg method)" />
+        <param name="max_ray_length_m" value="$(arg ray_length)" />
+
+        <param name="publish_tsdf_map" value="true" />
+        <param name="publish_esdf_map" value="true" />
+        <param name="publish_pointclouds" value="false" />
+        <param name="publish_tsdf_info" value="false" />
+        <param name="publish_traversable" value="false"/>
+
+        <param name="use_freespace_pointcloud" value="false" />
+        <param name="color_mode" value="normals" />
+        <param name="verbose" value="true" />
+
+        <param name="update_mesh_every_n_sec" value="1.0" />
+        <param name="min_time_between_msgs_sec" value="0.0" />
+        <param name="use_const_weight" value="false" />
+        <param name="pointcloud_queue_size" value="10"/>
+    </node>
+</launch>
+

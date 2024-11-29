@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<package format="2">
+
+  <name>motion_planning_python</name>
+  <version>0.0.0</version>
+  <description>The motion planner</description>
+
+  <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
+  <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>rospy</depend>
+  <depend>roscpp</depend>
+  <depend>mrs_msgs</depend>
+  <depend>mrs_lib</depend>
+  <depend>visualization_msgs</depend>
+  <depend>trajectory_generation</depend>
+  <depend>minkindr_conversions</depend>
+  <depend>voxblox_ros</depend>
+  <depend>std_srvs</depend>
+  <depend>cache_nodes</depend>
+  <depend>process_pointcloud</depend>
+  <depend>multiagent_collision_check</depend>
+  <depend>mavros</depend>
+  <depend>mavros_msgs</depend>
+  <depend>geographic_msgs</depend>
+
+  <export>
+  </export>
+
+</package>

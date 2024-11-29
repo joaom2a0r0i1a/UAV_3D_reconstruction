@@ -1,0 +1,4 @@
+<launch>
+  <!-- Launch the ROS node -->
+  <node name="camera_parameters" pkg="motion_planning_python" type="camera_parameters" output="screen"/>
+</launch>

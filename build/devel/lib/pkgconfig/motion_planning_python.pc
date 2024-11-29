@@ -1,0 +1,8 @@
+prefix=/home/joaomendes/workspace1/src/motion_planning_python/build/devel
+
+Name: motion_planning_python
+Description: Description of motion_planning_python
+Version: 0.0.0
+Cflags: -I/home/joaomendes/workspace1/src/motion_planning_python/include -I/home/joaomendes/workspace1/devel/.private/cache_nodes/include -I/home/joaomendes/workspace1/src/cache_nodes/include -I/home/joaomendes/traj_gen/devel/include -I/home/joaomendes/traj_gen/src/trajectory_generation/include -I/home/joaomendes/traj_gen/src/trajectory_generation/test/include -I/home/joaomendes/voxblox/devel/include -I/home/joaomendes/voxblox/src/eigen_checks/include -I/home/joaomendes/voxblox/src/minkindr/minkindr/include -I/home/joaomendes/voxblox/src/minkindr_ros/minkindr_conversions/include -I/home/joaomendes/voxblox/src/voxblox/voxblox/include -I/home/joaomendes/voxblox/src/voxblox/voxblox_rviz_plugin/include -I/home/joaomendes/voxblox/src/voxblox/voxblox_ros/include -I/opt/ros/noetic/include -I/opt/ros/noetic/share/xmlrpcpp/cmake/../../../include/xmlrpcpp -I/usr/include -I/usr/include/eigen3 -I/usr/include/opencv4 -I/usr/include/pcl-1.10 -I/usr/include/vtk-7.1 -I/usr/include/freetype2 -I/usr/include/x86_64-linux-gnu -I/usr/share/orocos_kdl/cmake/../../../include -I/usr/include/OGRE/Overlay -I/usr/include/OGRE
+Libs: -L${prefix}/lib -lNBVPlanner -lAEPlanner
+Requires: rospy roscpp mrs_msgs mrs_lib std_srvs visualization_msgs trajectory_generation voxblox_ros comm_msgs minkindr_conversions cache_nodes

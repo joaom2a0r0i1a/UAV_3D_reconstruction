@@ -1,7 +1,10 @@
 {
     "python.autoComplete.extraPaths": [
+<<<<<<< HEAD
         "/home/joaomendes/workspace1/devel/lib/python3/dist-packages",
         "/home/joaomendes/traj_gen/devel/lib/python3/dist-packages",
+=======
+>>>>>>> master-holder
         "/home/joaomendes/voxblox/devel/lib/python3/dist-packages",
         "/opt/ros/noetic/lib/python3/dist-packages"
     ],
@@ -54,7 +57,10 @@
         "type_traits": "cpp",
         "utility": "cpp",
         "fstream": "cpp",
+<<<<<<< HEAD
         "future": "cpp",
+=======
+>>>>>>> master-holder
         "initializer_list": "cpp",
         "iomanip": "cpp",
         "iosfwd": "cpp",
@@ -73,6 +79,16 @@
         "cinttypes": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
+<<<<<<< HEAD
         "variant": "cpp"
     }
+=======
+        "variant": "cpp",
+        "forward_list": "cpp",
+        "core": "cpp",
+        "future": "cpp",
+        "*.ipp": "cpp"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
+>>>>>>> master-holder
 }
