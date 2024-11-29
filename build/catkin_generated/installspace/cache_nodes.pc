@@ -1,8 +1,0 @@
-prefix=/usr/local
-
-Name: cache_nodes
-Description: Description of cache_nodes
-Version: 0.0.1
-Cflags: -I${prefix}/include -I/usr/include/eigen3
-Libs: -L${prefix}/lib -lauxiliar
-Requires: rospy roscpp mrs_msgs mrs_lib visualization_msgs trajectory_generation voxblox_ros minkindr_conversions message_generation geometry_msgs std_msgs
