@@ -1,4 +1,0 @@
-<launch>
-    <node pkg="motion_planning_python" type="rqt_plot_velocity.py" name="rqt_plot_velocity" output="screen"/>
-    <node pkg="rqt_plot" type="rqt_plot" name="rqt_plot" output="screen" args="/uav1/velocity_magnitude"/>
-</launch>

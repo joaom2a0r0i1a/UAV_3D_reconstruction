@@ -1,9 +1,0 @@
-# Experiment (Grocery Store) specific parameters
-
-bounded_box:
-  min_x: -16.5 # [m]
-  max_x: 16.5 # [m]
-  min_y: -14.5 # [m]
-  max_y: 9.0 # [m]
-  min_z: 0.0 # [m]
-  max_z: 8.5 # [m]

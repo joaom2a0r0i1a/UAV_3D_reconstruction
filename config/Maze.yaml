@@ -1,9 +1,0 @@
-# Experiment (Maze) specific parameters
-
-bounded_box:
-  min_x: -10.0 # [m]
-  max_x: 10.0 # [m]
-  min_y: -9.0 # [m]
-  max_y: 9.0 # [m]
-  min_z: 0 # [m]
-  max_z: 2.5 # [m]

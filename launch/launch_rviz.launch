@@ -1,4 +1,0 @@
-<launch>
-    <!-- RViz node -->
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find motion_planning_python)/config/rviz/eval_config.rviz" />
-</launch>
