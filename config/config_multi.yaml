@@ -1,0 +1,28 @@
+visualize:
+  mean:  False
+visualize:
+  sigma: False
+visualize:
+  pts:   False
+
+visualize:
+  resolution: 0.5
+
+local_planning:
+  g_zero: 0.5
+  num_yaw_samples: 10
+
+frame_id: "world_origin"
+
+body:
+  frame_id: "fcu"
+
+camera:
+  frame_id: "rgbd_front_pitched/aligned_depth_to_color"
+  h_fov: 1.51844 # [rad]
+  width: 1080
+  height: 720
+  min_distance: 0.2 # [m]
+  max_distance: 5 # [m]
+
+uav_ids: ['uav1', 'uav2', 'uav3']
