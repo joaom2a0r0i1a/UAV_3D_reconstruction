@@ -91,7 +91,7 @@ windows:
         - export UAV_NAME=uav1; waitForControl; roslaunch multidrone_motion_planning multi_voxblox.launch
         - export UAV_NAME=uav2; waitForControl; roslaunch multidrone_motion_planning multi_voxblox.launch
         - export UAV_NAME=uav3; waitForControl; roslaunch multidrone_motion_planning multi_voxblox.launch
-        - export UAV_NAME=uav3; waitForControl; roslaunch motion_planning_python combined_voxblox.launch
+        - export UAV_NAME=uav3; waitForControl; roslaunch multidrone_motion_planning combined_voxblox.launch
         #- export UAV_NAME=uav1; waitForControl; roslaunch motion_planning_python my_multi_voxblox.launch
         #- export UAV_NAME=uav1; waitForControl; roslaunch motion_planning_python voxblox_multi_drone.launch
         #- export UAV_NAME=uav1; waitForControl; roslaunch motion_planning_python pointcloud_conversion.launch

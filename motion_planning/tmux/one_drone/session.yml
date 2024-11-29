@@ -73,19 +73,6 @@ windows:
         #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
         #- waitForControl; roslaunch motion_planning_python motion_planner_python.launch
         #- 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
-  #- Boustrophedon:
-      #layout: tiled
-      #panes:
-        #- waitForControl; roslaunch boustrophedon_server boustrophedon_server.launch
-        #- 'history -s rosrun boustrophedon_server boustrophedon_planner_client'
-  #- cover_planner:
-      #layout: tiled
-      #panes:
-        #- waitForControl; roslaunch cover_planner cover_planner.launch
-        #- waitForControl; roslaunch motion_planning_python experiment_starter_cover.launch
-        #- 'history -s rosservice call /$UAV_NAME/cover_planner/fly_to_first_waypoint'
-        #- 'history -s rosservice call /$UAV_NAME/cover_planner/start_waypoints_following'
-        #- 'history -s rosservice call /$UAV_NAME/cover_planner/stop_waypoints_following'
   #- cached_nodes:
       #layout: tiled
       #panes:
@@ -106,10 +93,6 @@ windows:
           config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
         #- waitForControl; roslaunch motion_planning_python freespace.launch 
         #  config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
-  #- voxblox_evaluate:
-  #    layout: tiled
-  #    panes:
-  #      - waitForControl; roslaunch motion_planning_python voxblox_eval.launch
   #- rqt_plot:
       #layout: tiled
       #panes:
