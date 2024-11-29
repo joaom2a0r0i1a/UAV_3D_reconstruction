@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/joaomendes/workspace1/src/multiagent_collision_check/build",
+  "command": "/usr/bin/c++  -DROS_BUILD_SHARED_LIBS=1 -Dmultiagent_collision_check_EXPORTS -I/home/joaomendes/workspace1/src/multiagent_collision_check/build/devel/include -I/home/joaomendes/workspace1/src/multiagent_collision_check/include -I/opt/ros/noetic/include -I/usr/include/eigen3  -g -fPIC   -O3 -std=gnu++17 -o CMakeFiles/multiagent_collision_check.dir/src/multiagent_collision_checker.cpp.o -c /home/joaomendes/workspace1/src/multiagent_collision_check/src/multiagent_collision_checker.cpp",
+  "file": "/home/joaomendes/workspace1/src/multiagent_collision_check/src/multiagent_collision_checker.cpp"
+}
+]

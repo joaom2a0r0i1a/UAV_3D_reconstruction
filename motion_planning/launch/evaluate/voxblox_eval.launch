@@ -1,0 +1,19 @@
+<launch>
+  <!-- defines name of the namespace of the drone -->
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+
+  <arg name="world_frame" default="map" />
+  <arg name="voxblox_file_path" default="/home/joaomendes/workspace1/src/data/20240709_133351/voxblox_maps/00060.vxblx" />
+  <arg name="gt_file_path" default="/home/joaomendes/workspace1/src/data/gt_school_ptcloud.ply"/>
+
+  <node name="voxblox_eval" pkg="voxblox_ros" type="voxblox_eval" output="screen" args="-alsologtostderr" clear_params="true">
+    <param name="color_mode" value="normals" />
+    <param name="frame_id" value="$(arg world_frame)" />
+    <param name="verbose" value="true" />
+    <param name="visualize" value="true" />
+    <param name="recolor_by_error" value="true" />
+    <param name="voxblox_file_path" value="$(arg voxblox_file_path)" />
+    <param name="gt_file_path" value="$(arg gt_file_path)" />
+  </node>
+
+</launch>

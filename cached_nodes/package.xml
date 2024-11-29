@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>cache_nodes</name>
+  <version>0.0.1</version>
+  <description>The cache package</description>
+
+  <maintainer email="magse761@student.liu.se">mseln</maintainer>
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>message_generation</depend>
+  <depend>rospy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>message_runtime</depend>
+  <depend>mrs_msgs</depend>
+
+  <depend>roscpp</depend>
+  <depend>mrs_lib</depend>
+  <depend>visualization_msgs</depend>
+  <depend>trajectory_generation</depend>
+  <depend>voxblox_ros</depend>
+  <depend>minkindr_conversions</depend>
+
+  <export>
+  </export>
+
+</package>

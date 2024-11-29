@@ -1,0 +1,12 @@
+[submodule "cache_nodes"]
+	path = cache_nodes
+	url = git@github.com:joaom2a0r0i1a/cache_nodes.git
+	branch = master
+[submodule "motion_planning_python"]
+	path = motion_planning_python
+	url = git@github.com:joaom2a0r0i1a/motion-planning.git
+	branch = main
+[submodule "multidrone_motion_planning"]
+	path = multidrone_motion_planning
+	url = git@github.com:joaom2a0r0i1a/multidrone_motion_planning.git
+	branch = main

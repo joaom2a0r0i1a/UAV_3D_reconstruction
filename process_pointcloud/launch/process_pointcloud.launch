@@ -1,0 +1,23 @@
+<launch>
+
+  <arg name="UAV_NAME" default="$(env UAV_NAME)" />
+
+  <arg name="standalone" default="false" />
+  <arg name="name_suffix" default="" />
+
+  <arg name="max_distance" default="0.25" />
+  <arg name="pointcloud_msg_in" default="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points"/>
+  <arg name="pointcloud_msg_out" default="/$(arg UAV_NAME)/transformed_points"/>
+
+  <group ns="$(arg UAV_NAME)">
+
+    <node name="pcl_process" pkg="process_pointcloud" type="process_node">
+      <param name="uav_namespace" value="$(arg UAV_NAME)" />
+      <param name="max_distance" value="$(arg max_distance)" />
+      <remap from="pointcloud_in" to="$(arg pointcloud_msg_in)"/>
+      <remap from="transformed_pointcloud_out" to="$(arg pointcloud_msg_out)"/>
+    </node>
+
+  </group>
+
+</launch>

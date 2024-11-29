@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>multiagent_collision_check</name>
+  <version>0.0.0</version>
+  <description>The multiagent_collision_check package</description>
+
+  <maintainer email="andreas.bircher@mavt.ethz.ch">Andreas Bircher</maintainer>
+
+  <license>ASL 2.0</license>
+
+  <author>Andreas Bircher</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>message_generation</depend>
+
+  <export>
+  </export>
+
+</package>

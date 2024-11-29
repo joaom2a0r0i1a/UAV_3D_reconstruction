@@ -1,0 +1,66 @@
+# do not modify these
+root: ./
+name: simulation
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# you can modify these
+pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0
+startup_window: motion_planner
+windows:
+  - roscore:
+      layout: tiled
+      panes:
+        - roscore
+  - gazebo:
+      layout: tiled
+      panes:
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_fire_station gui:=true
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane gui:=false
+        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+  - hw_api:
+      layout: tiled
+      panes:
+        - waitForRos; roslaunch mrs_uav_px4_api api.launch
+  #- realsense:
+      #layout: tiled
+      #panes:
+        #- waitForRos; roslaunch mrs_uav_px4_api api.launch
+  - core:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_core core.launch
+          platform_config:=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml
+          custom_config:=./config/custom_config.yaml
+          world_config:=./config/world_config.yaml
+          network_config:=./config/network_config.yaml
+  - takeoff:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_autostart automatic_start.launch custom_config:=./config/automatic_start.yaml
+        - 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
+  - motion_planner:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_python KinoNBVPlannerReal.launch
+        - waitForControl; roslaunch motion_planning_python experiment_starter.launch
+  - voxblox:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_python processed_voxblox.launch
+  - processed_pointclouds:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_python process_pointcloud.launch 
+          config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
+          config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+  - rviz:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_python rviz.launch
+        - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
+  - layout:
+      layout: tiled
+      panes:
+        - waitForControl; sleep 5; ~/.i3/layout_manager.sh ./layout.json

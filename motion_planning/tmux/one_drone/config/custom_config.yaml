@@ -1,0 +1,94 @@
+# GET ALL PARAMETERS USABLE FOR CUSTOM CONFIG BY RUNNING:
+## --------------------------------------------------------------
+## |          rosrun mrs_uav_core get_public_params.py          #
+## --------------------------------------------------------------
+
+mrs_uav_managers:
+
+  estimation_manager:
+
+    # loaded state estimator plugins
+    state_estimators: [
+      "rtk",
+      #"gps_garmin",
+      #"gps_baro",
+    ]
+
+    initial_state_estimator: "rtk" # will be used as the first state estimator
+    agl_height_estimator: "" #"garmin_agl" # only slightly filtered height for checking min height (not used in control feedback)
+
+  uav_manager:
+
+    takeoff:
+
+      during_takeoff:
+        controller: "MpcController"
+        tracker: "LandoffTracker"
+
+      after_takeoff:
+        controller: "MpcController" # more robust
+        #controller: "Se3Controller" # more precise
+        tracker: "MpcTracker"
+
+  control_manager:
+
+    safety:
+
+      # after not receiving odometry for more than this, the failsafe landing will trigger
+      # will be overriden for ACCELERATION+ output mode
+      odometry_max_missing_time: 0.5 # [s]
+
+  constraint_manager:
+
+    slow:
+
+      horizontal:
+        speed: 1.0
+        acceleration: 1.0
+        jerk: 20.0
+        snap: 20.0
+
+      vertical:
+
+        ascending:
+          speed: 1.0
+          acceleration: 1.0
+          jerk: 20.0
+          snap: 20.0
+
+        descending:
+          speed: 1.0
+          acceleration: 1.0
+          jerk: 20.0
+          snap: 20.0
+
+      heading:
+        speed: 2.0 # change speed
+        acceleration: 2.0 # change acceleration
+        jerk: 10.0
+        snap: 10.0
+
+      angular_speed:
+        roll: 60.0
+        pitch: 60.0
+        yaw: 10.0
+
+      tilt: 60.0 # [deg]
+
+mrs_uav_trajectory_generation:
+
+  # execution time limiter
+  max_time: 0.4 # [s]
+
+  # check and fix the max deviation between the input path and the output trajectory
+  # by subsampling the original path with more waypoints
+  check_trajectory_deviation:
+    max_deviation: 0.30 # [m]
+
+  # allows to neglect waypoints in the original path if the new path
+  # does not violate max distance from the original path.
+  # This makes for similar but sparser paths, which are easier for the
+  # trajectory generator to work with.
+  path_straightener:
+    enabled: false
+    max_deviation: 0.30 # [m]

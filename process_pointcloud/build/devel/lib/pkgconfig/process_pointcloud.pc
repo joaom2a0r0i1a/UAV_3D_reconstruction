@@ -1,0 +1,8 @@
+prefix=/home/joaomendes/workspace1/src/process_pointcloud/build/devel
+
+Name: process_pointcloud
+Description: Description of process_pointcloud
+Version: 1.0.0
+Cflags: -I/home/joaomendes/workspace1/src/process_pointcloud/include
+Libs: -L${prefix}/lib 
+Requires: 
