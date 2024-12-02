@@ -24,7 +24,7 @@
 
 
   <!-- plotting is the main node, voxblox encapsulates c++ voxblox code -->
-  <node name="eval_plotting_node" pkg="motion_planning_python" type="eval_plotting_node.py" output="screen" required="true">
+  <node name="eval_plotting_node" pkg="motion_planning" type="eval_plotting_node.py" output="screen" required="true">
     <param name="target_directory" value="$(arg target_directory)" />
     <param name="method" value="$(arg method)" />
     <param name="ns_eval_voxblox_node" value="/eval_voxblox_node" />
@@ -38,7 +38,7 @@
     <param name="clear_voxblox_maps" value="$(arg clear_voxblox_maps)" />
   </node>
 
-  <node name="eval_voxblox_node" pkg="motion_planning_python" type="eval_voxblox_node" output="screen">
+  <node name="eval_voxblox_node" pkg="motion_planning" type="eval_voxblox_node" output="screen">
     <param name="ground_truth_path" value="$(arg gt_file_path)" />
     <param name="create_meshes" value="$(arg create_meshes)" />
     <param name="error_histogram" value="$(arg error_histogram)" />
@@ -46,6 +46,6 @@
     <param name="evaluate_volume" value="$(arg evaluate_volume)" />
     <param name="truncation_distance" value="$(arg truncation_distance)" />
     <param name="mesh_every_n_steps" value="$(arg mesh_every_n_steps)" />
-    <rosparam command="load" file="$(find motion_planning_python)/config/$(arg experiment_config)"/>
+    <rosparam command="load" file="$(find motion_planning)/config/$(arg experiment_config)"/>
   </node>
 </launch>

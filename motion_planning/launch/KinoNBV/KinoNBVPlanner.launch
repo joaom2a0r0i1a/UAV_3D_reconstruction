@@ -8,10 +8,10 @@
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <node pkg="motion_planning_python" type="KinoNBV" name="planner_node" output="screen">
+    <node pkg="motion_planning" type="KinoNBV" name="planner_node" output="screen">
       <!--launch-prefix="valgrind -(-)tool=callgrind -(-)callgrind-out-file=callgrind.out"-->
       <!--launch-prefix="debug_roslaunch"-->
-      <rosparam file="$(find motion_planning_python)/config/KinoNBVplanner.yaml" />
+      <rosparam file="$(find motion_planning)/config/KinoNBVplanner.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />

@@ -8,8 +8,8 @@
   <arg name="world_frame" default="world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <node pkg="motion_planning_python" type="KinoNBVReal" name="planner_node" output="screen">
-      <rosparam file="$(find motion_planning_python)/config/KinoNBVplannerReal.yaml" />
+    <node pkg="motion_planning" type="KinoNBVReal" name="planner_node" output="screen">
+      <rosparam file="$(find motion_planning)/config/KinoNBVplannerReal.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />

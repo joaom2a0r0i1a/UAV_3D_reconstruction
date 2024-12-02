@@ -17,7 +17,7 @@
   <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="-a -o my_data"/-->
 
   <!-- Experiment launcher -->
-  <node name="eval_data_node" pkg="multidrone_motion_planning" type="multi_eval_data_node.py" output="screen" required="true">
+  <node name="eval_data_node" pkg="multi_motion_planning" type="multi_eval_data_node.py" output="screen" required="true">
     <param name="num_uavs" value="$(arg num_uavs)" />
     <remap from="points_1" to="/$(arg UAV_NAME_1)/rgbd_front_pitched/aligned_depth_to_color/points" />
     <remap from="points_2" to="/$(arg UAV_NAME_2)/rgbd_front_pitched/aligned_depth_to_color/points" />

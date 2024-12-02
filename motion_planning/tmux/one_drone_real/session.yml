@@ -42,22 +42,22 @@ windows:
   - motion_planner:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning_python KinoNBVPlannerReal.launch
-        - waitForControl; roslaunch motion_planning_python experiment_starter.launch
+        - waitForControl; roslaunch motion_planning KinoNBVPlannerReal.launch
+        - waitForControl; roslaunch motion_planning experiment_starter.launch
   - voxblox:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning_python processed_voxblox.launch
+        - waitForControl; roslaunch motion_planning processed_voxblox.launch
   - processed_pointclouds:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning_python process_pointcloud.launch 
+        - waitForControl; roslaunch motion_planning process_pointcloud.launch 
           config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
           config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
   - rviz:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning_python rviz.launch
+        - waitForControl; roslaunch motion_planning rviz.launch
         - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
         - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
   - layout:

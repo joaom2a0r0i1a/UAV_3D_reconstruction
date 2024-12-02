@@ -14,7 +14,7 @@
     <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="-a -o my_data"/-->
 
     <!-- Experiment launcher -->
-    <node name="eval_data_node" pkg="motion_planning_python" type="eval_data_node.py" output="screen" required="true">
+    <node name="eval_data_node" pkg="motion_planning" type="eval_data_node.py" output="screen" required="true">
       <remap from="points" to="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points" />
       <remap from="~simulation_ready" to="simulation_ready" />
       <param name="ns_planner" value="planner_node" />

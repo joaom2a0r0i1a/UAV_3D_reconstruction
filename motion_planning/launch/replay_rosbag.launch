@@ -22,8 +22,8 @@
     <!--node name="rosbag_play" pkg="rosbag" type="play" args=" -r 20 -u 1800 /uav1/estimation_manager/uav_state:=/uav4/estimation_manager/uav_state /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP/tmp_bags/tmp_bag_2024-09-11-12-17-01.bag" /-->
 
     <!-- Run the path processing node -->
-    <node name="path_publisher" pkg="motion_planning_python" type="eval_paths.py" output="screen"/>
+    <node name="path_publisher" pkg="motion_planning" type="eval_paths.py" output="screen"/>
 
     <!-- RViz node -->
-    <!--node name="rviz" pkg="rviz" type="rviz" args="-d $(find motion_planning_python)/config/rviz/eval_config.rviz" /-->
+    <!--node name="rviz" pkg="rviz" type="rviz" args="-d $(find motion_planning)/config/rviz/eval_config.rviz" /-->
 </launch>

@@ -8,8 +8,8 @@
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <node pkg="motion_planning_python" type="AEP" name="planner_node" output="screen">
-      <rosparam file="$(find motion_planning_python)/config/AEPlanner.yaml" />
+    <node pkg="motion_planning" type="AEP" name="planner_node" output="screen">
+      <rosparam file="$(find motion_planning)/config/AEPlanner.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />

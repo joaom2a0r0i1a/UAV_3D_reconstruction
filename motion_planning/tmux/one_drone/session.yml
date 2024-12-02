@@ -65,13 +65,13 @@ windows:
       layout: tiled
       panes:
         #- 'history -s python3 eval_paths.py'
-        #- waitForControl; roslaunch motion_planning_python motion_planner.launch
-        #- waitForControl; roslaunch motion_planning_python AEPlanner.launch
-        - waitForControl; roslaunch motion_planning_python KinoNBVPlanner.launch
-        #- waitForControl; roslaunch motion_planning_python KinoAEPlanner.launch
-        - waitForControl; roslaunch motion_planning_python experiment_starter.launch
+        #- waitForControl; roslaunch motion_planning motion_planner.launch
+        #- waitForControl; roslaunch motion_planning AEPlanner.launch
+        - waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
+        #- waitForControl; roslaunch motion_planning KinoAEPlanner.launch
+        - waitForControl; roslaunch motion_planning experiment_starter.launch
         #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
-        #- waitForControl; roslaunch motion_planning_python motion_planner_python.launch
+        #- waitForControl; roslaunch motion_planning motion_planner_python.launch
         #- 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
   #- cached_nodes:
       #layout: tiled
@@ -80,27 +80,27 @@ windows:
   - voxblox:
       layout: tiled
       panes:
-        #- waitForControl; roslaunch motion_planning_python voxblox.launch
-        - waitForControl; roslaunch motion_planning_python processed_voxblox.launch
+        #- waitForControl; roslaunch motion_planning voxblox.launch
+        - waitForControl; roslaunch motion_planning processed_voxblox.launch
         #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP(ours)/20240904_120233/voxblox_maps/00045.vxblx'
         #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/police_station_gt.tsdf'
         #- 'history -s rosservice call /uav1/voxblox_node/generate_mesh'
   - processed_pointclouds:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning_python process_pointcloud.launch 
+        - waitForControl; roslaunch motion_planning process_pointcloud.launch 
           config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
           config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
-        #- waitForControl; roslaunch motion_planning_python freespace.launch 
+        #- waitForControl; roslaunch motion_planning freespace.launch 
         #  config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
   #- rqt_plot:
       #layout: tiled
       #panes:
-        #- waitForControl; roslaunch motion_planning_python rqt_plot_velocity.launch
+        #- waitForControl; roslaunch motion_planning rqt_plot_velocity.launch
   - rviz:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning_python rviz.launch
+        - waitForControl; roslaunch motion_planning rviz.launch
         - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
         - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
   - layout:

@@ -9,8 +9,8 @@
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <node pkg="multidrone_motion_planning" type="KinoAEPMulti" name="planner_node" output="screen">
-      <rosparam file="$(find multidrone_motion_planning)/config/KinoAEPMultiplanner.yaml" />
+    <node pkg="multi_motion_planning" type="KinoAEPMulti" name="planner_node" output="screen">
+      <rosparam file="$(find multi_motion_planning)/config/KinoAEPMultiplanner.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <param name="uav_id" value="$(arg UAV_ID)" />
       <!-- Voxblox Planner -->

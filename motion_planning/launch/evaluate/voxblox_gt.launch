@@ -18,8 +18,8 @@
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
       <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
 
-      <param name="mesh_filename" value="$(find motion_planning_python)/gt_fire_station.ply" />
-      <!--param name="load_map" value="~/workspace1/src/motion_planning_python/src/map/fire_station.tsdf" /-->
+      <param name="mesh_filename" value="$(find motion_planning)/gt_fire_station.ply" />
+      <!--param name="load_map" value="~/workspace1/src/motion_planning/src/map/fire_station.tsdf" /-->
       <!--param name="truncation_distance" value="$(arg truncation_distance)" /-->
       <param name="method" value="$(arg method)" />
       <param name="max_ray_length_m" value="$(arg ray_length)" />
