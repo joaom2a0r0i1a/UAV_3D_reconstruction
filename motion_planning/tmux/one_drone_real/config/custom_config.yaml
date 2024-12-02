@@ -9,12 +9,12 @@ mrs_uav_managers:
 
     # loaded state estimator plugins
     state_estimators: [
-      "rtk",
+      #"rtk",
       #"gps_garmin",
-      #"gps_baro",
+      "gps_baro",
     ]
 
-    initial_state_estimator: "rtk" # will be used as the first state estimator
+    initial_state_estimator: "gps_baro" # will be used as the first state estimator
     agl_height_estimator: "" #"garmin_agl" # only slightly filtered height for checking min height (not used in control feedback)
 
   uav_manager:
@@ -29,6 +29,8 @@ mrs_uav_managers:
         controller: "MpcController" # more robust
         #controller: "Se3Controller" # more precise
         tracker: "MpcTracker"
+        
+      takeoff_height: 1.5
 
   control_manager:
 
@@ -45,7 +47,7 @@ mrs_uav_managers:
       horizontal:
         speed: 1.0
         acceleration: 1.0
-        jerk: 20.0
+        jerk: 5.0
         snap: 20.0
 
       vertical:
@@ -53,19 +55,19 @@ mrs_uav_managers:
         ascending:
           speed: 1.0
           acceleration: 1.0
-          jerk: 20.0
+          jerk: 5.0
           snap: 20.0
 
         descending:
           speed: 1.0
           acceleration: 1.0
-          jerk: 20.0
+          jerk: 5.0
           snap: 20.0
 
       heading:
-        speed: 2.0 # change speed
-        acceleration: 2.0 # change acceleration
-        jerk: 10.0
+        speed: 1.0 # change speed
+        acceleration: 1.0 # change acceleration
+        jerk: 5.0
         snap: 10.0
 
       angular_speed:
@@ -73,22 +75,13 @@ mrs_uav_managers:
         pitch: 60.0
         yaw: 10.0
 
-      tilt: 60.0 # [deg]
+      tilt: 30.0 # [deg]
 
-mrs_uav_trajectory_generation:
+mrs_uav_trackers:
 
-  # execution time limiter
-  max_time: 0.4 # [s]
+  landoff_tracker:
 
-  # check and fix the max deviation between the input path and the output trajectory
-  # by subsampling the original path with more waypoints
-  check_trajectory_deviation:
-    max_deviation: 0.30 # [m]
-
-  # allows to neglect waypoints in the original path if the new path
-  # does not violate max distance from the original path.
-  # This makes for similar but sparser paths, which are easier for the
-  # trajectory generator to work with.
-  path_straightener:
-    enabled: false
-    max_deviation: 0.30 # [m]
+    # During takeoff, the control error should not exceed this number.
+    # if control error reaches this number, the trackers stops moving the
+    # reference and waits for the controllers to move the drone in closer.
+    max_position_difference: 1.0

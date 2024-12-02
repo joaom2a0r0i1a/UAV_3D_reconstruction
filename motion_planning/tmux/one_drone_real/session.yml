@@ -5,27 +5,27 @@ socket_name: mrs
 attach: false
 tmux_options: -f /etc/ctu-mrs/tmux.conf
 # you can modify these
-pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0
-startup_window: motion_planner
+#pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0
+startup_window: hw_api
 windows:
   - roscore:
       layout: tiled
       panes:
         - roscore
-  - gazebo:
+  - status:
       layout: tiled
       panes:
-        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_fire_station gui:=true
-        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane gui:=false
-        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        - waitForHw; roslaunch mrs_uav_status status.launch
   - hw_api:
       layout: tiled
       panes:
-        - waitForRos; roslaunch mrs_uav_px4_api api.launch
-  #- realsense:
-      #layout: tiled
-      #panes:
-        #- waitForRos; roslaunch mrs_uav_px4_api api.launch
+        - sudo chmod 666 /dev/ttyUSB0; waitForRos; roslaunch mrs_uav_px4_api api.launch
+        #- waitForRos; roslaunch mavros apm.launch
+  - realsense:
+      layout: tiled
+      panes:
+        #- waitForRos; waitForTime; roslaunch mrs_uav_deployment sensors.launch
+        - waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=1080 depth_height:=720 depth_fps:=30 color_width:=640 color_height:=360 color_fps:=30 align_depth:=true
   - core:
       layout: tiled
       panes:
@@ -54,13 +54,3 @@ windows:
         - waitForControl; roslaunch motion_planning process_pointcloud.launch 
           config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
           config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
-  - rviz:
-      layout: tiled
-      panes:
-        - waitForControl; roslaunch motion_planning rviz.launch
-        - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
-        - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
-  - layout:
-      layout: tiled
-      panes:
-        - waitForControl; sleep 5; ~/.i3/layout_manager.sh ./layout.json
