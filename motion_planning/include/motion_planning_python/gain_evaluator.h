@@ -6,8 +6,8 @@
 #include <voxblox/core/esdf_map.h>
 #include <voxblox/utils/camera_model.h>
 
-#include <motion_planning_python/RRT/rrt_star.h>
-#include <motion_planning_python/RRT/kino_rrt_star_kd.h>
+#include <rrt_construction/rrt_star_kd.h>
+#include <rrt_construction/kino_rrt_star_kd.h>
 
 #include <cmath>
 #include <chrono>

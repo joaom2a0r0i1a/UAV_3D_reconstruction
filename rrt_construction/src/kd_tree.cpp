@@ -1,4 +1,4 @@
-#include "motion_planning_python/kd_tree.h"
+#include "rrt_construction/kd_tree.h"
 
 // Constructors
 kd_tree::kd_tree() {}

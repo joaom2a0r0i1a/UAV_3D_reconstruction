@@ -9,7 +9,7 @@
 #include <vector>
 #include <memory>
 
-#include <motion_planning_python/libs/nanoflann.hpp>
+#include <rrt_construction/libs/nanoflann.hpp>
 
 class kd_tree {
 public:

@@ -19,6 +19,7 @@ set(CATKIN_DEPENDENCIES
   trajectory_generation
   voxblox_ros
   minkindr_conversions
+  rrt_construction
   cache_nodes
   process_pointcloud
   multiagent_collision_check

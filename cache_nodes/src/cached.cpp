@@ -197,59 +197,11 @@ private:
         evaluator.setCameraExtrinsics(T_C_B);
     }
 
-    /*Eigen::MatrixXd sqexpkernel(const Eigen::MatrixXd& x1, const Eigen::MatrixXd& x2) {
-        int n1 = x1.rows();
-        int n2 = x2.rows();
-        Eigen::MatrixXd K = Eigen::MatrixXd::Zero(n1, n2);
-
-        for (int i = 0; i < n2; ++i) {
-            Eigen::VectorXd l = (x1.rowwise() - x2.row(i)).rowwise().norm();
-            K.col(i) = hyperparam.sigma_f * hyperparam.sigma_f * (-0.5 * l.array().square() / (hyperparam.l * hyperparam.l)).exp();
-        }
-
-        return K;
-    }
-
-    std::pair<Eigen::VectorXd, Eigen::VectorXd> gp(const Eigen::VectorXd& y, const Eigen::MatrixXd& x, const Eigen::MatrixXd& xstar) {
-        if (y.size() == 0 || x.rows() == 0) {
-            return {Eigen::VectorXd::Zero(0), Eigen::VectorXd::Zero(0)};
-        }
-
-        Eigen::MatrixXd K = sqexpkernel(x, x);
-        Eigen::MatrixXd Kstar = sqexpkernel(x, xstar);
-        Eigen::MatrixXd Kss = sqexpkernel(xstar, xstar);
-
-        Eigen::MatrixXd L = (K + hyperparam.sigma_n * hyperparam.sigma_n * Eigen::MatrixXd::Identity(K.rows(), K.cols())).llt().matrixL();
-        Eigen::VectorXd alpha = L.transpose().triangularView<Eigen::Upper>().solve(L.triangularView<Eigen::Lower>().solve(y));
-        Eigen::VectorXd posterior_mean = Kstar.transpose() * alpha;
-
-        Eigen::MatrixXd v = L.triangularView<Eigen::Lower>().solve(Kstar);
-        Eigen::VectorXd posterior_variance = Kss.diagonal() - (v.transpose() * v).diagonal();
-
-        return {posterior_mean, posterior_variance};
-    }*/
-
     void callbackUavState(const mrs_msgs::UavState::ConstPtr& msg) {
         x = msg->pose.position.x;
         y = msg->pose.position.y;
         z = msg->pose.position.z;
     }
-
-    /*bool callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res) {
-        ROS_DEBUG_STREAM("Reevaluation Start!");
-
-        for (std::vector<geometry_msgs::Point>::iterator iter = req.point.begin(); iter != req.point.end(); ++iter) {
-            Eigen::Vector4d pos(iter->x, iter->y, iter->z, 0);
-            std::shared_ptr<rrt_star::Node> node = std::make_shared<rrt_star::Node>(pos);
-            eth_mav_msgs::EigenTrajectoryPoint traj_point;
-            evaluator.computeGainFromsampledYaw(node, num_yaw_samples, traj_point);
-            res.gain.push_back(node->gain);
-            res.yaw.push_back(node->point[3]);
-        }
-
-        ROS_DEBUG_STREAM("Reevaluation Finish!");
-        return true;
-    }*/
 
     void timerReevaluate(const ros::TimerEvent&) {
         ROS_INFO("Reevaluate Start");
@@ -294,169 +246,15 @@ private:
         ROS_INFO("[Cached]: Search List Size: %lu", result_s.size());
         ROS_INFO("[Cached]: Nodes in the RTree After: %lu", numNodesAfter);
 
-        /*if (!set_variables) {
-            GetTransformation();
-            ROS_INFO("[AEPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
-            ROS_INFO("[AEPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
-            set_variables = true;
-        }*/
-
-        /*if (!x || !y || !z)
-        {
-            ROS_WARN("No position received yet...");
-            ROS_WARN("Make sure that 'pose' has been correctly mapped and that it is being published");
-            return;
-        }
-
-        //ROS_INFO("I AM AT THE START");
-
-        std::vector<cache_nodes::Node> hits_full;
-        hits_full.clear();
-        rtree->Search(bbx_min, bbx_max, [this, &hits_full](cache_nodes::Node pNode) {
-            hits_full.push_back(pNode);
-            return true;
-        });
-
-        double bbx_min_range[3] = {x - range, y - range, z - range};
-        double bbx_max_range[3] = {x + range, y + range, z + range};
-        std::vector<cache_nodes::Node> hits;
-        hits.clear();
-        rtree->Search(bbx_min_range, bbx_max_range, [this, &hits](cache_nodes::Node pNode) {
-            hits.push_back(pNode);
-            return true;
-        });
-
-        //ROS_INFO("I AM AT THE BOUNDING BOX");
-
-        std::vector<geometry_msgs::Point> reevaluate_position_list;
-        std::vector<cache_nodes::Node> reevaluate_list;
-        //reevaluate_position_list.clear();
-        //reevaluate_list.clear();
-        for (auto item : hits) {
-            if (item.gain > g_zero) {
-                reevaluate_position_list.push_back(item.position);
-                reevaluate_list.push_back(item);
-            } //else {
-                //rtree->Remove(bbx_min, bbx_max, item);
-            //}
-        }
-
-        //ROS_INFO("I AM AT THE REEVALUATE POSITIONS");
-        
-        std::vector<double> gain_vector;
-        std::vector<double> yaw_vector;
-        gain_vector.clear();
-        yaw_vector.clear();
-        for (std::vector<geometry_msgs::Point>::iterator iter = reevaluate_position_list.begin(); iter != reevaluate_position_list.end(); ++iter) {
-            Eigen::Vector4d pos(iter->x, iter->y, iter->z, 0);
-            std::shared_ptr<rrt_star::Node> node = std::make_shared<rrt_star::Node>(pos);
-            eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-            trajectory_point_gain.position_W = node->point.head(3);
-            trajectory_point_gain.setFromYaw(node->point[3]);
-            std::pair<double, double> result = evaluator.computeGainOptimizedAEP(trajectory_point_gain);
-            node->gain = result.first;
-            node->point[3] = result.second;
-            //eth_mav_msgs::EigenTrajectoryPoint traj_point;
-            //evaluator.computeGainFromsampledYaw(node, num_yaw_samples, traj_point);
-            //std::cout << "Position Computation: " << node->point << std::endl;
-            //std::cout << "Gain Computation: " << node->gain << std::endl;
-            gain_vector.push_back(node->gain);
-            yaw_vector.push_back(node->point[3]);
-        }
-
-        //ROS_INFO("I AM AT THE REEVALUATION");
-
-        for (size_t i = 0; i < reevaluate_list.size(); ++i) {
-            ROS_INFO("[Cached]: Old Point position: [%f, %f, %f]", reevaluate_list[i].position.x, reevaluate_list[i].position.y, reevaluate_list[i].position.z);
-            ROS_INFO("[Cached]: Old Point gain: %f", reevaluate_list[i].gain);
-            //std::cout << "Old Point position: " << reevaluate_list[i].position << std::endl;
-            //std::cout << "Old Point gain: " << reevaluate_list[i].gain << std::endl;
-            reevaluate_list[i].gain = gain_vector[i];
-            reevaluate_list[i].yaw = yaw_vector[i];
-            ROS_INFO("[Cached]: New Point position: [%f, %f, %f]", reevaluate_list[i].position.x, reevaluate_list[i].position.y, reevaluate_list[i].position.z);
-            ROS_INFO("[Cached]: New Point gain: %f", reevaluate_list[i].gain);
-            //std::cout << "New Point position: " << reevaluate_list[i].position << std::endl;
-            //std::cout << "New Point gain: " << reevaluate_list[i].gain << std::endl;
-            rtree->Remove(bbx_min, bbx_max, reevaluate_list[i]);
-            if (reevaluate_list[i].gain > g_zero) {
-                rtree->Insert(bbx_min, bbx_max, reevaluate_list[i]);
-            }
-            //rtree->Insert(bbx_min, bbx_max, reevaluate_list[i]);
-        }
-
-        //ROS_INFO("I AM AT THE END");
-
-        /*cache_nodes::Reevaluate srv;
-        srv.request.point = reevaluate_position_list;
-        if (sc_reevaluate.call(srv)) {
-            for (size_t i = 0; i < hits.size(); ++i) {
-                hits[i].gain = srv.response.gain[i];
-                hits[i].yaw = srv.response.yaw[i];
-                rtree->Remove(bbx_min_range, bbx_max_range, hits[i]);
-                rtree->Insert(bbx_min_range, bbx_max_range, hits[i]);
-            }
-        } else {
-            ROS_ERROR("Calling reevaluate service failed");
-        }*/
-
-       /*ROS_INFO("[Cached]: Full BBX List Size: %lu", hits_full.size());
-       ROS_INFO("[Cached]: Full List Size: %lu", hits.size());
-       ROS_INFO("[Cached]: List Size: %lu", reevaluate_list.size());*/
-       //std::cout << "List Size: " << reevaluate_list.size() << std::endl;
-
         ROS_INFO("Reevaluate Done");
     }
 
     void callbackGain(const cache_nodes::Node::ConstPtr& msg) {
         Point point(msg->position.x, msg->position.y, msg->position.z);
         rtree.insert(std::make_pair(point, *msg));
-        //rtree->Insert(bbx_min, bbx_max, *msg);
         //std::cout << "Added Point gain: " << msg->gain << std::endl;
         //++id;
     }
-
-    /*bool callbackQuery(cache_nodes::Query::Request& req, cache_nodes::Query::Response& res) {
-        double bbx_min_gp[3] = {x - 1, y - 1, z - 1};
-        double bbx_max_gp[3] = {x + 1, y + 1, z + 1};
-        std::vector<cache_nodes::Node> hits;
-        rtree->Search(bbx_min_gp, bbx_max_gp, [this, &hits](const cache_nodes::Node& pNode) {
-            hits.push_back(pNode);
-            return true;
-        });
-
-        Eigen::VectorXd y(hits.size());
-        Eigen::MatrixXd x(hits.size(), 3);
-
-        for (size_t i = 0; i < hits.size(); ++i) {
-            y(i) = hits[i].gain;
-            x(i, 0) = hits[i].position.x;
-            x(i, 1) = hits[i].position.y;
-            x(i, 2) = hits[i].position.z;
-        }
-
-        double yaw = 0;
-        for (auto item : hits) {
-            yaw = item.yaw;
-            break;
-        }
-
-        if (y.size() == 0) {
-            res.mu = 0;
-            res.sigma = 1;
-            return true;
-        }
-
-        Eigen::MatrixXd xstar(1, 3);
-        xstar << req.point.x, req.point.y, req.point.z;
-
-        auto [mean, sigma] = gp(y, x, xstar);
-
-        res.mu = mean(0);
-        res.sigma = sigma(0);
-        res.yaw = yaw;
-
-        return true;
-    }*/
 
     bool callbackBestNode(cache_nodes::BestNode::Request& req, cache_nodes::BestNode::Response& res) {
         std::vector<RTreeValue> result_n;
@@ -479,134 +277,8 @@ private:
         }
 
         return true;
-
-        /*std::vector<cache_nodes::Node> hits_best;
-        rtree->Search(bbx_min, bbx_max, [this, &hits_best](cache_nodes::Node pNode) {
-            hits_best.push_back(pNode);
-            return true;
-        });
-
-        double best_gain = 0.0;
-        for (const auto& item : hits_best) {
-            if (item.gain > req.threshold) {
-                res.best_node.push_back(item.position);
-                res.gain.push_back(item.gain);
-            }
-            //if (item.gain > best_gain) {
-            //    best_gain = item.gain;
-            //}
-        }
-
-        //res.gain = best_gain;
-        return true;*/
     }
 
-    /*void evaluate(const ros::TimerEvent&) {
-        std::vector<cache_nodes::Node> hits_eval;
-        rtree->Search(bbx_min, bbx_max, [this, &hits_eval](const cache_nodes::Node& pNode) {
-            hits_eval.push_back(pNode);
-            return true;
-        });
-
-        Eigen::VectorXd y(hits_eval.size());
-        Eigen::MatrixXd x(hits_eval.size(), 3);
-
-        for (size_t i = 0; i < hits_eval.size(); ++i) {
-            y(i) = hits_eval[i].gain;
-            x(i, 0) = hits_eval[i].position.x;
-            x(i, 1) = hits_eval[i].position.y;
-            x(i, 2) = hits_eval[i].position.z;
-        }
-
-        std::vector<double> xt, yt, zt = {1};
-        for (double i = min[0]; i <= max[0]; i += resolution) {
-            xt.push_back(i);
-        }
-        for (double i = min[1]; i <= max[1]; i += resolution) {
-            yt.push_back(i);
-        }
-
-        Eigen::MatrixXd xstar(xt.size() * yt.size() * zt.size(), 3);
-        int idx = 0;
-        for (auto xx : xt) {
-            for (auto yy : yt) {
-                for (auto zz : zt) {
-                    xstar.row(idx++) << xx, yy, zz;
-                }
-            }
-        }
-
-        auto [mean, sigma] = gp(y, x, xstar);
-
-        visualization_msgs::MarkerArray mean_markers;
-        visualization_msgs::MarkerArray sigma_markers;
-        for (int id = 0; id < xstar.rows(); ++id) {
-            mean_markers.markers.push_back(npArrayToMarker(id, xstar.row(id), mean(id), std::max(1 - sigma(id), 0.0)));
-            // sigma_markers.markers.push_back(npArrayToMarker(id, xstar.row(id), sigma(id) * 2));
-        }
-
-        pub_mean.publish(mean_markers);
-        pub_sigma.publish(sigma_markers);
-    }
-
-    void rvizCallback(const ros::TimerEvent&) {
-        visualization_msgs::MarkerArray markers;
-        std::vector<cache_nodes::Node> hits_rviz;
-        rtree->Search(bbx_min, bbx_max, [this, &hits_rviz](const cache_nodes::Node& pNode) {
-            hits_rviz.push_back(pNode);
-            return true;
-        });
-
-        for (auto item : hits_rviz) {
-            markers.markers.push_back(nodeToMarker(id, item));
-        }
-
-        pub_marker.publish(markers);
-    }
-
-    visualization_msgs::Marker npArrayToMarker(int id, const Eigen::Vector3d& p, double v = 0, double a = 0) {
-        visualization_msgs::Marker marker;
-        marker.header.frame_id = ns + "/" + frame_id;
-        marker.type = visualization_msgs::Marker::CUBE;
-        marker.action = visualization_msgs::Marker::ADD;
-        marker.id = id;
-        marker.scale.x = resolution;
-        marker.scale.y = resolution;
-        marker.scale.z = 0.1;
-        marker.color.r = v / 72.0;
-        marker.color.g = 0;
-        marker.color.b = 0.5;
-        marker.color.a = a;
-        marker.pose.orientation.w = 1.0;
-        marker.pose.position.x = p(0);
-        marker.pose.position.y = p(1);
-        marker.pose.position.z = p(2);
-        marker.lifetime = ros::Duration(10);
-
-        return marker;
-    }
-
-    visualization_msgs::Marker nodeToMarker(int id, const cache_nodes::Node& node) {
-        visualization_msgs::Marker marker;
-        marker.header.frame_id = ns + "/" + frame_id;
-        marker.type = visualization_msgs::Marker::SPHERE;
-        marker.action = visualization_msgs::Marker::ADD;
-        marker.id = id;
-        marker.scale.x = 0.4;
-        marker.scale.y = 0.4;
-        marker.scale.z = 0.4;
-        marker.color.r = node.gain / 72.0;
-        marker.color.g = 0.0;
-        marker.color.b = 0.5;
-        marker.color.a = 1.0;
-        marker.pose.orientation.w = 1.0;
-        marker.pose.position.x = node.position.x;
-        marker.pose.position.y = node.position.y;
-        marker.pose.position.z = node.position.z;
-        marker.lifetime = ros::Duration(1.2);
-
-        return marker;
-    }*/
 };
 
 int main(int argc, char** argv) {

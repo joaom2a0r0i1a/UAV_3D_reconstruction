@@ -20,6 +20,7 @@
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
   <depend>std_srvs</depend>
+  <depend>rrt_construction</depend>
   <depend>cache_nodes</depend>
   <depend>process_pointcloud</depend>
   <depend>multiagent_collision_check</depend>

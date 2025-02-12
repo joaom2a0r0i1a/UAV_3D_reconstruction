@@ -29,12 +29,10 @@
       <remap from="~unknown_voxels_out" to="unknown_voxels_out" />
       <remap from="~simulation_ready" to="simulation_ready" />
       <!-- Subscribers -->
-      <remap from="~global_state_in" to="mavros/global_position/global" />
-      <remap from="~local_pose_in" to="mavros/local_position/pose" />
-      <remap from="~local_velocity_in" to="mavros/local_position/velocity_local" />
-      <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
+      <remap from="~local_pose_in" to="/mavros/local_position/pose" />
+      <remap from="~local_velocity_in" to="/mavros/local_position/velocity_local" />
       <!-- Services clients-->
-      <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
+      <remap from="~setpoint_out" to="/mavros/setpoint_raw/local" />
       <!-- Services servers-->
       <remap from="~start_in" to="~start" />
       <remap from="~stop_in" to="~stop" />

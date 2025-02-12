@@ -24,6 +24,10 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     param_loader.loadParam("bounded_box/max_z", max_z);
     param_loader.loadParam("bounded_box/planner_range", planner_range);
 
+    // UAV Parameters
+    param_loader.loadParam("uav_parameters/max_vel", max_velocity);
+    param_loader.loadParam("uav_parameters/max_accel", max_accel);
+
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
     param_loader.loadParam("rrt/N_termination", N_termination);
@@ -86,11 +90,10 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
-    pub_reference = nh_private_.advertise<mrs_msgs::Reference>("reference_out", 1);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
     pub_frustum = nh_private_.advertise<visualization_msgs::Marker>("frustum_out", 10);
     pub_voxels = nh_private_.advertise<visualization_msgs::MarkerArray>("unknown_voxels_out", 10);
-    pub_initial_reference = nh_private_.advertise<geographic_msgs::GeoPoseStamped>("initial_reference_out", 5);
+    pub_setpoint = nh_private_.advertise<mavros_msgs::PositionTarget>("setpoint_out", 10);
 
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
@@ -102,17 +105,12 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     shopts.queue_size         = 10;
     shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
-    sub_global_diag = mrs_lib::SubscribeHandler<sensor_msgs::NavSatFix>(shopts, "global_state_in", &KinoNBVPlanner::callbackGlobalState, this);
     sub_local_pose_diag = mrs_lib::SubscribeHandler<geometry_msgs::PoseStamped>(shopts, "local_pose_in", &KinoNBVPlanner::callbackLocalPose, this);
     sub_local_velocity_diag = mrs_lib::SubscribeHandler<geometry_msgs::TwistStamped>(shopts, "local_velocity_in", &KinoNBVPlanner::callbackLocalVelocity, this);
-    sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KinoNBVPlanner::callbackControlManagerDiag, this);
     
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KinoNBVPlanner::callbackStart, this);
     ss_stop = nh_private_.advertiseService("stop_in", &KinoNBVPlanner::callbackStop, this);
-
-    /* Service Clients */
-    sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
 
     /* Timer */
     timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &KinoNBVPlanner::timerMain, this);
@@ -165,10 +163,10 @@ void KinoNBVPlanner::KinoNBV() {
     std::shared_ptr<kino_rrt_star::Node> root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
     if (best_branch.size() > 1) {
-        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity);
+        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     } else {
-        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d(0, 0, 0));
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
 
@@ -263,8 +261,6 @@ void KinoNBVPlanner::KinoNBV() {
         std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory;
         KinoRRTStar.findNearestKD(rand_point, nearest_trajectory);
 
-        double max_velocity = 1.0;
-        double max_accel = 1.0;
         int accel_iteration = 0;
         int accel_tries = 0;
         while (accel_iteration < max_accel_iterations && accel_tries < 100 * max_accel_iterations) {
@@ -366,80 +362,6 @@ void KinoNBVPlanner::KinoNBV() {
 
 }
 
-double KinoNBVPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
-
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
-                                 vec3_t(pose.position.x, pose.position.y, pose.position.z));
-}
-
-void KinoNBVPlanner::initialize(geographic_msgs::GeoPoseStamped initial_reference) {
-    initial_reference.header.frame_id = ns + "/" + frame_id;
-    initial_reference.header.stamp = ros::Time::now();
-    double yaw = mrs_lib::getYaw(uav_local_pose);
-    GeographicLib::Geoid g("egm96-5");
-
-    ROS_INFO("[KinoNBVPlanner]: Flying 3 meters up");
-
-    initial_reference.pose.position.latitude = latitude;
-    initial_reference.pose.position.longitude = longitude;
-    double height = g(latitude, longitude);
-    initial_reference.pose.position.altitude = altitude - height + 4.5;
-    initial_reference.pose.orientation = uav_local_pose.orientation;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(3).sleep();
-
-    ROS_INFO("[KinoNBVPlanner]: Rotating 360 degrees");
-
-    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
-        initial_reference.pose.position.latitude = latitude;
-        initial_reference.pose.position.longitude = longitude;
-        initial_reference.pose.position.altitude = altitude - height + 4.5;
-
-        double yaw_aux = yaw + M_PI * i;
-        geometry_msgs::Quaternion orientation_quaternion = mrs_lib::AttitudeConverter(0, 0, yaw_aux);
-        initial_reference.pose.orientation = orientation_quaternion;
-        pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.4*M_PI).sleep();
-    }
-
-    ros::Duration(0.5).sleep();
-
-    ROS_INFO("[KinoNBVPlanner]: Flying 2 meters down");
-
-    initial_reference.pose.position.latitude = latitude;
-    initial_reference.pose.position.longitude = longitude;
-    initial_reference.pose.position.altitude = altitude - height + 2.5;
-    initial_reference.pose.orientation = uav_local_pose.orientation;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 2 second between points
-    ros::Duration(2).sleep();
-}
-
-void KinoNBVPlanner::rotate() {
-    geographic_msgs::GeoPoseStamped initial_reference;
-    initial_reference.header.frame_id = ns + "/" + frame_id;
-    initial_reference.header.stamp = ros::Time::now();
-    double yaw = mrs_lib::getYaw(uav_local_pose);
-    GeographicLib::Geoid g("egm96-5");
-
-    // Rotate 360 degrees
-    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
-        initial_reference.pose.position.latitude = latitude;
-        initial_reference.pose.position.longitude = longitude;
-        double height = g(latitude, longitude);
-        initial_reference.pose.position.altitude = altitude - height;
-        
-        double yaw_aux = yaw + M_PI * i;
-        geometry_msgs::Quaternion orientation_quaternion = mrs_lib::AttitudeConverter(0, 0, yaw_aux);
-        initial_reference.pose.orientation = orientation_quaternion;
-        pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.4*M_PI).sleep();
-    }
-}
-
 bool KinoNBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
     if (!is_initialized) {
         res.success = false;
@@ -459,7 +381,7 @@ bool KinoNBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Tr
     }
 
     interrupted_ = false;
-    changeState(STATE_INITIALIZE);
+    changeState(STATE_PLANNING);
 
     res.success = true;
     res.message = "starting";
@@ -495,20 +417,6 @@ bool KinoNBVPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Tri
 
 }
 
-void KinoNBVPlanner::callbackGlobalState(const sensor_msgs::NavSatFix::ConstPtr msg) {
-    if (!is_initialized) {
-        return;
-    }
-    ROS_INFO_ONCE("[KinoNBVPlanner]: getting GlobalState diagnostics");
-    latitude = msg->latitude;
-    longitude = msg->longitude;
-    altitude = msg->altitude;
-    std::array<double, 3> enu_coords = llaToEnu(latitude_ref, longitude_ref, altitude_ref, latitude, longitude, altitude);
-    x_gps = enu_coords[0];
-    y_gps = enu_coords[1];
-    z_gps = enu_coords[2];
-}
-
 void KinoNBVPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) {
     if (!is_initialized) {
         return;
@@ -516,8 +424,8 @@ void KinoNBVPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPt
     ROS_INFO_ONCE("[KinoNBVPlanner]: getting LocalPose diagnostics");
     uav_local_pose = msg->pose;
     double yaw = mrs_lib::getYaw(uav_local_pose);
-    pose = {x_gps, y_gps, z_gps, yaw};
-    //ROS_INFO("[KinoNBVPlanner]: [%f, %f, %f, %f]", x_gps, y_gps, z_gps, yaw);
+    pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
+    //ROS_INFO("[KinoNBVPlanner]: [%f, %f, %f, %f]", uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw);
 }
 
 void KinoNBVPlanner::callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg) {
@@ -527,19 +435,6 @@ void KinoNBVPlanner::callbackLocalVelocity(const geometry_msgs::TwistStamped::Co
     ROS_INFO_ONCE("[KinoNBVPlanner]: getting LocalVelocity diagnostics");
     geometry_msgs::Twist uav_velocity = msg->twist;
     velocity = {uav_velocity.linear.x, uav_velocity.linear.y, uav_velocity.linear.z};
-}
-
-void KinoNBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
-    if (!is_initialized) {
-        return;
-    }
-    ROS_INFO_ONCE("[KinoNBVPlanner]: getting ControlManager diagnostics");
-    control_manager_diag = *msg;
-
-    // If planner stops, set velocity to zero
-    if (!control_manager_diag.tracker_status.have_goal && !reset_velocity) {
-        reset_velocity = true;
-    }
 }
 
 void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
@@ -564,26 +459,7 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 
     switch (state_) {
         case STATE_IDLE: {
-            if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[KinoNBVPlanner]: tracker has goal");
-            } else {
-                ROS_INFO("[KinoNBVPlanner]: waiting for command");
-            }
-            break;
-        }
-        case STATE_WAITING_INITIALIZE: {
-            if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[KinoNBVPlanner]: tracker has goal");
-            } else {
-                ROS_INFO("[KinoNBVPlanner]: waiting for command");
-                changeState(STATE_PLANNING);
-            }
-            break;
-        }
-        case STATE_INITIALIZE: {
-            geographic_msgs::GeoPoseStamped initial_reference;
-            initialize(initial_reference);
-            changeState(STATE_WAITING_INITIALIZE);
+            ROS_INFO("[KinoNBVPlanner]: waiting for command");
             break;
         }
         case STATE_PLANNING: {
@@ -596,82 +472,59 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            current_waypoint_.position.x = next_best_trajectory->TrajectoryPoints.back()->point[0];
-            current_waypoint_.position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
-            current_waypoint_.position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
-            current_waypoint_.heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
-
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
 
-            mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
+            mavros_msgs::PositionTarget setpoint_reference;
 
-            srv_trajectory_reference.request.trajectory.header.frame_id = ns + "/" + frame_id;
-            srv_trajectory_reference.request.trajectory.header.stamp = ros::Time::now();
-            srv_trajectory_reference.request.trajectory.input_id = iteration_;
-            srv_trajectory_reference.request.trajectory.fly_now = true;
-            srv_trajectory_reference.request.trajectory.use_heading = true;
-
-            srv_trajectory_reference.request.trajectory.dt = 0.1;
-
-            mrs_msgs::Reference reference;
+            setpoint_reference.header.frame_id = frame_id;
+            setpoint_reference.header.stamp = ros::Time::now();
+            setpoint_reference.coordinate_frame = 1;
+            setpoint_reference.type_mask = 2048;
 
             if (next_best_trajectory->parent) {
-                for (size_t i = 0; i < next_best_trajectory->parent->TrajectoryPoints.size(); i++) {
-                    reference.position.x = next_best_trajectory->parent->TrajectoryPoints[i]->point[0];
-                    reference.position.y = next_best_trajectory->parent->TrajectoryPoints[i]->point[1];
-                    reference.position.z = next_best_trajectory->parent->TrajectoryPoints[i]->point[2];
-                    reference.heading = next_best_trajectory->parent->TrajectoryPoints[i]->point[3];
-                    srv_trajectory_reference.request.trajectory.points.push_back(reference);
+                setpoint_reference.position.x = next_best_trajectory->parent->TrajectoryPoints.back()->point[0];
+                setpoint_reference.position.y = next_best_trajectory->parent->TrajectoryPoints.back()->point[1];
+                setpoint_reference.position.z = next_best_trajectory->parent->TrajectoryPoints.back()->point[2];
+                setpoint_reference.velocity.x = next_best_trajectory->parent->TrajectoryPoints.back()->velocity[0];
+                setpoint_reference.velocity.y = next_best_trajectory->parent->TrajectoryPoints.back()->velocity[1];
+                setpoint_reference.velocity.z = next_best_trajectory->parent->TrajectoryPoints.back()->velocity[2];
+                setpoint_reference.acceleration_or_force.x = next_best_trajectory->parent->TrajectoryPoints.back()->acceleration[0];
+                setpoint_reference.acceleration_or_force.y = next_best_trajectory->parent->TrajectoryPoints.back()->acceleration[1];
+                setpoint_reference.acceleration_or_force.z = next_best_trajectory->parent->TrajectoryPoints.back()->acceleration[2];
+                setpoint_reference.yaw = next_best_trajectory->parent->TrajectoryPoints.back()->point[3];
+            }
+
+            ros::Duration(0.1).sleep();
+
+            for (size_t i = 0; i < next_best_trajectory->TrajectoryPoints.size(); i++) {
+                setpoint_reference.position.x = next_best_trajectory->TrajectoryPoints[i]->point[0];
+                setpoint_reference.position.y = next_best_trajectory->TrajectoryPoints[i]->point[1];
+                setpoint_reference.position.z = next_best_trajectory->TrajectoryPoints[i]->point[2];
+                setpoint_reference.velocity.x = next_best_trajectory->TrajectoryPoints[i]->velocity[0];
+                setpoint_reference.velocity.y = next_best_trajectory->TrajectoryPoints[i]->velocity[1];
+                setpoint_reference.velocity.z = next_best_trajectory->TrajectoryPoints[i]->velocity[2];
+                setpoint_reference.acceleration_or_force.x = next_best_trajectory->TrajectoryPoints[i]->acceleration[0];
+                setpoint_reference.acceleration_or_force.y = next_best_trajectory->TrajectoryPoints[i]->acceleration[1];
+                setpoint_reference.acceleration_or_force.z = next_best_trajectory->TrajectoryPoints[i]->acceleration[2];
+                setpoint_reference.yaw = next_best_trajectory->TrajectoryPoints[i]->point[3];
+                pub_setpoint.publish(setpoint_reference);
+
+                // Break before the end of the trajectory
+                if (i >= next_best_trajectory->TrajectoryPoints.size() - 5) {
+                    break;
                 }
+                
+                ros::Duration(0.1).sleep();
             }
-
-            for (size_t j = 0; j < next_best_trajectory->TrajectoryPoints.size(); j++) {
-                reference.position.x = next_best_trajectory->TrajectoryPoints[j]->point[0];
-                reference.position.y = next_best_trajectory->TrajectoryPoints[j]->point[1];
-                reference.position.z = next_best_trajectory->TrajectoryPoints[j]->point[2];
-                reference.heading = next_best_trajectory->TrajectoryPoints[j]->point[3];
-                pub_reference.publish(reference);
-                srv_trajectory_reference.request.trajectory.points.push_back(reference);
-            }
-
-            bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
-
-            if (!success_trajectory) {
-                ROS_ERROR("[KinoNBVPlanner]: service call for trajectory reference failed");
-                changeState(STATE_STOPPED);
-                return;
-            } else {
-                if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[KinoNBVPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    changeState(STATE_STOPPED);
-                    return;
-                }
-            }
-
-            ros::Duration(1).sleep();
 
             changeState(STATE_MOVING);
             break;
             
         }
         case STATE_MOVING: {
-            if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[KinoNBVPlanner]: tracker has goal");
-                uav_local_pose.position.x = x_gps;
-                uav_local_pose.position.y = y_gps;
-                uav_local_pose.position.z = z_gps;
-
-                double dist = distance(current_waypoint_, uav_local_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - pose[3]), cos(current_waypoint_.heading - pose[3])));
-                ROS_INFO("[KinoNBVPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
-                    changeState(STATE_PLANNING);
-                }
-            } else {
-                ROS_INFO("[KinoNBVPlanner]: waiting for command");
-                changeState(STATE_PLANNING);
-            }
+            ROS_INFO("[KinoNBVPlanner]: waiting for command");
+            changeState(STATE_PLANNING);
             break;
         }
         case STATE_STOPPED: {
@@ -679,14 +532,6 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
             ROS_INFO("[KinoNBVPlanner]: Shutting down.");
             ros::shutdown();
             return;
-        }
-        default: {
-            if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[KinoNBVPlanner]: tracker has goal");
-            } else {
-                ROS_INFO("[KinoNBVPlanner]: waiting for command");
-            }
-            break;
         }
     }
 }
@@ -720,7 +565,7 @@ void KinoNBVPlanner::visualize_node(const Eigen::Vector4d& pos, double size, con
     visualization_msgs::Marker n;
     n.header.stamp = ros::Time::now();
     n.header.seq = node_id_counter_;
-    n.header.frame_id = ns + "/" + frame_id;
+    n.header.frame_id = frame_id;
     n.id = node_id_counter_;
     n.ns = "nodes";
     n.type = visualization_msgs::Marker::SPHERE;
@@ -753,7 +598,7 @@ void KinoNBVPlanner::visualize_node(const Eigen::Vector4d& pos, double size, con
 void KinoNBVPlanner::visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns) {
     visualization_msgs::Marker trajectory_marker;
     trajectory_marker.header.stamp = ros::Time::now();
-    trajectory_marker.header.frame_id = ns + "/" + frame_id;
+    trajectory_marker.header.frame_id = frame_id;
     trajectory_marker.id = trajectory_id_counter_;
     trajectory_marker.ns = "trajectory";
     trajectory_marker.type = visualization_msgs::Marker::LINE_STRIP;
@@ -790,7 +635,7 @@ void KinoNBVPlanner::visualize_best_trajectory(const std::shared_ptr<kino_rrt_st
         visualization_msgs::Marker best_trajectory_marker;
         best_trajectory_marker.header.stamp = ros::Time::now();
         best_trajectory_marker.header.seq = best_trajectory_id_counter_;
-        best_trajectory_marker.header.frame_id = ns + "/" + frame_id;
+        best_trajectory_marker.header.frame_id = frame_id;
         best_trajectory_marker.id = best_trajectory_id_counter_;
         best_trajectory_marker.ns = "best_trajectory";
         best_trajectory_marker.type = visualization_msgs::Marker::LINE_STRIP;
@@ -828,7 +673,7 @@ void KinoNBVPlanner::visualize_frustum(std::shared_ptr<kino_rrt_star::Node> posi
     trajectory_point_visualize.setFromYaw(position->point[3]);
     
     visualization_msgs::Marker frustum;
-    frustum.header.frame_id = ns + "/" + frame_id;
+    frustum.header.frame_id = frame_id;
     frustum.header.stamp = ros::Time::now();
     frustum.ns = "camera_frustum";
     frustum.id = 0;
@@ -862,7 +707,7 @@ void KinoNBVPlanner::visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Nod
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
         visualization_msgs::Marker unknown_voxel;
-        unknown_voxel.header.frame_id = ns + "/" + frame_id;
+        unknown_voxel.header.frame_id = frame_id;
         unknown_voxel.header.stamp = ros::Time::now();
         unknown_voxel.ns = "unknown_voxels";
         unknown_voxel.id = i;

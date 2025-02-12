@@ -39,9 +39,9 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
-#include <motion_planning_python/RRT/kino_rrt_star_kd.h>
-#include <motion_planning_python/RRT/rrt_star_kd.h>
-#include <motion_planning_python/kd_tree.h>
+#include <rrt_construction/kino_rrt_star_kd.h>
+#include <rrt_construction/rrt_star_kd.h>
+#include <rrt_construction/kd_tree.h>
 #include <motion_planning_python/gain_evaluator.h>
 
 #include <fstream>

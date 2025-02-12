@@ -67,16 +67,16 @@ windows:
         #- 'history -s python3 eval_paths.py'
         #- waitForControl; roslaunch motion_planning motion_planner.launch
         #- waitForControl; roslaunch motion_planning AEPlanner.launch
-        - waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
-        #- waitForControl; roslaunch motion_planning KinoAEPlanner.launch
+        #- waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
+        - waitForControl; roslaunch motion_planning KinoAEPlanner.launch
         - waitForControl; roslaunch motion_planning experiment_starter.launch
         #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
         #- waitForControl; roslaunch motion_planning motion_planner_python.launch
         #- 'history -s rosservice call /$UAV_NAME/motion_planner/start 3.0'
-  #- cached_nodes:
-      #layout: tiled
-      #panes:
-        #- waitForControl; roslaunch cache_nodes cache.launch
+  - cached_nodes:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch cache_nodes cache.launch
   - voxblox:
       layout: tiled
       panes:
@@ -100,7 +100,7 @@ windows:
   - rviz:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning rviz.launch
+        - waitForControl; rosrun rviz rviz -d ./config/custom_rviz.rviz
         - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
         - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
   - layout:

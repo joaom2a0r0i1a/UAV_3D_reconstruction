@@ -1,10 +1,33 @@
-#include "motion_planning_python/RRT/rrt_star.h"
+#include "rrt_construction/rrt_star_kd.h"
 
-namespace rrt_star {
+// Constructors
+rrt_star::rrt_star() {}
 
-Node::Node(const Eigen::Vector4d& p) : point(p), parent(nullptr), cost(0), gain(0), score(0) {}
+rrt_star::Node::Node(const Eigen::Vector4d& p) : point(p), parent(nullptr), cost(0), gain(0), score(0) {}
 
-Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z) {
+// Add and clear Nodes
+void rrt_star::KDTree_data::clear() {
+    points.clear();
+    data.clear();
+}
+
+void rrt_star::addKDTreeNode(std::shared_ptr<Node>& node) {
+    tree_data_.addNode(node);
+    kdtree_->addPoints(tree_data_.points.size() - 1, tree_data_.points.size() - 1);
+}
+
+void rrt_star::clearKDTree() {
+    tree_data_.clear();
+    kdtree_ = std::unique_ptr<Tree>(new Tree(3, tree_data_));
+}
+
+void rrt_star::initializeKDTreeWithNodes(std::vector<std::shared_ptr<Node>>& nodes) {
+    tree_data_.addNodes(nodes);
+    kdtree_->addPoints(0, tree_data_.points.size() - 1);
+}
+
+// RRT implementation
+Eigen::Vector3d rrt_star::sampleSpace(double dim_x, double dim_y, double dim_z) {
     static std::random_device rd;
     static std::mt19937 gen(rd());
     std::uniform_real_distribution<double> dis_x(0.0, dim_x);
@@ -16,7 +39,7 @@ Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z) {
     return Eigen::Vector3d(rand_x, rand_y, rand_z);
 }
 
-void computeSamplingDimensions(double radius, Eigen::Vector3d& result) {
+void rrt_star::computeSamplingDimensions(double radius, Eigen::Vector3d& result) {
     static std::random_device rd;
     static std::mt19937 gen(rd());
     std::uniform_real_distribution<double> dis(-radius, radius);
@@ -36,7 +59,40 @@ void computeSamplingDimensions(double radius, Eigen::Vector3d& result) {
     result = Eigen::Vector3d(rand_x, rand_y, rand_z);
 }
 
-void findNearest(const std::vector<std::shared_ptr<Node>>& tree, const Eigen::Vector3d& point, std::shared_ptr<Node>& nearestNode) {
+void rrt_star::computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result) {
+    //static std::random_device rd;
+    //static std::mt19937 gen(rd());
+    //std::uniform_real_distribution<double> dis(-radius, radius);
+    //std::uniform_real_distribution<double> yaw_dis(-M_PI, M_PI);
+
+    bool solutionFound = false;
+    double rand_x, rand_y, rand_z, rand_yaw;
+    while (!solutionFound) {
+        //rand_x = dis(gen);
+        //rand_y = dis(gen);
+        //rand_z = dis(gen);
+        rand_x = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+        rand_y = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+        rand_z = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);        
+        if (Eigen::Vector3d(rand_x, rand_y, rand_z).norm() > radius) {
+            continue;
+        }
+        solutionFound = true;
+    }
+    //rand_yaw = yaw_dis(gen);
+    rand_yaw = 2.0 * M_PI * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+
+    result = Eigen::Vector4d(rand_x, rand_y, rand_z, rand_yaw);
+}
+
+void rrt_star::computeYaw(double radius, double& result) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> yaw_dis(-M_PI, M_PI);
+    result = yaw_dis(gen);
+}
+
+void rrt_star::findNearest(const std::vector<std::shared_ptr<Node>>& tree, const Eigen::Vector3d& point, std::shared_ptr<Node>& nearestNode) {
     double minDist = std::numeric_limits<double>::max();
     for (const auto& node : tree) {
         double distance = (node->point.head<3>() - point).norm();
@@ -47,7 +103,17 @@ void findNearest(const std::vector<std::shared_ptr<Node>>& tree, const Eigen::Ve
     }
 }
 
-void steer(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::shared_ptr<Node>& result) {
+void rrt_star::findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Node>& nearestNode) {
+    double query_pt[3] = {point.x(), point.y(), point.z()};
+    nanoflann::KNNResultSet<double> resultSet(1);
+    size_t index;
+    double out_dist_sqr;
+    resultSet.init(&index, &out_dist_sqr);
+    kdtree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParameters(10));
+    nearestNode = tree_data_.data[index];
+}
+
+void rrt_star::steer(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::shared_ptr<Node>& result) {
     double dist = (toPoint - fromNode->point.head<3>()).norm();
     if (dist < stepSize) {
         result = std::make_shared<Node>(Eigen::Vector4d(toPoint.x(), toPoint.y(), toPoint.z(), fromNode->point.w()));
@@ -58,7 +124,7 @@ void steer(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint
     }
 }
 
-void steer_parent(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::shared_ptr<Node>& new_node) {
+void rrt_star::steer_parent(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::shared_ptr<Node>& new_node) {
     double dist = (toPoint - fromNode->point.head<3>()).norm();
     if (dist < stepSize) {
         new_node = std::make_shared<Node>(Eigen::Vector4d(toPoint.x(), toPoint.y(), toPoint.z(), fromNode->point.w()));
@@ -69,9 +135,10 @@ void steer_parent(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& 
         new_node = std::make_shared<Node>(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.w()));
         new_node->parent = fromNode;
     }
+    //addKDTreeNode(new_node);
 }
 
-bool collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles) {
+bool rrt_star::collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles) {
     for (const auto& obstacle : obstacles) {
         double distance = (point - obstacle.first).norm();
         if (distance < obstacle.second) {
@@ -81,7 +148,7 @@ bool collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::V
     return false;
 }
 
-void findNearby(const std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& point, double radius, std::vector<std::shared_ptr<Node>>& nearbyNodes) {
+void rrt_star::findNearby(const std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& point, double radius, std::vector<std::shared_ptr<Node>>& nearbyNodes) {
     for (const auto& node : tree) {
         double distance = (node->point.head<3>() - point->point.head<3>()).norm();
         if (distance < radius) {
@@ -90,7 +157,22 @@ void findNearby(const std::vector<std::shared_ptr<Node>>& tree, const std::share
     }
 }
 
-void chooseParent(std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearbyNodes) {
+void rrt_star::findNearbyKD(const std::shared_ptr<Node>& point, double radius, std::vector<std::shared_ptr<Node>>& nearbyNodes) {
+    nearbyNodes.clear();
+    Eigen::Vector3d query_pt = {point->point.x(), point->point.y(), point->point.z()};
+    std::size_t ret_index[10];
+    double out_dist[10];   
+    nanoflann::KNNResultSet<double> resultSet(10);
+    resultSet.init(ret_index, out_dist);
+    kdtree_->findNeighbors(resultSet, query_pt.data(), nanoflann::SearchParameters(10));
+    for (int i = 0; i < resultSet.size(); ++i) {
+        if (out_dist[i] <= pow(radius, 2.0)) {
+            nearbyNodes.push_back(tree_data_.data[ret_index[i]]);
+        }
+    }
+}
+
+void rrt_star::chooseParent(std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearbyNodes) {
     double minCost = std::numeric_limits<double>::infinity();
     std::shared_ptr<Node> parent = nullptr;
     for (const auto& node : nearbyNodes) {
@@ -104,7 +186,7 @@ void chooseParent(std::shared_ptr<Node>& new_node, const std::vector<std::shared
     new_node->cost = minCost;
 }
 
-void rewire(std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius) {
+void rrt_star::rewire(const std::shared_ptr<Node>& new_node, std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius) {
     for (const auto& node : nearby_nodes) {
         double new_cost = new_node->cost + (node->point.head<3>() - new_node->point.head<3>()).norm();
         if (new_cost < node->cost) {
@@ -114,16 +196,16 @@ void rewire(std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node
     }
 }
 
-double calculateYawAngle(const std::shared_ptr<Node>& node1, const std::shared_ptr<Node>& node2) {
+double rrt_star::calculateYawAngle(const std::shared_ptr<Node>& node1, const std::shared_ptr<Node>& node2) {
     double dx = node2->point.x() - node1->point.x();
     double dy = node2->point.y() - node1->point.y();
     return std::atan2(dy, dx);
 }
 
-void backtrackPathNode(const std::shared_ptr<Node>& node, std::vector<Eigen::Vector4d>& path, std::shared_ptr<Node>& nextBestNode) {
+void rrt_star::backtrackPathNode(const std::shared_ptr<Node>& node, std::vector<Eigen::Vector4d>& path, std::shared_ptr<Node>& nextBestNode) {
     std::shared_ptr<Node> currentNode = node;
     while (currentNode) {
-        path.push_back({currentNode->point});
+        path.push_back(currentNode->point);
         currentNode = currentNode->parent;
         if (currentNode && currentNode->parent && currentNode->cost < nextBestNode->cost) {
             nextBestNode = currentNode;
@@ -132,7 +214,16 @@ void backtrackPathNode(const std::shared_ptr<Node>& node, std::vector<Eigen::Vec
     std::reverse(path.begin(), path.end());
 }
 
-bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
+void rrt_star::backtrackPathAEP(const std::shared_ptr<Node>& node, std::vector<std::shared_ptr<Node>>& path) {
+    std::shared_ptr<Node> currentNode = node;
+    while (currentNode) {
+        path.push_back(currentNode);
+        currentNode = currentNode->parent;
+    }
+    std::reverse(path.begin(), path.end());
+}
+
+bool rrt_star::rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
              const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles,
              double dim_x, double dim_y, double dim_z, int max_iter,
              double step_size, double radius, double tolerance,
@@ -154,7 +245,7 @@ bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
             findNearby(tree, newNode, radius, nearbyNodes);
             chooseParent(newNode, nearbyNodes);
             tree.push_back(newNode);
-            rewire(tree, newNode, nearbyNodes, radius);
+            rewire(newNode, nearbyNodes, radius);
             
             if ((newNode->point.head<3>() - goal.head<3>()).norm() <= tolerance) {
                 std::cout << "Goal reached!" << std::endl;
@@ -176,5 +267,3 @@ bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
     }
     return false;
 }
-
-}  // namespace rrt_star

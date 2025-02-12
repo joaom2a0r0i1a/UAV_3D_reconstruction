@@ -1,4 +1,4 @@
-frame_id: "world_origin"
+frame_id: "map"
 
 body:
   frame_id: "fcu"
@@ -15,6 +15,10 @@ bounded_box:
   min_z: 1.0 # [m]
   max_z: 20.0 # [m]
   planner_range: 3 # [m]
+
+uav_parameters:
+  max_vel: 1.0 # [m/s]
+  max_accel: 1.0 # [m/s^2]
 
 rrt:
   N_max: 50
