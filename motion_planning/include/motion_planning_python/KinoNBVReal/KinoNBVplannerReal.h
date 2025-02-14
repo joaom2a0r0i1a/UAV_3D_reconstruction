@@ -45,7 +45,7 @@ typedef enum
   STATE_STOPPED,
 } State_t;
 
-const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
+const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
 
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
