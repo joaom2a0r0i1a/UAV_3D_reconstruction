@@ -16,10 +16,17 @@ windows:
       layout: tiled
       panes:
         - waitForHw; roslaunch mrs_uav_status status.launch
+  - simtime:
+      layout: tiled
+      panes: 
+      - waitForRos; rosparam set use_sim_time false
+      #- waitForOffboard; ./record.sh
   - hw_api:
       layout: tiled
       panes:
-        - sudo chmod 666 /dev/ttyUSB0; waitForRos; roslaunch mrs_uav_px4_api api.launch
+        - sudo chmod 666 /dev/ttyUSB0; ardupilot_hw_api; waitForTime; roslaunch mrs_uav_px4_api api.launch
+        - waitForTime; roslaunch motion_planning tf_realsense_connect.launch
+        #- rosservice call /uav1/uav_manager/midair_activation
         #- waitForRos; roslaunch mavros apm.launch
   - realsense:
       layout: tiled
@@ -30,20 +37,20 @@ windows:
       layout: tiled
       panes:
         - waitForHw; roslaunch mrs_uav_core core.launch
-          platform_config:=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml
-          custom_config:=./config/custom_config.yaml
-          world_config:=./config/world_config.yaml
+          platform_config:=`rospack find mrs_uav_deployment`/config/mrs_uav_system/$UAV_TYPE.yaml 
+          world_config:=`rospack find mrs_uav_deployment`/config/worlds/world_$WORLD_NAME.yaml
+          custom_config:=./config/custom_config.yaml 
           network_config:=./config/network_config.yaml
-  - takeoff:
-      layout: tiled
-      panes:
-        - waitForHw; roslaunch mrs_uav_autostart automatic_start.launch custom_config:=./config/automatic_start.yaml
-        - 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
-  - motion_planner:
-      layout: tiled
-      panes:
-        - waitForControl; roslaunch motion_planning KinoNBVPlannerReal.launch
-        - waitForControl; roslaunch motion_planning experiment_starter.launch
+  #- takeoff:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch mrs_uav_autostart automatic_start.launch
+        #- 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
+  #- motion_planner:
+      #layout: tiled
+      #panes:
+        #- waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
+        #- waitForControl; roslaunch motion_planning experiment_starter.launch
   - voxblox:
       layout: tiled
       panes:

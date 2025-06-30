@@ -4,9 +4,16 @@ sensor:
   vfov: !degrees 58
   max_range: 5
 box:
-  min_x: -17
-  max_x: 17
-  min_y: -12
-  max_y: 7
+  min_x: 0.0
+  max_x: 0.0
+  min_y: 0.0
+  max_y: 0.0
   min_z: 0.0
-  max_z: 14.5
+  max_z: 0.0
+#box:
+  #min_x: 2.0
+  #max_x: 8.0
+  #min_y: -3.5
+  #max_y: 3.5
+  #min_z: 0.0
+  #max_z: 6.0

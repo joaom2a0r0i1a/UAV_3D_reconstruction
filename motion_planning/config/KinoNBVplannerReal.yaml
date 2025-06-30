@@ -1,31 +1,45 @@
-frame_id: "world_origin"
+frame_id: "map"
 
 body:
-  frame_id: "fcu"
+  frame_id: "base_link"
 
 timer_main:
-  rate: 5.0 # [Hz]
+  rate: 10.0 # [Hz]
 
-# School
+# Basketball
+#bounded_box:
+#  min_x: -6.0 # [m]
+#  max_x: 6.0 # [m]
+#  min_y: -6.0 # [m]
+#  max_y: 6.0 # [m]
+#  min_z: 2.0 # [m]
+#  max_z: 8.0 # [m]
+#  planner_range: 3 # [m]
+  
+# IST Lamp
 bounded_box:
-  min_x: -25.0 # [m]
-  max_x: 25.0 # [m]
-  min_y: -20.0 # [m]
-  max_y: 15.0 # [m]
-  min_z: 1.0 # [m]
-  max_z: 20.0 # [m]
+  min_x: -1.0 # [m]
+  max_x: 11.0 # [m]
+  min_y: -6.0 # [m]
+  max_y: 6.0 # [m]
+  min_z: 3.0 # [m]
+  max_z: 9.0 # [m]
   planner_range: 3 # [m]
 
+uav_parameters:
+  max_vel: 0.7 # [m/s]
+  max_accel: 1.0 # [m/s^2]
+
 rrt:
-  N_max: 50
-  N_termination: 300
+  N_max: 20
+  N_termination: 200
   N_yaw_samples: 10
   radius: 2.0 # [m]
   step_size: 2.0 # [m]
-  tolerance: 1.5 # [m]
+  tolerance: 1.0 # [m]
 
 camera:
-  frame_id: "rgbd_front_pitched/aligned_depth_to_color"
+  frame_id: "camera_link"
   h_fov: 1.51844 # [rad]
   width: 1080
   height: 720
@@ -33,7 +47,7 @@ camera:
   max_distance: 5 # [m]
 
 path:
-  uav_radius: 1.5 # [m]
+  uav_radius: 2.0 # [m]
   lambda: 0.25 # (tunning factor)
   lambda2: 0.5 # (tunning factor)
   max_acceleration_iterations: 3

@@ -25,7 +25,8 @@
       <!-- Publishers -->
       <!-- Subscribers -->
       <remap from="~tree_node_in" to="tree_node" />
-      <remap from="~uav_state_in" to="estimation_manager/uav_state" />
+      <remap from="~uav_state_in" to="/mavros/local_position/pose" />
+      <remap from="~offset_in" to="offset_out" />
       <!-- Services clients-->
       <!--remap from="~reevaluate_out" to="planner_node/reevaluate" /-->
       <!-- Service Servers -->

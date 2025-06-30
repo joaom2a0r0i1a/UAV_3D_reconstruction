@@ -1,16 +1,16 @@
 <launch>
   <arg name="delay" default="8.0"/>
   <arg name="record_data" default="true"/>
-  <arg name="data_directory" default="/home/joaomendes/motion_workspace/src/data"/>
-  <arg name="data_frequency" default="40.0" />
-  <arg name="time_limit" default="30" />
+  <arg name="data_directory" default="/home/joaomendes_ws/src/UAV_3D_reconstruction/motion_planning/data"/>
+  <arg name="data_frequency" default="20.0" />
+  <arg name="time_limit" default="10" />
 
-  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
-  <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav2)" />
+  <arg name="world_frame" default="map" />
 
   <group ns="$(arg UAV_NAME)">
 
-    <node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_gazebo_static /tf_static /$(arg UAV_NAME)/voxblox_node/mesh /$(arg UAV_NAME)/estimation_manager/uav_state /$(arg UAV_NAME)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
+    <node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_static /$(arg UAV_NAME)/voxblox_node/mesh /mavros/local_position/pose /$(arg UAV_NAME)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
     <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="-a -o my_data"/-->
 
     <!-- Experiment launcher -->

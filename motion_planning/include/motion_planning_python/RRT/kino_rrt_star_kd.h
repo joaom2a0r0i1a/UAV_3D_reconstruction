@@ -17,7 +17,8 @@ public:
     struct Node {
         Eigen::Vector4d point;
         Eigen::Vector3d velocity;
-        Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v);
+        Eigen::Vector3d acceleration;
+        Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v, const Eigen::Vector3d& a);
     };
 
     struct Trajectory {

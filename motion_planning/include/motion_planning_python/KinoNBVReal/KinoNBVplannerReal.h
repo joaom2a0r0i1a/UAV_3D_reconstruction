@@ -6,19 +6,13 @@
 #include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
 
-#include <mrs_msgs/ControlManagerDiagnostics.h>
-#include <mrs_msgs/UavState.h>
-#include <mrs_msgs/TrackerCommand.h>
-#include <mrs_msgs/DynamicsConstraints.h>
-#include <mrs_msgs/MpcPredictionFullState.h>
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/GetPathSrv.h>
-#include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/Vec1.h>
 
 #include <sensor_msgs/NavSatFix.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <geographic_msgs/GeoPoseStamped.h>
+#include <mavros_msgs/PositionTarget.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
@@ -26,7 +20,6 @@
 #include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
-#include <mrs_lib/attitude_converter.h>
 
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox_ros/ros_params.h>
@@ -47,14 +40,12 @@
 typedef enum
 {
   STATE_IDLE,
-  STATE_INITIALIZE,
-  STATE_WAITING_INITIALIZE,
   STATE_PLANNING,
   STATE_MOVING,
   STATE_STOPPED,
 } State_t;
 
-const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
+const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
 
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
@@ -67,17 +58,12 @@ public:
     void GetTransformation();
 
     void KinoNBV();
-    
-    double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
-    void initialize(geographic_msgs::GeoPoseStamped initial_reference);
-    void rotate();
 
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-    void callbackGlobalState(const sensor_msgs::NavSatFix::ConstPtr msg);
+    bool callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg);
     void callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg);
-    void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
     
     void changeState(const State_t new_state);
@@ -130,6 +116,10 @@ private:
     float planner_range;
     double bounded_radius;
 
+    // UAV parameters
+    double max_velocity;
+    double max_accel;
+
     // Tree Parameters
     int N_max;
     int N_termination;
@@ -172,8 +162,7 @@ private:
     bool is_initialized = false;
     Eigen::Vector4d pose;
     Eigen::Vector3d velocity;
-    mrs_msgs::UavState uav_state;
-    mrs_msgs::ControlManagerDiagnostics control_manager_diag;
+    Eigen::Vector3d initial_offset;
     geometry_msgs::Pose uav_local_pose;
     mrs_msgs::Reference current_waypoint_;
 
@@ -194,26 +183,21 @@ private:
     kino_rrt_star KinoRRTStar;
 
     // Subscribers
-    mrs_lib::SubscribeHandler<sensor_msgs::NavSatFix> sub_global_diag;
     mrs_lib::SubscribeHandler<geometry_msgs::PoseStamped> sub_local_pose_diag;
     mrs_lib::SubscribeHandler<geometry_msgs::TwistStamped> sub_local_velocity_diag;
-    mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
 
     // Publishers
     ros::Publisher pub_markers;
-    ros::Publisher pub_reference;
     ros::Publisher pub_start;
-    ros::Publisher pub_initial_reference;
     ros::Publisher pub_frustum;
     ros::Publisher pub_voxels;
+    ros::Publisher pub_setpoint;
+    ros::Publisher pub_offset;
 
     // Service servers
     ros::ServiceServer ss_start;
     ros::ServiceServer ss_stop;
-
-    // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
-    mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
+    ros::ServiceServer ss_offset;
 
     // Timers
     ros::Timer timer_main;

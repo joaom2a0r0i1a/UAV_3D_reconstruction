@@ -21,6 +21,8 @@ set(CATKIN_DEPENDENCIES
   mrs_msgs
   mrs_lib
   std_srvs
+  std_msgs
+  geometry_msgs
   visualization_msgs
   trajectory_generation
   voxblox_ros
@@ -45,11 +47,14 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
  # Define libraries
 set(LIBRARIES
   NBVPlanner
+  NBVPlannerReal
   KinoNBVPlanner
   KinoNBVPlannerReal
   #NBVMultiPlanner
   AEPlanner
+  AEPlannerReal
   KinoAEPlanner
+  KinoAEPlannerReal
   #CameraParameters
   #Planner
   #Rrt_Star
@@ -84,6 +89,17 @@ add_library(NBVPlanner
   src/NBV/NBVplanner.cpp
   #src/NBV/NBVplanner_2D.cpp
   )
+  
+   # Add library targets
+add_library(NBVPlannerReal 
+  src/gain_evaluator.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  src/RRT/rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/NBVReal/NBVplannerReal.cpp
+  #src/NBV/NBVplanner_2D.cpp
+  )
 
  # Add library targets
  add_library(KinoNBVPlanner 
@@ -107,17 +123,6 @@ add_library(NBVPlanner
  #src/NBV/NBVplanner_2D.cpp
  )
 
-
-#add_library(NBVMultiPlanner 
-#  src/gain_evaluator.cpp
-#  #src/gain_evaluator_2D.cpp
-#  #src/RRT/rrt_star.cpp
-#  src/RRT/rrt_star_kd.cpp
-#  #src/RRT/rrt_star_2D.cpp
-#  src/NBV/NBVMultiplanner.cpp
-#  #src/NBV/NBVplanner_2D.cpp
-#  )
-
  # Add library targets
 add_library(AEPlanner 
   src/gain_evaluator.cpp
@@ -127,6 +132,18 @@ add_library(AEPlanner
   #src/RRT/rrt_star_2D.cpp
   src/kd_tree.cpp
   src/AEP/AEPlanner.cpp
+  #src/NBV/NBVplanner_2D.cpp
+  )
+  
+ # Add library targets
+add_library(AEPlannerReal
+  src/gain_evaluator.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  src/RRT/rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/kd_tree.cpp
+  src/AEPReal/AEPlannerReal.cpp
   #src/NBV/NBVplanner_2D.cpp
   )
 
@@ -141,32 +158,54 @@ add_library(KinoAEPlanner
   src/KinoAEP/KinoAEPlanner.cpp
   #src/NBV/NBVplanner_2D.cpp
   )
+  
+   # Add library targets
+add_library(KinoAEPlannerReal 
+  src/gain_evaluator.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  src/RRT/kino_rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/kd_tree.cpp
+  src/KinoAEPReal/KinoAEPlannerReal.cpp
+  #src/NBV/NBVplanner_2D.cpp
+  )
 
 
  # Add dependencies for library targets
 add_dependencies(NBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(NBVPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoNBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoNBVPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-#add_dependencies(NBVMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(AEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(AEPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoAEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KinoAEPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
 target_link_libraries(NBVPlanner ${catkin_LIBRARIES})
+target_link_libraries(NBVPlannerReal ${catkin_LIBRARIES})
 target_link_libraries(KinoNBVPlanner ${catkin_LIBRARIES})
 target_link_libraries(KinoNBVPlannerReal ${catkin_LIBRARIES})
-#target_link_libraries(NBVMultiPlanner ${catkin_LIBRARIES})
 target_link_libraries(AEPlanner ${catkin_LIBRARIES})
+target_link_libraries(AEPlannerReal ${catkin_LIBRARIES})
 target_link_libraries(KinoAEPlanner ${catkin_LIBRARIES})
+target_link_libraries(KinoAEPlannerReal ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
 add_executable(NBV src/NBV/NBVplanner_node.cpp)
+add_executable(NBVReal src/NBVReal/NBVplannerReal_node.cpp)
 add_executable(KinoNBV src/KinoNBV/KinoNBVplanner_node.cpp)
 add_executable(KinoNBVReal src/KinoNBVReal/KinoNBVplannerReal_node.cpp)
-#add_executable(NBVMulti src/NBV/NBVMultiplanner_node.cpp)
 add_executable(AEP src/AEP/AEPlanner_node.cpp)
+add_executable(AEPReal src/AEPReal/AEPlannerReal_node.cpp)
 add_executable(KinoAEP src/KinoAEP/KinoAEPlanner_node.cpp)
+add_executable(KinoAEPReal src/KinoAEPReal/KinoAEPlannerReal_node.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
+
+# tf broadcast
+add_executable(mavros_tf_broadcaster src/mavros_tf_broadcaster.cpp)
+target_link_libraries(mavros_tf_broadcaster ${catkin_LIBRARIES})
 
 #add_executable(planner_2D src/planner_node_2D.cpp)
 
@@ -180,11 +219,13 @@ add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
 #)
  # Link executable against required libraries
 target_link_libraries(NBV ${catkin_LIBRARIES} NBVPlanner)
+target_link_libraries(NBVReal ${catkin_LIBRARIES} NBVPlannerReal)
 target_link_libraries(KinoNBV ${catkin_LIBRARIES} KinoNBVPlanner)
 target_link_libraries(KinoNBVReal ${catkin_LIBRARIES} KinoNBVPlannerReal)
-#target_link_libraries(NBVMulti ${catkin_LIBRARIES} NBVMultiPlanner)
 target_link_libraries(AEP ${catkin_LIBRARIES} AEPlanner)
+target_link_libraries(AEPReal ${catkin_LIBRARIES} AEPlannerReal)
 target_link_libraries(KinoAEP ${catkin_LIBRARIES} KinoAEPlanner)
+target_link_libraries(KinoAEPReal ${catkin_LIBRARIES} KinoAEPlannerReal)
 target_link_libraries(eval_voxblox_node ${catkin_LIBRARIES})
 
 # Specify the command to run Valgrind

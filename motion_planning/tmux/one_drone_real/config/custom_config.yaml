@@ -15,8 +15,28 @@ mrs_uav_managers:
     ]
 
     initial_state_estimator: "gps_baro" # will be used as the first state estimator
-    agl_height_estimator: "" #"garmin_agl" # only slightly filtered height for checking min height (not used in control feedback)
+    agl_height_estimator: "" # only slightly filtered height for checking min height (not used in control feedback)
 
+    gps_baro: # namespace of the state estimator
+      alt_baro: # namespace of the altitude estimator
+        innovation:
+          limit: 1.0
+          action: "eland"
+        vel_hw_api:
+          message:
+            limit: 
+              delay: 1.0 # [s] messages with higher delay will flag correction as unhealthy
+              time_since_last: 0.5 # [s] larger time step between messages will flag correction as unhealthy
+      lat_gps: # namespace of the lateral estimator
+        innovation:
+          limit: 1.0
+          action: "eland"
+        pos_hw_api:
+          message:
+            limit: 
+              delay: 0.5 # [s] messages with higher delay will flag correction as unhealthy
+              time_since_last: 0.5 # [s] larger time step between messages will flag correction as unhealthy
+              
   uav_manager:
 
     takeoff:

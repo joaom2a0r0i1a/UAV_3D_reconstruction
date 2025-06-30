@@ -16,6 +16,8 @@
   <depend>roscpp</depend>
   <depend>mrs_msgs</depend>
   <depend>mrs_lib</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>visualization_msgs</depend>
   <depend>trajectory_generation</depend>
   <depend>minkindr_conversions</depend>

@@ -61,11 +61,15 @@ class GainEvaluator {
   std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
 
   double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  
+  double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus = 1);
 
   // Use sparse raycasting to discard occluded voxels, AEP-style implementation.
   std::pair<double, double> computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+  
+  std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus = 1);
 
   std::pair<double, double> computeGainFromSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
 

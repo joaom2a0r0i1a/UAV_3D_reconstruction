@@ -76,6 +76,7 @@ public:
 
         sub_gain = nh_private_.subscribe("tree_node_in", 10, &Cached::callbackGain, this);
         sub_uav_state = nh_private_.subscribe("uav_state_in", 10, &Cached::callbackUavState, this);
+        sub_offset = nh_private_.subscribe("offset_in", 10, &Cached::callbackOffset, this);
         //pub_marker = nh_private_.advertise<visualization_msgs::MarkerArray>("gain_markers", 10);
         //pub_mean = nh_private_.advertise<visualization_msgs::MarkerArray>("mean_markers", 10);
         //pub_sigma = nh_private_.advertise<visualization_msgs::MarkerArray>("sigma_markers", 10);
@@ -146,6 +147,7 @@ private:
     //ros::ServiceClient sc_reevaluate;
     ros::Subscriber sub_gain;
     ros::Subscriber sub_uav_state;
+    ros::Subscriber sub_offset;
     //ros::Publisher pub_marker;
     //ros::Publisher pub_mean;
     //ros::Publisher pub_sigma;
@@ -181,16 +183,18 @@ private:
     double x;
     double y;
     double z;
+    
+    Eigen::Vector3d initial_offset = {0, 0, 0};
 
     void GetTransformation() {
-        T_C_B_message.transform.translation.x = -0.173024;
-        T_C_B_message.transform.translation.y = 0.011500;
-        T_C_B_message.transform.translation.z = 0.059864;
+        T_C_B_message.transform.translation.x = -0.067691;
+        T_C_B_message.transform.translation.y = 0.0;
+        T_C_B_message.transform.translation.z = 0.137178;
 
         T_C_B_message.transform.rotation.x = 0.000000;
-        T_C_B_message.transform.rotation.y = -0.087156;
+        T_C_B_message.transform.rotation.y = -0.130130;
         T_C_B_message.transform.rotation.z = 0.000000;
-        T_C_B_message.transform.rotation.w = 0.996195;
+        T_C_B_message.transform.rotation.w = 0.991497;
 
         // Transform into matrix
         tf::transformMsgToKindr(T_C_B_message.transform, &T_C_B);
@@ -229,7 +233,7 @@ private:
         return {posterior_mean, posterior_variance};
     }*/
 
-    void callbackUavState(const mrs_msgs::UavState::ConstPtr& msg) {
+    void callbackUavState(const geometry_msgs::PoseStamped::ConstPtr msg) {
         x = msg->pose.position.x;
         y = msg->pose.position.y;
         z = msg->pose.position.z;
@@ -272,7 +276,7 @@ private:
             eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
             trajectory_point_gain.position_W = pos;
             trajectory_point_gain.setFromYaw(node.second.yaw);
-            std::pair<double, double> result = evaluator.computeGainOptimizedAEP(trajectory_point_gain);
+            std::pair<double, double> result = evaluator.computeGainOptimizedAEP(trajectory_point_gain, initial_offset);
 
             ROS_INFO("[Cached]: Point position: [%f, %f, %f]", node.second.position.x, node.second.position.y, node.second.position.z);
             ROS_INFO("[Cached]: Old Point gain: %f", node.second.gain);
@@ -413,6 +417,14 @@ private:
         //rtree->Insert(bbx_min, bbx_max, *msg);
         //std::cout << "Added Point gain: " << msg->gain << std::endl;
         //++id;
+    }
+    
+    void callbackOffset(const geometry_msgs::Point::ConstPtr& msg) {
+        Eigen::Vector3d offset_point(msg->x, msg->y, msg->z);
+        initial_offset = offset_point;
+        
+        ROS_INFO_STREAM("Received Initial Offset: [" << offset_point.transpose() << "]");
+        ROS_INFO_STREAM("Updated Offset: [" << initial_offset.transpose() << "]");
     }
 
     /*bool callbackQuery(cache_nodes::Query::Request& req, cache_nodes::Query::Response& res) {

@@ -28,12 +28,12 @@ dimensions:
 
 # School
 bounded_box:
-  min_x: -25.0 # [m]
-  max_x: 25.0 # [m]
-  min_y: -20.0 # [m]
-  max_y: 15.0 # [m]
+  min_x: -7.0 # [m]
+  max_x: 7.0 # [m]
+  min_y: -7.0 # [m]
+  max_y: 7.0 # [m]
   min_z: 1.0 # [m]
-  max_z: 20.0 # [m]
+  max_z: 15.0 # [m]
   planner_range: 3 # [m]
 
 # Police Station
@@ -71,12 +71,12 @@ rrt:
   N_termination: 300
   N_yaw_samples: 10
   radius: 2.0 # [m]
-  step_size: 2.0 # [m]
+  step_size: 1.0 # [m]
   tolerance: 0.5 # [m]
 
 camera:
   #frame_id: "rgbd/aligned_depth_to_color_optical"
-  frame_id: "rgbd_front_pitched/aligned_depth_to_color"
+  frame_id: "camera_color_frame"
   #frame_id: "rgbd/aligned_depth_to_color"
   #frame_id: "rgbd/link"
   #frame_id: "velodyne_sensor"
@@ -86,7 +86,7 @@ camera:
   height: 720
   min_distance: 0.2 # [m]
   #max_distance: 12 # [m]
-  max_distance: 5 # [m]
+  max_distance: 3 # [m]
 
 path:
   uav_radius: 1.5 # [m]

@@ -5,7 +5,7 @@
   <arg name="ray_length" default="5" />
 
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
-  <arg name="world_frame" default="world_origin" />
+  <arg name="world_frame" default="map" />
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning" type="KinoNBVReal" name="planner_node" output="screen">
@@ -23,21 +23,19 @@
 
       <!-- Publishers -->
       <remap from="~visualization_marker_out" to="visualization_marker_out" />
-      <remap from="~initial_reference_out" to="mavros/setpoint_position/global" />
-      <remap from="~reference_out" to="reference_out" />
       <remap from="~frustum_out" to="frustum_out" />
       <remap from="~unknown_voxels_out" to="unknown_voxels_out" />
       <remap from="~simulation_ready" to="simulation_ready" />
+      <remap from="~offset_out" to="offset_out" />
       <!-- Subscribers -->
-      <remap from="~global_state_in" to="mavros/global_position/global" />
-      <remap from="~local_pose_in" to="mavros/local_position/pose" />
-      <remap from="~local_velocity_in" to="mavros/local_position/velocity_local" />
-      <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
+      <remap from="~local_pose_in" to="/mavros/local_position/pose" />
+      <remap from="~local_velocity_in" to="/mavros/local_position/velocity_local" />
       <!-- Services clients-->
-      <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
+      <remap from="~setpoint_out" to="/mavros/setpoint_raw/local" />
       <!-- Services servers-->
       <remap from="~start_in" to="~start" />
       <remap from="~stop_in" to="~stop" />
+      <remap from="~offset_in" to="~offset" />
 
     </node>
 
