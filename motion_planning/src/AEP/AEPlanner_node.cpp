@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include "motion_planning_python/AEP/AEPlanner.h"
+#include "motion_planning/AEP/AEPlanner.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "AEPlanner");

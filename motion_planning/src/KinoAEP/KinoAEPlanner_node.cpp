@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include "motion_planning_python/KinoAEP/KinoAEPlanner.h"
+#include "motion_planning/KinoAEP/KinoAEPlanner.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "KinoAEPlanner");

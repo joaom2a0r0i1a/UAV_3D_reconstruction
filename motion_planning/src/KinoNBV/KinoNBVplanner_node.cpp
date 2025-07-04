@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include "motion_planning_python/KinoNBV/KinoNBVplanner.h"
+#include "motion_planning/KinoNBV/KinoNBVplanner.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "KinoNBVplanner");

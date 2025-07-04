@@ -1,4 +1,4 @@
-#include "motion_planning_python/KinoNBV/KinoNBVplanner.h"
+#include "motion_planning/KinoNBV/KinoNBVplanner.h"
 
 KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
 
