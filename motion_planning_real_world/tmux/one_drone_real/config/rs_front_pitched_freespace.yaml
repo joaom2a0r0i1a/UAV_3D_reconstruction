@@ -1,0 +1,19 @@
+data_row_major: true
+sensor:
+  hfov: !degrees 87
+  vfov: !degrees 58
+  max_range: 5
+box:
+  min_x: 0.0
+  max_x: 0.0
+  min_y: 0.0
+  max_y: 0.0
+  min_z: 0.0
+  max_z: 0.0
+#box:
+  #min_x: 2.0
+  #max_x: 8.0
+  #min_y: -3.5
+  #max_y: 3.5
+  #min_z: 0.0
+  #max_z: 6.0
