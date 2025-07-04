@@ -14,12 +14,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("frame_id", frame_id);
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
-    param_loader.loadParam("center/x", center_x);
-    param_loader.loadParam("center/y", center_y);
-    param_loader.loadParam("center/z", center_z);
-    param_loader.loadParam("dimensions/x", dimensions_x);
-    param_loader.loadParam("dimensions/y", dimensions_y);
-    param_loader.loadParam("dimensions/z", dimensions_z);
 
     // Bounded Box
     param_loader.loadParam("bounded_box/min_x", min_x);
@@ -28,7 +22,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
@@ -38,7 +31,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("local_planning/step_size", step_size);
     param_loader.loadParam("local_planning/tolerance", tolerance);
     param_loader.loadParam("local_planning/g_zero", g_zero);
-    param_loader.loadParam("local_planning/sigma_thresh", sigma_threshold);
 
     // RRT* Tree (global Planning)
     param_loader.loadParam("global_planning/N_min_nodes", N_min_nodes);
@@ -132,18 +124,15 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &AEPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &AEPlanner::callbackControlManagerDiag, this);
-    //sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &AEPlanner::callbackStart, this);
     ss_stop = nh_private_.advertiseService("stop_in", &AEPlanner::callbackStop, this);
-    //ss_reevaluate = nh_private_.advertiseService("reevaluate_in", &AEPlanner::callbackReevaluate, this);
 
     /* Service Clients */
     sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
     sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
     sc_best_node = mrs_lib::ServiceClientHandler<cache_nodes::BestNode>(nh_private_, "best_node_out");
-    sc_query = mrs_lib::ServiceClientHandler<cache_nodes::Query>(nh_private_, "gp_query_out");
 
     /* Timer */
     timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &AEPlanner::timerMain, this);
@@ -389,24 +378,6 @@ void AEPlanner::localPlanner() {
 
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
-        
-        /*cache_nodes::Query srv;
-        srv.request.point.x = new_node->point[0];
-        srv.request.point.y = new_node->point[1];
-        srv.request.point.z = new_node->point[2];
-
-        bool success_query = sc_query.call(srv);
-
-        if (!success_query) {
-            ROS_WARN("[AEPlanner]: Service call for Gaussian process failed");
-        }
-
-        if (success_query && srv.response.sigma < sigma_threshold) {
-            new_node->gain = srv.response.mu;
-            new_node->point[3] = srv.response.yaw;
-        } else {
-            segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        }*/
 
         auto start2 = std::chrono::high_resolution_clock::now();
 

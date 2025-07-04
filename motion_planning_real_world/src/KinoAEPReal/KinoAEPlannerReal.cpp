@@ -1,4 +1,4 @@
-#include "motion_planning_python/KinoAEPReal/KinoAEPlannerReal.h"
+#include "motion_planning_real_world/KinoAEPReal/KinoAEPlannerReal.h"
 
 KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
 

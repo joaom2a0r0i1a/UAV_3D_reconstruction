@@ -122,22 +122,12 @@ private:
     voxblox::Transformation T_C_B;
     geometry_msgs::TransformStamped T_B_C_message;
     voxblox::Transformation T_B_C;
-    geometry_msgs::TransformStamped T_C_W_message;
-    voxblox::Transformation T_C_W;
-    geometry_msgs::TransformStamped T_W_C_message;
-    voxblox::Transformation T_W_C;
 
     // Parameters
     std::string frame_id;
     std::string body_frame_id;
     std::string camera_frame_id;
     std::string ns;
-    double center_x;
-    double center_y;
-    double center_z;
-    double dimensions_x;
-    double dimensions_y;
-    double dimensions_z;
     double best_score_;
 
     // Bounded Box
@@ -147,7 +137,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // RRT Parameters
@@ -158,7 +147,6 @@ private:
     double tolerance;
     int num_yaw_samples;
     double g_zero;
-    double sigma_threshold;
 
     // Log files
     int num_nodes_count;
@@ -185,10 +173,6 @@ private:
     double global_lambda;
     std::atomic<int> replanning_counter_ = 0;
 
-    // Bounds Parameters
-    // Bounds on the size of the map.
-    Eigen::Vector3d lower_bound_;
-    Eigen::Vector3d upper_bound_;
     mrs_msgs::Reference current_waypoint_;
 
     // Local Planner variables
@@ -229,7 +213,6 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    //mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
 
     // Publishers
     ros::Publisher pub_markers;
@@ -243,13 +226,11 @@ private:
     // Service servers
     ros::ServiceServer ss_start;
     ros::ServiceServer ss_stop;
-    //ros::ServiceServer ss_reevaluate;
 
     // Service clients
     mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
     mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
     mrs_lib::ServiceClientHandler<cache_nodes::BestNode> sc_best_node;
-    mrs_lib::ServiceClientHandler<cache_nodes::Query> sc_query;
 
     // Timers
     ros::Timer timer_main;

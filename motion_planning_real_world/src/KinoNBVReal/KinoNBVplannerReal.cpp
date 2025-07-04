@@ -1,4 +1,4 @@
-#include "motion_planning_python/KinoNBVReal/KinoNBVplannerReal.h"
+#include "motion_planning_real_world/KinoNBVReal/KinoNBVplannerReal.h"
 
 KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
 
@@ -48,11 +48,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     param_loader.loadParam("path/lambda", lambda);
     param_loader.loadParam("path/lambda2", lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
-
-    // GPS
-    param_loader.loadParam("reference/latitude", latitude_ref);
-    param_loader.loadParam("reference/longitude", longitude_ref);
-    param_loader.loadParam("reference/altitude", altitude_ref);
 
     // Timer
     param_loader.loadParam("timer_main/rate", timer_main_rate);

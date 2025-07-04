@@ -119,7 +119,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // Tree Parameters

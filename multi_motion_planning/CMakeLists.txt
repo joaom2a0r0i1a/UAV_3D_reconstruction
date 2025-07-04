@@ -23,7 +23,6 @@ set(CATKIN_DEPENDENCIES
   cache_nodes
   process_pointcloud
   multiagent_collision_check
-  motion_planning
   )
   
 find_package(catkin REQUIRED COMPONENTS

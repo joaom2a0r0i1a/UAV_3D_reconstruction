@@ -60,9 +60,6 @@ windows:
   - motion_planning:
       layout: tiled
       panes:
-        #- export UAV_NAME=uav1; waitForControl; roslaunch motion_planning motion_planner.launch
-        #- export UAV_NAME=uav2; waitForControl; roslaunch motion_planning motion_planner.launch
-        #- export UAV_NAME=uav3; waitForControl; roslaunch motion_planning motion_planner.launch
         #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multi_motion_planning NBVPlannerMulti.launch
         #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multi_motion_planning NBVPlannerMulti.launch
         #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multi_motion_planning NBVPlannerMulti.launch

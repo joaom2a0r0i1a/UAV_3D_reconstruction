@@ -11,7 +11,7 @@
   <group ns="$(arg UAV_NAME)">
 
     <!-- Experiment launcher -->
-    <node name="eval_data_node" pkg="motion_planning" type="eval_data_node_real.py" output="screen" required="true">
+    <node name="eval_data_node" pkg="motion_planning_real_world" type="eval_data_node_real.py" output="screen" required="true">
       <remap from="points" to="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points" />
       <remap from="~simulation_ready" to="simulation_ready" />
       <param name="ns_planner" value="planner_node" />

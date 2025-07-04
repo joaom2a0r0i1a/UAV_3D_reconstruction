@@ -22,7 +22,6 @@ KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& n
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
@@ -32,7 +31,6 @@ KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& n
     param_loader.loadParam("local_planning/step_size", step_size);
     param_loader.loadParam("local_planning/tolerance", tolerance);
     param_loader.loadParam("local_planning/g_zero", g_zero);
-    param_loader.loadParam("local_planning/sigma_thresh", sigma_threshold);
 
     // RRT* Tree (global Planning)
     param_loader.loadParam("global_planning/N_min_nodes", N_min_nodes);
@@ -114,7 +112,6 @@ KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& n
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KinoAEPlanner::callbackStart, this);
     ss_stop = nh_private_.advertiseService("stop_in", &KinoAEPlanner::callbackStop, this);
-    //ss_reevaluate = nh_private_.advertiseService("reevaluate_in", &KinoAEPlanner::callbackReevaluate, this);
 
     /* Service Clients */
     sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");

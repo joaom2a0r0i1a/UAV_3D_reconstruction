@@ -14,12 +14,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("frame_id", frame_id);
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
-    param_loader.loadParam("center/x", center_x);
-    param_loader.loadParam("center/y", center_y);
-    param_loader.loadParam("center/z", center_z);
-    param_loader.loadParam("dimensions/x", dimensions_x);
-    param_loader.loadParam("dimensions/y", dimensions_y);
-    param_loader.loadParam("dimensions/z", dimensions_z);
 
     // Bounded Box
     param_loader.loadParam("bounded_box/min_x", min_x);
@@ -28,7 +22,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
@@ -102,7 +95,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &NBVPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &NBVPlanner::callbackControlManagerDiag, this);
-    //sub_control_manager_diag =  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", ros::Duration(3.0), &NBVPlanner::timeoutControlManagerDiag, this);
     sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &NBVPlanner::callbackTrackerCmd, this);
     sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 

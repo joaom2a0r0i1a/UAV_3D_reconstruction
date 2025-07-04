@@ -136,7 +136,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // RRT Parameters
@@ -147,7 +146,6 @@ private:
     double tolerance;
     int num_yaw_samples;
     double g_zero;
-    double sigma_threshold;
 
     // RRT* Parameters
     int N_min_nodes;
@@ -218,7 +216,6 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    //mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
 
     // Publishers
     ros::Publisher pub_markers;
@@ -232,7 +229,6 @@ private:
     // Service servers
     ros::ServiceServer ss_start;
     ros::ServiceServer ss_stop;
-    //ros::ServiceServer ss_reevaluate;
 
     // Service clients
     mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;

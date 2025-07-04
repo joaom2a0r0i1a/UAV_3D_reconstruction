@@ -19,7 +19,7 @@ MAIN_DIR=~/"bag_files"
 
 # the project name
 # * is used to define folder name in ~/$MAIN_DIR
-PROJECT_NAME=mavros_tmux_nbv_baseline
+PROJECT_NAME=mavros_tmux
 
 # the name of the TMUX session
 # * can be used for attaching as 'tmux a -t <session name>'
@@ -45,30 +45,17 @@ input=(
 #'
   #'imu' 'waitForRos; rosrun imu_filter_madgwick imu_filter_node _use_mag:=false _publish_tf:=false _world_frame:="enu" /imu/data_raw:=/camera/imu /imu/data:=/rtabmap/imu
 #'
-  'tf_connect' 'waitForTime; roslaunch motion_planning tf_realsense_connect_mavros.launch
+  'tf_connect' 'waitForTime; roslaunch motion_planning_real_world tf_realsense_connect_mavros.launch
 '
-  'motion_planner' 'waitForControl; roslaunch motion_planning NBVPlannerReal.launch
+  'motion_planner' 'waitForControl; roslaunch motion_planning_real_world KinoNBVPlannerReal.launch
 '
-#rosrun test_mavros setpoint_raw_pub
-#rosrun test_mavros setpoint_position_pub
-#rosrun test_mavros setpoint_velocity_pub
-#rosrun test_mavros setpoint_position_publisher.py
-#rosrun test_mavros setpoint_velocity_publisher.py
-#rosrun test_mavros setpoint_raw_publisher.py
-#rosrun test_mavros setpoint_raw_full_publisher.py
-  #'motion_planner' 'waitForControl; roslaunch motion_planning KinoAEPlannerReal.launch
-#'
-# roslaunch motion_planning KinoNBVPlannerReal_2.launch
-# roslaunch motion_planning KinoAEPlannerReal.launch
-  #'cached_nodes' 'waitForControl; roslaunch cache_nodes cache.launch
-#'
   'planner_start' 'history -s "rosservice call /uav2/planner_node/start"
 '
-  'voxblox' 'waitForRos; roslaunch motion_planning processed_voxblox.launch
+  'voxblox' 'waitForRos; roslaunch motion_planning_real_world processed_voxblox.launch
 '
-  'processed_pointclouds' 'waitForRos; roslaunch motion_planning process_pointcloud.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+  'processed_pointclouds' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
 '
-  #'processed_pointclouds_deactivated' 'waitForRos; roslaunch motion_planning process_pointcloud_deactivated.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+  #'processed_pointclouds_deactivated' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud_deactivated.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
 #'
 
 # do NOT modify the command list below

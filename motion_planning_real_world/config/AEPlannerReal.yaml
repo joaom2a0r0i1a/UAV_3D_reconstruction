@@ -27,8 +27,8 @@ bounded_box:
   #planner_range: 3 # [m]
 
 local_planning:
-  N_max: 40
-  N_termination: 300
+  N_max: 20
+  N_termination: 200
   N_yaw_samples: 10
   radius: 2.5 # [m]
   step_size: 2.0 # [m]

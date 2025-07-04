@@ -27,7 +27,7 @@ bounded_box:
   planner_range: 3 # [m]
 
 uav_parameters:
-  max_vel: 0.7 # [m/s]
+  max_vel: 0.5 # [m/s]
   max_accel: 1.0 # [m/s^2]
 
 rrt:
@@ -51,8 +51,3 @@ path:
   lambda: 0.25 # (tunning factor)
   lambda2: 0.5 # (tunning factor)
   max_acceleration_iterations: 3
-
-reference:
-  latitude: 47.397743 #38.736667 # [deg]
-  longitude: 8.5455941 #-9.138611 # [deg]
-  altitude: 47.29491589289246 #0 # [m]

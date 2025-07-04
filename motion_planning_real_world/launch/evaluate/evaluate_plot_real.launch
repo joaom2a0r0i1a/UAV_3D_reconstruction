@@ -24,7 +24,7 @@
 
 
   <!-- plotting is the main node, voxblox encapsulates c++ voxblox code -->
-  <node name="eval_plotting_node" pkg="motion_planning" type="eval_plotting_node.py" output="screen" required="true">
+  <node name="eval_plotting_node" pkg="motion_planning_real_world" type="eval_plotting_node_real.py" output="screen" required="true">
     <param name="target_directory" value="$(arg target_directory)" />
     <param name="method" value="$(arg method)" />
     <param name="ns_eval_voxblox_node" value="/eval_voxblox_node" />

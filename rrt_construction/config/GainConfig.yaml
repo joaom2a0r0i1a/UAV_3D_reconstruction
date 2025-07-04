@@ -1,0 +1,13 @@
+gain_evaluation:
+  min_x: -17.0 # [m]
+  max_x: 17.0 # [m]
+  min_y: -12.0 # [m]
+  max_y: 7.0 # [m]
+  min_z: 0.0 # [m]
+  max_z: 14.5 # [m]
+
+camera_intrinsics:
+  h_fov: 1.51844 # [rad]
+  v_fov: 1.01229 # [rad]
+  max_distance: 5 # [m]
+  yaw_samples: 15

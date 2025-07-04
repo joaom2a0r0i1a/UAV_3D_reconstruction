@@ -22,7 +22,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
@@ -99,7 +98,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &KinoNBVPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KinoNBVPlanner::callbackControlManagerDiag, this);
-    //sub_control_manager_diag =  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", ros::Duration(3.0), &KinoNBVPlanner::timeoutControlManagerDiag, this);
     sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &KinoNBVPlanner::callbackTrackerCmd, this);
     sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 

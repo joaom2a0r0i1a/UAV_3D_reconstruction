@@ -104,22 +104,12 @@ private:
     voxblox::Transformation T_C_B;
     geometry_msgs::TransformStamped T_B_C_message;
     voxblox::Transformation T_B_C;
-    geometry_msgs::TransformStamped T_C_W_message;
-    voxblox::Transformation T_C_W;
-    geometry_msgs::TransformStamped T_W_C_message;
-    voxblox::Transformation T_W_C;
 
     // Parameters
     std::string frame_id;
     std::string body_frame_id;
     std::string camera_frame_id;
     std::string ns;
-    double center_x;
-    double center_y;
-    double center_z;
-    double dimensions_x;
-    double dimensions_y;
-    double dimensions_z;
     double best_score_;
 
     // Bounded Box

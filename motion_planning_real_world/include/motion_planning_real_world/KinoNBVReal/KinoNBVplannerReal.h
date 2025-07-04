@@ -31,11 +31,8 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
-#include <motion_planning_python/RRT/kino_rrt_star_kd.h>
-#include <motion_planning_python/gain_evaluator.h>
-#include <motion_planning_python/llaToenu.hpp>
-
-#include <GeographicLib/Geoid.hpp>
+#include <rrt_construction/kino_rrt_star_kd.h>
+#include <rrt_construction/gain_evaluator.h>
 
 typedef enum
 {
@@ -152,11 +149,6 @@ private:
     std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
-
-    // GPS Coordinates
-    double latitude_ref, longitude_ref, altitude_ref;
-    double latitude, longitude, altitude;
-    double x_gps, y_gps, z_gps;
 
     // UAV variables
     bool is_initialized = false;

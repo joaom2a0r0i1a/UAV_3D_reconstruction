@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package format="2">
 
-  <name>motion_planning</name>
+  <name>motion_planning_real_world</name>
   <version>0.0.0</version>
-  <description>The motion planner</description>
+  <description>The motion planner for real drones using mavros</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
   <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>
@@ -23,12 +23,10 @@
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
   <depend>std_srvs</depend>
+  <depend>motion_planning</depend>
   <depend>cache_nodes</depend>
-  <depend>process_pointcloud</depend>
-  <depend>multiagent_collision_check</depend>
   <depend>mavros</depend>
   <depend>mavros_msgs</depend>
-  <depend>geographic_msgs</depend>
 
   <export>
   </export>
