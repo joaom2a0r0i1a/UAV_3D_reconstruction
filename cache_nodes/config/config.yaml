@@ -1,13 +1,3 @@
-visualize:
-  mean:  False
-visualize:
-  sigma: False
-visualize:
-  pts:   False
-
-visualize:
-  resolution: 0.5
-
 local_planning:
   g_zero: 0.5
   num_yaw_samples: 10

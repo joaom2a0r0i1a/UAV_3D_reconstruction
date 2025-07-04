@@ -10,6 +10,7 @@
   <group ns="$(arg UAV_NAME)">
     <node pkg="cache_nodes" type="cached" name="cache_nodes" output="screen">
       <rosparam file="$(find cache_nodes)/config/config.yaml" />
+      <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />
       <remap from="~tsdf_map_in" to="voxblox_node/tsdf_map_out" />
       <!--remap from="cache_nodes/esdf_map_in" to="esdf_map" /-->

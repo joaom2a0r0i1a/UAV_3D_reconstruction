@@ -26,8 +26,6 @@
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-//#include <voxblox_ros/esdf_pose_graph_server.h>
-//#include <voxblox_ros/tsdf_pose_graph_server.h>
 #include <voxblox/utils/planning_utils.h>
 
 #include <cache_nodes/Node.h>
@@ -41,9 +39,9 @@
 #include <Eigen/Core>
 #include <multiagent_collision_check/Segment.h>
 #include <multiagent_collision_check/multiagent_collision_checker.h>
-#include <multidrone_motion_planning/RRT/rrt_star_kd.h>
-#include <multidrone_motion_planning/kd_tree.h>
-#include <multidrone_motion_planning/gain_evaluator.h>
+#include <rrt_construction/rrt_star_kd.h>
+#include <rrt_construction/kd_tree.h>
+#include <rrt_construction/gain_evaluator.h>
 
 typedef enum
 {

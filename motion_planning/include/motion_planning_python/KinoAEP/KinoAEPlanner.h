@@ -42,7 +42,7 @@
 #include <rrt_construction/kino_rrt_star_kd.h>
 #include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/kd_tree.h>
-#include <motion_planning_python/gain_evaluator.h>
+#include <rrt_construction/gain_evaluator.h>
 
 #include <fstream>
 #include <chrono>

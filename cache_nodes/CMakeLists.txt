@@ -19,6 +19,7 @@ set(CATKIN_DEPENDENCIES
   voxblox_ros
   minkindr_conversions
   message_generation
+  rrt_construction
   geometry_msgs
   std_msgs
 )
@@ -27,19 +28,10 @@ find_package(catkin REQUIRED COMPONENTS
   ${CATKIN_DEPENDENCIES}
 )
 
-# Add the installation prefix of AEPlanner to CMAKE_PREFIX_PATH
-#list(APPEND CMAKE_PREFIX_PATH "~/workspace1/install")
-#find_package(AEPlanner REQUIRED)
-
 # Find Eigen3 package
 find_package(Eigen3 REQUIRED)
 set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
-
-# Define libraries
-set(LIBRARIES
-  auxiliar
-)
 
 ## Generate messages in the 'msg' folder
 add_message_files(
@@ -83,39 +75,48 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-# Add library targets
-add_library(auxiliar
-  src/evaluator.cpp
-  src/rrt_kd.cpp
-  src/kd_tree_gain.cpp
+#########
+
+# Create library from class implementation
+add_library(cached_lib
+  src/cached.cpp
 )
 
-# Add dependencies for library targets
-add_dependencies(auxiliar 
-  ${catkin_EXPORTED_TARGETS} 
-  ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(cached_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-# Link libraries against required Catkin libraries
-target_link_libraries(auxiliar
+target_link_libraries(cached_lib
   ${catkin_LIBRARIES}
 )
 
-# Add executable for cached.cpp
-add_executable(cached src/cached.cpp)
+# Add executable for cached_node.cpp
+add_executable(cached src/cached_node.cpp)
 
 # Link executable against required libraries
 target_link_libraries(cached
+  cached_lib
   ${catkin_LIBRARIES}
-  auxiliar
+)
+
+#########
+
+# Create library from class implementation
+add_library(cached_multi_lib
+  src/cached_multi.cpp
+)
+
+add_dependencies(cached_multi_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(cached_multi_lib
+  ${catkin_LIBRARIES}
 )
 
 # Add executable for cached_multi.cpp
-add_executable(cached_multi src/cached_multi.cpp)
+add_executable(cached_multi src/cached_multi_node.cpp)
 
 # Link executable against required libraries
 target_link_libraries(cached_multi
+  cached_multi_lib
   ${catkin_LIBRARIES}
-  auxiliar
 )
 
 #############

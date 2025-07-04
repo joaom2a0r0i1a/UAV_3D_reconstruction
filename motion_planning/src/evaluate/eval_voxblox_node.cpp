@@ -32,7 +32,7 @@
 #include <voxblox_ros/mesh_vis.h>
 #include <voxblox_ros/ptcloud_vis.h>
 
-#include "../../include/motion_planning_python/libs/nanoflann.hpp"
+#include "rrt_construction/libs/nanoflann.hpp"
 
 namespace evaluate {
 
@@ -313,7 +313,7 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
   uint64_t total_evaluated_voxels = 0;
   uint64_t unknown_voxels = 0;
   uint64_t outside_truncation_voxels = 0;
-  const float min_weight = 0.0;
+  const float min_weight = 0.1;
   const bool interpolate = true;
   double truncation_distance = 3 * tsdf_layer->voxel_size();
   double voxel_size = tsdf_layer->voxel_size();

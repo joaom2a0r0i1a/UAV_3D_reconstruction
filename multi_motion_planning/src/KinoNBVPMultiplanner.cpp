@@ -175,10 +175,10 @@ void KinoNBVPMultiPlanner::KinoNBV() {
     std::shared_ptr<kino_rrt_star::Node> root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
     if (best_branch.size() > 1) {
-        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity);
+        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     } else {
-        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d(0, 0, 0));
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
 

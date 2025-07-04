@@ -71,40 +71,40 @@ include_directories(
 
  # Add library targets
 add_library(NBVPlanner 
-  src/gain_evaluator.cpp
+  #src/gain_evaluator.cpp
   #src/gain_evaluator_2D.cpp
   #src/RRT/rrt_star.cpp
   #src/RRT/rrt_star_kd.cpp
   #src/RRT/rrt_star_2D.cpp
   src/NBV/NBVplanner.cpp
   #src/NBV/NBVplanner_2D.cpp
-  )
+)
 
  # Add library targets
  add_library(KinoNBVPlanner 
- src/gain_evaluator.cpp
- #src/gain_evaluator_2D.cpp
- #src/RRT/rrt_star.cpp
- #src/RRT/kino_rrt_star_kd.cpp
- #src/RRT/rrt_star_2D.cpp
- src/KinoNBV/KinoNBVplanner.cpp
- #src/NBV/NBVplanner_2D.cpp
+  #src/gain_evaluator.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  #src/RRT/kino_rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/KinoNBV/KinoNBVplanner.cpp
+  #src/NBV/NBVplanner_2D.cpp
  )
 
  # Add library targets
  add_library(KinoNBVPlannerReal 
- src/gain_evaluator.cpp
- #src/gain_evaluator_2D.cpp
- #src/RRT/rrt_star.cpp
- #src/RRT/kino_rrt_star_kd.cpp
- #src/RRT/rrt_star_2D.cpp
- src/KinoNBVReal/KinoNBVplannerReal.cpp
- #src/NBV/NBVplanner_2D.cpp
+  #src/gain_evaluator.cpp
+  #src/gain_evaluator_2D.cpp
+  #src/RRT/rrt_star.cpp
+  #src/RRT/kino_rrt_star_kd.cpp
+  #src/RRT/rrt_star_2D.cpp
+  src/KinoNBVReal/KinoNBVplannerReal.cpp
+  #src/NBV/NBVplanner_2D.cpp
  )
 
  # Add library targets
 add_library(AEPlanner 
-  src/gain_evaluator.cpp
+  #src/gain_evaluator.cpp
   #src/gain_evaluator_2D.cpp
   #src/RRT/rrt_star.cpp
   #src/RRT/rrt_star_kd.cpp
@@ -116,7 +116,7 @@ add_library(AEPlanner
 
    # Add library targets
 add_library(KinoAEPlanner 
-  src/gain_evaluator.cpp
+  #src/gain_evaluator.cpp
   #src/gain_evaluator_2D.cpp
   #src/RRT/rrt_star.cpp
   #src/RRT/kino_rrt_star_kd.cpp

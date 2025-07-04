@@ -250,15 +250,16 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        #series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
+        #series_dir = ["nbv", "aep", "knbv", "kaep"]
+        series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
         #series_dir = ["JS - RH-NBVP", "JS - AEP", "JS - Kinodynamic RH-NBVP (ours)", "JS - Kinodynamic AEP (ours)"]
-        series_dir = ["SS - RH-NBVP", "SS - AEP", "SS - Kinodynamic RH-NBVP (ours)", "SS - Kinodynamic AEP (ours)"]
+        #series_dir = ["SS - RH-NBVP", "SS - AEP", "SS - Kinodynamic RH-NBVP (ours)", "SS - Kinodynamic AEP (ours)"]
         #series_dir = ["RH-NBVP/JS", "RH-NBVP/SS", "AEP/JS", "AEP/SS", "Kinodynamic RH-NBVP (ours)/JS", "Kinodynamic RH-NBVP (ours)/SS", "Kinodynamic AEP (ours)/JS", "Kinodynamic AEP (ours)/SS"]
         #series_dir = ["Cost", "Gain", "Score"]
         #series_dir = ["Distance", "Time"]
         #series_dir = ["Connected", "Disconnected"]
-        #colors = ['r', 'y', 'b', 'g']
-        colors = ['c', 'm', 'tab:pink', 'tab:gray']
+        colors = ['r', 'y', 'b', 'g']
+        #colors = ['c', 'm', 'tab:pink', 'tab:gray']
         #colors = ['r', 'y', 'b', 'g', 'c', 'm', 'tab:pink', 'tab:gray']
         #colors = ['r', 'y', 'b']
         #colors = ['r', 'y']
@@ -446,8 +447,8 @@ class EvalPlotting(object):
 
             else:
                 known = means['Volume']
-                unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
-                std_deviations = 100 * ((std_devs['Volume']/ (20 * 18 * 2.6)))
+                unknown = 100 * (1 - (known / (5 * 4 * 6)))
+                std_deviations = 100 * ((std_devs['Volume']/ (5 * 4 * 6)))
                 axes[0, 1].plot(x, unknown, color=colors[idx], label=series)
                 axes[0, 1].fill_between(x,
                                         unknown - std_deviations,
@@ -693,8 +694,8 @@ class EvalPlotting(object):
             axes[0, 1].set_ylim(0, 100)
         else:
             known = means['Volume']
-            unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
-            std_deviations = 100 * ((std_devs['Volume']/ (20 * 18 * 2.6)))
+            unknown = 100 * (1 - (known / (5 * 4 * 6)))
+            std_deviations = 100 * ((std_devs['Volume']/ (5 * 4 * 6)))
             axes[0, 1].plot(x, unknown, 'g-')
             axes[0, 1].fill_between(x,
                                     unknown - std_deviations,
@@ -800,7 +801,7 @@ class EvalPlotting(object):
             #axes[0, 1].set_ylim(0, 1)
         else:
             known = np.array(data['Volume'], dtype=float)
-            unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
+            unknown = 100 * (1 - (known / (5 * 4 * 6)))
             #unknown = np.array(data['Volume'], dtype=float)
             axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
             axes[0, 1].set_ylim(0, 100)

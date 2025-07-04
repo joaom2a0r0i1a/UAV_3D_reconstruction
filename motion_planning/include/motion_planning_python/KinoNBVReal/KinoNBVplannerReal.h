@@ -32,8 +32,7 @@
 
 #include <Eigen/Core>
 #include <rrt_construction/kino_rrt_star_kd.h>
-#include <motion_planning_python/gain_evaluator.h>
-#include <motion_planning_python/llaToenu.hpp>
+#include <rrt_construction/gain_evaluator.h>
 
 #include <GeographicLib/Geoid.hpp>
 

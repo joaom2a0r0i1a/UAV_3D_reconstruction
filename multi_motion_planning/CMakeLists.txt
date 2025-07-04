@@ -67,28 +67,28 @@ include_directories(
 
  # Add library targets
 add_library(NBVMultiPlanner 
-  src/gain_evaluator.cpp
-  src/RRT/rrt_star_kd.cpp
+  #src/gain_evaluator.cpp
+  #src/RRT/rrt_star_kd.cpp
   src/NBVMultiplanner.cpp
 )
 
 add_library(KinoNBVPMultiPlanner 
-  src/gain_evaluator.cpp
-  src/RRT/kino_rrt_star_kd.cpp
+  #src/gain_evaluator.cpp
+  #src/RRT/kino_rrt_star_kd.cpp
   src/KinoNBVPMultiplanner.cpp
 )
 
 add_library(AEPMultiPlanner 
- src/gain_evaluator.cpp
- src/RRT/rrt_star_kd.cpp
- src/kd_tree.cpp
+ #src/gain_evaluator.cpp
+ #src/RRT/rrt_star_kd.cpp
+ #src/kd_tree.cpp
  src/AEPMultiplanner.cpp
 )
 
 add_library(KinoAEPMultiPlanner 
-  src/gain_evaluator.cpp
-  src/RRT/kino_rrt_star_kd.cpp
-  src/kd_tree.cpp
+  #src/gain_evaluator.cpp
+  #src/RRT/kino_rrt_star_kd.cpp
+  #src/kd_tree.cpp
   src/KinoAEPMultiplanner.cpp
 )
 

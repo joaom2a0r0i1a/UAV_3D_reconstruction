@@ -4,7 +4,7 @@
   <version>0.0.1</version>
   <description>The cache package</description>
 
-  <maintainer email="magse761@student.liu.se">mseln</maintainer>
+  <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
 
   <license>TODO</license>
 
@@ -22,6 +22,7 @@
   <depend>visualization_msgs</depend>
   <depend>trajectory_generation</depend>
   <depend>voxblox_ros</depend>
+  <depend>rrt_construction</depend>
   <depend>minkindr_conversions</depend>
 
   <export>

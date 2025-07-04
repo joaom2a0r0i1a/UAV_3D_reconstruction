@@ -21,6 +21,8 @@ set(CATKIN_DEPENDENCIES
   mrs_msgs
   mrs_lib
   std_srvs
+  trajectory_generation
+  voxblox_ros
   )
   
 find_package(catkin REQUIRED COMPONENTS
@@ -61,6 +63,7 @@ add_library(tree_construction
   src/kd_tree.cpp
   src/kino_rrt_star_kd.cpp
   src/rrt_star_kd.cpp
+  src/gain_evaluator.cpp
   )
 
  # Add dependencies for library targets

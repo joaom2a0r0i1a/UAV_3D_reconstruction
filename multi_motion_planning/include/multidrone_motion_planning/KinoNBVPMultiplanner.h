@@ -33,8 +33,8 @@
 #include <Eigen/Core>
 #include <multiagent_collision_check/Segment.h>
 #include <multiagent_collision_check/multiagent_collision_checker.h>
-#include <multidrone_motion_planning/RRT/kino_rrt_star_kd.h>
-#include <multidrone_motion_planning/gain_evaluator.h>
+#include <rrt_construction/kino_rrt_star_kd.h>
+#include <rrt_construction/gain_evaluator.h>
 
 typedef enum
 {

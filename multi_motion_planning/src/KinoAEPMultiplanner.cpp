@@ -230,16 +230,16 @@ void KinoAEPMultiPlanner::localPlanner() {
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
     if (best_branch.size() > 1) {
         if (!reset_velocity) {
-            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity);
+            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
         } else {
-            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, Eigen::Vector3d::Zero());
+            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
         }
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     } else {
         if (!reset_velocity) {
-            root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+            root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d::Zero());
         } else {
-            root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero());
+            root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
         }
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
@@ -515,9 +515,9 @@ void KinoAEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& Glob
     std::shared_ptr<kino_rrt_star::Trajectory> global_root;
 
     if (!reset_velocity) {
-        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity);
+        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d::Zero());
     } else {
-        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero());
+        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
     }
     
     global_root = std::make_shared<kino_rrt_star::Trajectory>(global_root_node);
