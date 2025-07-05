@@ -16,6 +16,7 @@
     <param name="publish_tsdf_map" value="true" />
     <param name="publish_esdf_map" value="true" />
     <param name="color_mode" value="normals" />
+    <param name="num_uavs" value="3" />
 
     <param name="update_mesh_every_n_sec" value="1.0" />
     <param name="publish_tsdf_map_every_n_sec" value="1.0" />

@@ -117,7 +117,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // Tree Parameters
@@ -142,12 +141,6 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
-    std::atomic<int> replanning_counter_ = 0;
-
-    // Bounds Parameters
-    // Bounds on the size of the map.
-    Eigen::Vector3d lower_bound_;
-    Eigen::Vector3d upper_bound_;
 
     // Tree variables
     //std::vector<std::shared_ptr<rrt_star::Node>> tree;
@@ -173,7 +166,6 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables

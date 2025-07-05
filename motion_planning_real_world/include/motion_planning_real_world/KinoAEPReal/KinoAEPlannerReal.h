@@ -132,7 +132,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    //float planner_range;
     double bounded_radius;
     
     // UAV parameters
@@ -147,7 +146,6 @@ private:
     double tolerance;
     int num_yaw_samples;
     double g_zero;
-    //double sigma_threshold;
 
     // RRT* Parameters
     int N_min_nodes;
@@ -199,7 +197,6 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables

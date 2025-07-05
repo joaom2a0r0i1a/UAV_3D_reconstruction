@@ -22,7 +22,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
@@ -47,7 +46,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
-    //changeState(STATE_IDLE);
     state_ = STATE_IDLE;
     iteration_ = 0;
     initial_offset = {0, 0, 0};
@@ -149,8 +147,6 @@ void NBVPlanner::GetTransformation() {
 void NBVPlanner::NBV() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
 
     std::shared_ptr<rrt_star::Node> root;
     if (prev_best_branch.size() > 1) {
@@ -200,40 +196,12 @@ void NBVPlanner::NBV() {
             
             const Eigen::Vector4d& node_position = prev_best_branch[i];
 
-            //double yaw;
-            //RRTStar.computeYaw(bounded_radius, yaw);
-
             std::shared_ptr<rrt_star::Node> nearest_node_best;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
             
             std::shared_ptr<rrt_star::Node> new_node_best;
             new_node_best = std::make_shared<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
-
-            //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes_best;
-            //RRTStar.findNearby(tree, new_node_best, radius, nearby_nodes_best);
-            //RRTStar.chooseParent(new_node_best, nearby_nodes_best);
-
-            /*eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment_best;
-
-            trajectory_point.position_W.head(3) = new_node_best->parent->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->parent->point[3]);
-            trajectory_segment_best.push_back(trajectory_point);
-
-            trajectory_point.position_W.head(3) = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-            trajectory_segment_best.push_back(trajectory_point);
-
-            bool success_collision_best = false;
-            success_collision_best = isPathCollisionFree(trajectory_segment_best);
-
-            if (!success_collision_best) {
-                //clear_node();
-                trajectory_segment_best.clear();
-                break;
-            }
-
-            trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
             trajectory_point.position_W = new_node_best->point.head(3);
@@ -242,25 +210,8 @@ void NBVPlanner::NBV() {
             double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point, initial_offset);
             new_node_best->gain = result_best;
 
-            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            //new_node_best->gain = result.first;
-            //new_node_best->point[3] = result.second;
-
-            /*eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-            trajectory_point_gain.position_W = new_node_best->point.head(3);
-            trajectory_point_gain.setFromYaw(new_node_best->point[3]);
-            new_node_best->gain = segment_evaluator.computeGain(trajectory_point_gain);*/
-            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
-
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
-
-            /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
-            // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
-            const double EPSILON = 0.000001;
-            if (std::abs(new_node_best->score) < EPSILON) {
-                new_node_best->score = 0.0;
-            }*/
 
             if (new_node_best->score > best_score_) {
                 best_score_ = new_node_best->score;
@@ -270,7 +221,6 @@ void NBVPlanner::NBV() {
             ROS_INFO("[NBVPlanner]: Best Score BB: %f", new_node_best->score);
 
             RRTStar.addKDTreeNode(new_node_best);
-            //tree.push_back(new_node_best);
             visualize_edge(new_node_best, ns);
 
             ++j;
@@ -289,7 +239,6 @@ void NBVPlanner::NBV() {
         rand_point += root->point.head(3);
 
         std::shared_ptr<rrt_star::Node> nearest_node;
-        //RRTStar.findNearest(tree, rand_point, nearest_node);
         RRTStar.findNearestKD(rand_point, nearest_node);
 
         std::shared_ptr<rrt_star::Node> new_node;
@@ -300,18 +249,8 @@ void NBVPlanner::NBV() {
             continue;
         }
 
-        //visualize_node(new_node->point, ns);
-
-        //std::cout << "New Point: " << new_node->point << std::endl;
-        
-        //new_node->parent = nearest_node;
-
-        //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes = RRTStar.findNearby(tree, new_node, radius);
-        //new_node = RRTStar.chooseParent(new_node, nearby_nodes);
-
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
-        //trajectory_segment.push_back(new_node->parent);
         trajectory_segment.push_back(new_node);
 
         bool success_collision = false;
@@ -331,21 +270,8 @@ void NBVPlanner::NBV() {
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
         trajectory_point_gain.position_W = new_node->point.head(3);
         trajectory_point_gain.setFromYaw(new_node->point[3]);
-        //new_node->gain = segment_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point_gain);
-        //ROS_INFO("[NBVPlanner]: Best gain RayCast: %f", new_node->gain);
         double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain, initial_offset);
         new_node->gain = result;
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_gain);
-        //new_node->gain = result.first;
-        //new_node->point[3] = result.second;
-        //ROS_INFO("[NBVPlanner]: Best gain AEP: %f", new_node->gain);
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        //ROS_INFO("[NBVPlanner]: Best gain Bircher Optimized: %f", new_node->gain);
-        //new_node->gain = segment_evaluator.computeGain(trajectory_point_gain);
-        //ROS_INFO("[NBVPlanner]: Best gain Bircher: %f", new_node->gain);
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-
-        //ROS_INFO("[NBVPlanner]: Best Gain: %f", new_node->gain);
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -355,13 +281,10 @@ void NBVPlanner::NBV() {
             best_node = new_node;
         }
 
-        //ROS_INFO("[NBVPlanner]: Yaw: %f", new_node->point[3]);
         ROS_INFO("[NBVPlanner]: Best Score: %f", new_node->score);
 
-        //tree.push_back(new_node);
         RRTStar.addKDTreeNode(new_node);
         visualize_edge(new_node, ns);
-        //RRTStar.rewire(tree, new_node, nearby_nodes, radius);
 
         if (j > N_termination) {
             ROS_INFO("[NBVPlanner]: NBV Terminated");
@@ -410,7 +333,6 @@ bool NBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigge
         return true;
     }
 
-    interrupted_ = false;
     changeState(STATE_PLANNING);
 
     res.success = true;
@@ -514,7 +436,6 @@ void NBVPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr ms
     }
     
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
-    //ROS_INFO("[NBVPlanner]: [%f, %f, %f, %f]", uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw);
 }
 
 void NBVPlanner::timerMain(const ros::TimerEvent& event) {
@@ -562,15 +483,6 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             setpoint_reference.header.stamp = ros::Time::now();
             setpoint_reference.coordinate_frame = 1;
             setpoint_reference.type_mask = mavros_msgs::PositionTarget::IGNORE_VX | mavros_msgs::PositionTarget::IGNORE_VY | mavros_msgs::PositionTarget::IGNORE_VZ | mavros_msgs::PositionTarget::IGNORE_AFX | mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ | mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
-
-            /*if (next_best_node->parent) {
-                setpoint_reference.position.x = next_best_node->parent->point[0];
-                setpoint_reference.position.y = next_best_node->parent->point[1];
-                setpoint_reference.position.z = next_best_node->parent->point[2];
-                setpoint_reference.yaw = next_best_node->parent->point[3];
-                pub_setpoint.publish(setpoint_reference);
-                ros::Duration(0.2).sleep();
-            }*/
             
             ros::Duration(0.25).sleep();
             setpoint_reference.position.x = next_best_node->point[0];
@@ -593,21 +505,10 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
         }
         case STATE_MOVING: {
             if (!has_active_path) {
-                //ROS_INFO("[NBVPlanner]: Finished all waypoints.");
-                //has_active_path = false;
                 ROS_INFO("[NBVPlanner]: No active Waypoint.");
                 changeState(STATE_PLANNING);
                 break;
             }
-
-            /*double dist = distance(pose, current_waypoint);
-            ROS_INFO_THROTTLE(1.0, "Distance to waypoint [%f, %f, %f]: %f", current_waypoint[0], current_waypoint[1], current_waypoint[2], dist);
-
-            if (dist < 0.5) {
-                ROS_INFO("Reached waypoint.");
-                has_active_path = false;
-                changeState(STATE_PLANNING);
-            }*/
 
             mavros_msgs::PositionTarget current_sp = active_waypoints[current_wp_idx];
             Eigen::Vector3d target = {
@@ -641,21 +542,9 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 void NBVPlanner::changeState(const State_t new_state) {
     const State_t old_state = state_;
 
-    if (interrupted_ && old_state == STATE_STOPPED) {
+    if (old_state == STATE_STOPPED) {
         ROS_WARN("[NBVPlanner]: Planning interrupted, not changing state.");
         return;
-    }
-
-    switch (new_state) {
-
-        case STATE_PLANNING: {
-
-            if (old_state == STATE_STOPPED) {
-                replanning_counter_ = 0;
-            }
-        }
-
-        default: {break;}
     }
 
     ROS_INFO("[NBVPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());

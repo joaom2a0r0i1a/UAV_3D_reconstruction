@@ -69,7 +69,6 @@ public:
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);
-    //void timeoutControlManagerDiag(const std::string& topic, const ros::Time& last_msg);
     void timerMain(const ros::TimerEvent& event);
     
     void changeState(const State_t new_state);
@@ -77,7 +76,7 @@ public:
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
     void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
     void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-     void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
+    void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
     void visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position);
     void clear_node();
     void clear_all_voxels();
@@ -123,7 +122,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // Tree Parameters
@@ -188,7 +186,6 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
     mrs_lib::SubscribeHandler<multiagent_collision_check::Segment> sub_evade;
 
     // Publishers

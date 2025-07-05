@@ -80,7 +80,6 @@ public:
     
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-    //bool callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);
@@ -137,7 +136,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // RRT Parameters
@@ -148,7 +146,6 @@ private:
     double tolerance;
     int num_yaw_samples;
     double g_zero;
-    double sigma_threshold;
 
     // RRT* Parameters
     int N_min_nodes;
@@ -169,7 +166,6 @@ private:
     double uav_radius;
     double lambda;
     double global_lambda;
-    std::atomic<int> replanning_counter_ = 0;
 
     // Multi Drone Collision Avoidance
     std::vector<int> agentsId_;
@@ -180,7 +176,6 @@ private:
     mrs_msgs::Reference current_waypoint_;
 
     // Local Planner variables
-    //std::vector<std::shared_ptr<rrt_star::Node>> tree;
     std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
     std::shared_ptr<rrt_star::Node> previous_root;
     std::shared_ptr<rrt_star::Node> next_best_node;
@@ -199,7 +194,6 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables
@@ -216,7 +210,6 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    //mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
     mrs_lib::SubscribeHandler<multiagent_collision_check::Segment> sub_evade;
 
     // Publishers
@@ -232,13 +225,11 @@ private:
     // Service servers
     ros::ServiceServer ss_start;
     ros::ServiceServer ss_stop;
-    //ros::ServiceServer ss_reevaluate;
 
     // Service clients
     mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
     mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
     mrs_lib::ServiceClientHandler<cache_nodes::BestNode> sc_best_node;
-    mrs_lib::ServiceClientHandler<cache_nodes::Query> sc_query;
 
     // Timers
     ros::Timer timer_main;

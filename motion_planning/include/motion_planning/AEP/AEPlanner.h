@@ -85,7 +85,6 @@ public:
     
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-    //bool callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
@@ -174,12 +173,10 @@ private:
     double uav_radius;
     double lambda;
     double global_lambda;
-    std::atomic<int> replanning_counter_ = 0;
 
     mrs_msgs::Reference current_waypoint_;
 
     // Local Planner variables
-    //std::vector<std::shared_ptr<rrt_star::Node>> tree;
     std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
     std::shared_ptr<rrt_star::Node> previous_root;
     std::shared_ptr<rrt_star::Node> next_best_node;
@@ -198,7 +195,6 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables

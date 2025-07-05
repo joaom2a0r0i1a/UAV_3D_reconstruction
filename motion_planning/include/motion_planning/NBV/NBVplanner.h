@@ -69,7 +69,6 @@ public:
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
-    //void timeoutControlManagerDiag(const std::string& topic, const ros::Time& last_msg);
     void timerMain(const ros::TimerEvent& event);
     
     void changeState(const State_t new_state);
@@ -122,7 +121,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // Tree Parameters
@@ -147,15 +145,8 @@ private:
     // Planner Parameters
     double uav_radius;
     double lambda;
-    std::atomic<int> replanning_counter_ = 0;
-
-    // Bounds Parameters
-    // Bounds on the size of the map.
-    Eigen::Vector3d lower_bound_;
-    Eigen::Vector3d upper_bound_;
 
     // Tree variables
-    //std::vector<std::shared_ptr<rrt_star::Node>> tree;
     std::vector<Eigen::Vector4d> path;
     std::vector<Eigen::Vector4d> prev_best_branch;
     std::vector<Eigen::Vector4d> best_branch;
@@ -167,13 +158,11 @@ private:
     bool is_initialized = false;
     Eigen::Vector4d pose;
     mrs_msgs::UavState uav_state;
-    mrs_msgs::TrackerCommand tracker_cmd;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
     mrs_msgs::Reference current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables
@@ -189,8 +178,6 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand> sub_tracker_cmd;
-    mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
 
     // Publishers
     ros::Publisher pub_markers;

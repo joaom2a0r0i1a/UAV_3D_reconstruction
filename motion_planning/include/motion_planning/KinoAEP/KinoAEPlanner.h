@@ -71,7 +71,6 @@ public:
 
     void AEP();
     void localPlanner();
-    //void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<kino_rrt_star::Node> global_root_node, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
@@ -174,10 +173,8 @@ private:
     double global_lambda2;
     int max_accel_iterations;
     bool reset_velocity;
-    std::atomic<int> replanning_counter_ = 0;
 
     // Local Planner variables
-    //std::vector<std::shared_ptr<kino_rrt_star::Node>> tree;
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
     std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
@@ -197,11 +194,9 @@ private:
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
     mrs_msgs::Reference current_waypoint_;
-    std::vector<mrs_msgs::Reference> past_waypoints_;
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables
@@ -233,7 +228,6 @@ private:
     ros::ServiceServer ss_stop;
 
     // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
     mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
     mrs_lib::ServiceClientHandler<cache_nodes::BestNode> sc_best_node;
 

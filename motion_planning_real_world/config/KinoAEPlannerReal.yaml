@@ -14,7 +14,6 @@ timer_main:
 #  max_y: 6.0 # [m]
 #  min_z: 2.0 # [m]
 #  max_z: 8.0 # [m]
-#  #planner_range: 3 # [m]
   
 # IST Lamp
 bounded_box:
@@ -24,7 +23,6 @@ bounded_box:
   max_y: 6.0 # [m]
   min_z: 3.0 # [m]
   max_z: 9.0 # [m]
-  #planner_range: 3 # [m]
 
 uav_parameters:
   max_vel: 0.5 # [m/s]
@@ -38,7 +36,6 @@ local_planning:
   step_size: 2.0 # [m]
   tolerance: 0.5 # [m]
   g_zero: 1.0
-  #sigma_thresh: 0.2
 
 global_planning:
   N_min_nodes: 100

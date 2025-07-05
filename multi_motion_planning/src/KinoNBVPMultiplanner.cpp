@@ -23,7 +23,6 @@ KinoNBVPMultiPlanner::KinoNBVPMultiPlanner(const ros::NodeHandle& nh, const ros:
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
@@ -50,7 +49,6 @@ KinoNBVPMultiPlanner::KinoNBVPMultiPlanner(const ros::NodeHandle& nh, const ros:
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
-    //changeState(STATE_IDLE);
     state_ = STATE_IDLE;
     iteration_ = 0;
     reset_velocity = false;
@@ -102,7 +100,6 @@ KinoNBVPMultiPlanner::KinoNBVPMultiPlanner(const ros::NodeHandle& nh, const ros:
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &KinoNBVPMultiPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KinoNBVPMultiPlanner::callbackControlManagerDiag, this);
     sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &KinoNBVPMultiPlanner::callbackEvade, this);
-    sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KinoNBVPMultiPlanner::callbackStart, this);
@@ -185,7 +182,6 @@ void KinoNBVPMultiPlanner::KinoNBV() {
     // Evaluates root node
     Root->cost = 0.0;
     Root->score = 0.0;
-    //Root->score = Root->gain;
 
     if (Root->score > best_score_) {
         best_score_ = Root->score;
@@ -243,9 +239,6 @@ void KinoNBVPMultiPlanner::KinoNBV() {
             double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
             new_trajectory_best->gain = result_best;
 
-            //segment_evaluator.computeCost(new_trajectory_best);
-            //segment_evaluator.computeScore(new_trajectory_best, lambda);
-
             segment_evaluator.computeCostTwo(new_trajectory_best);
             segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
 
@@ -285,25 +278,13 @@ void KinoNBVPMultiPlanner::KinoNBV() {
             accel_tries++;
             Eigen::Vector3d accel;
             KinoRRTStar.computeAccelerationSampling(max_accel, accel);
-            //ROS_INFO("[KinoNBVPlanner]: accel: [%f, %f, %f]", accel[0], accel[1], accel[2]);
 
-            //new_trajectory[trajectory_size - 1]->point[3] = rand_point_yaw[3];
             std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
             new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
             KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, step_size, new_trajectory);
             new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
-            //int trajectory_size = sizeof(new_trajectory->TrajectoryPoints) / sizeof(new_trajectory->TrajectoryPoints[0]); 
 
-            //std::shared_ptr<kino_rrt_star::Node> new_node;
             bool OutOfBounds = false;
-            /*for (size_t l = 0; l < new_trajectory->TrajectoryPoints.size(); ++l) {
-                if (new_trajectory->TrajectoryPoints[l]->point[0] > max_x || new_trajectory->TrajectoryPoints[l]->point[0] < min_x 
-                || new_trajectory->TrajectoryPoints[l]->point[1] < min_y || new_trajectory->TrajectoryPoints[l]->point[1] > max_y 
-                || new_trajectory->TrajectoryPoints[l]->point[2] < min_z || new_trajectory->TrajectoryPoints[l]->point[2] > max_z) {
-                    OutOfBounds = true;
-                    break;
-                }
-            }*/
 
            if (new_trajectory->TrajectoryPoints.back()->point[0] > max_x || new_trajectory->TrajectoryPoints.back()->point[0] < min_x 
                 || new_trajectory->TrajectoryPoints.back()->point[1] < min_y || new_trajectory->TrajectoryPoints.back()->point[1] > max_y 
@@ -313,7 +294,6 @@ void KinoNBVPMultiPlanner::KinoNBV() {
             }
 
             if (OutOfBounds) {
-                //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
                 // Avoid Memory Leak
                 new_trajectory.reset();
                 continue;
@@ -351,7 +331,6 @@ void KinoNBVPMultiPlanner::KinoNBV() {
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
 
-            //new_trajectory->TrajectoryPoints[trajectory_size - 1]->point[3] = rand_point_yaw[3];
             eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
             trajectory_point_gain.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
             trajectory_point_gain.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
@@ -378,10 +357,6 @@ void KinoNBVPMultiPlanner::KinoNBV() {
         }
 
         expanded_num_nodes += accel_iteration;
-
-        /*if (collision_id_counter_ > 1000 * j) {
-            continue;
-        }*/
 
         if (j > N_termination) {
             ROS_INFO("[KinoNBVPMultiPlanner]: KinoNBV Terminated");
@@ -551,7 +526,6 @@ void KinoNBVPMultiPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr m
     velocity = {uav_velocity.linear.x, uav_velocity.linear.y, uav_velocity.linear.z};
 }
 
-// CHECK HERE
 void KinoNBVPMultiPlanner::callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg) {
     if (!is_initialized) {
         return;

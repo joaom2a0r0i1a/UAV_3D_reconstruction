@@ -133,7 +133,6 @@ private:
     float max_y;
     float min_z;
     float max_z;
-    float planner_range;
     double bounded_radius;
 
     // RRT Parameters
@@ -164,7 +163,6 @@ private:
     double uav_radius;
     double lambda;
     double global_lambda;
-    std::atomic<int> replanning_counter_ = 0;
 
     // Local Planner variables
     //std::vector<std::shared_ptr<rrt_star::Node>> tree;
@@ -192,7 +190,6 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables

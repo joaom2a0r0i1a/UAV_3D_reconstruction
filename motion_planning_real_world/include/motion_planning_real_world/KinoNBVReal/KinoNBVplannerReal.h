@@ -145,7 +145,6 @@ private:
     double lambda2;
     int max_accel_iterations;
     bool reset_velocity;
-    std::atomic<int> replanning_counter_ = 0;
 
     // Tree variables
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
@@ -163,7 +162,6 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables

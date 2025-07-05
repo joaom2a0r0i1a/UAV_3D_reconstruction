@@ -67,9 +67,7 @@ public:
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
-    void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
-    //void timeoutControlManagerDiag(const std::string& topic, const ros::Time& last_msg);
     void timerMain(const ros::TimerEvent& event);
     
     void changeState(const State_t new_state);
@@ -149,7 +147,6 @@ private:
     double lambda2;
     int max_accel_iterations;
     bool reset_velocity;
-    std::atomic<int> replanning_counter_ = 0;
 
     // Tree variables
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
@@ -162,13 +159,11 @@ private:
     Eigen::Vector4d pose;
     Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
-    mrs_msgs::TrackerCommand tracker_cmd;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
     mrs_msgs::Reference current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool>    interrupted_ = false;
     std::atomic<bool> ready_to_plan_  = false;
 
     // Visualization variables
@@ -184,8 +179,6 @@ private:
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand> sub_tracker_cmd;
-    mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints> sub_constraints;
 
     // Publishers
     ros::Publisher pub_markers;
@@ -200,7 +193,6 @@ private:
     ros::ServiceServer ss_stop;
 
     // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
     mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
 
     // Timers

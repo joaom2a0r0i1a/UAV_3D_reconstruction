@@ -23,7 +23,6 @@ NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
@@ -48,7 +47,6 @@ NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
-    //changeState(STATE_IDLE);
     state_ = STATE_IDLE;
     iteration_ = 0;
 
@@ -99,8 +97,6 @@ NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &NBVMultiPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &NBVMultiPlanner::callbackControlManagerDiag, this);
     sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &NBVMultiPlanner::callbackEvade, this);
-    //sub_control_manager_diag =  mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", ros::Duration(3.0), &NBVMultiPlanner::timeoutControlManagerDiag, this);
-    sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &NBVMultiPlanner::callbackStart, this);
@@ -156,8 +152,6 @@ void NBVMultiPlanner::GetTransformation() {
 void NBVMultiPlanner::NBV() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
 
     // Multi-UAV remove previous planned agent path
     int k;
@@ -221,40 +215,12 @@ void NBVMultiPlanner::NBV() {
             
             const Eigen::Vector4d& node_position = prev_best_branch[i];
 
-            //double yaw;
-            //RRTStar.computeYaw(bounded_radius, yaw);
-
             std::shared_ptr<rrt_star::Node> nearest_node_best;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
             
             std::shared_ptr<rrt_star::Node> new_node_best;
             new_node_best = std::make_shared<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
-
-            //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes_best;
-            //RRTStar.findNearby(tree, new_node_best, radius, nearby_nodes_best);
-            //RRTStar.chooseParent(new_node_best, nearby_nodes_best);
-
-            /*eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment_best;
-
-            trajectory_point.position_W.head(3) = new_node_best->parent->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->parent->point[3]);
-            trajectory_segment_best.push_back(trajectory_point);
-
-            trajectory_point.position_W.head(3) = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-            trajectory_segment_best.push_back(trajectory_point);
-
-            bool success_collision_best = false;
-            success_collision_best = isPathCollisionFree(trajectory_segment_best);
-
-            if (!success_collision_best) {
-                //clear_node();
-                trajectory_segment_best.clear();
-                break;
-            }
-
-            trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
             trajectory_point.position_W = new_node_best->point.head(3);
@@ -262,16 +228,6 @@ void NBVMultiPlanner::NBV() {
 
             double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
             new_node_best->gain = result_best;
-
-            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            //new_node_best->gain = result.first;
-            //new_node_best->point[3] = result.second;
-
-            /*eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-            trajectory_point_gain.position_W = new_node_best->point.head(3);
-            trajectory_point_gain.setFromYaw(new_node_best->point[3]);
-            new_node_best->gain = segment_evaluator.computeGain(trajectory_point_gain);*/
-            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
@@ -284,7 +240,6 @@ void NBVMultiPlanner::NBV() {
             ROS_INFO("[NBVMultiPlanner]: Best Score BB: %f", new_node_best->score);
 
             RRTStar.addKDTreeNode(new_node_best);
-            //tree.push_back(new_node_best);
             visualize_edge(new_node_best, ns);
 
             ++j;
@@ -303,25 +258,14 @@ void NBVMultiPlanner::NBV() {
         rand_point += root->point.head(3);
 
         std::shared_ptr<rrt_star::Node> nearest_node;
-        //RRTStar.findNearest(tree, rand_point, nearest_node);
         RRTStar.findNearestKD(rand_point, nearest_node);
 
         std::shared_ptr<rrt_star::Node> new_node;
         RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
 
-        //std::shared_ptr<rrt_star::Node> new_node;
         if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
             continue;
         }
-
-        //visualize_node(new_node->point, ns);
-
-        //std::cout << "New Point: " << new_node->point << std::endl;
-        
-        //new_node->parent = nearest_node;
-
-        //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes = RRTStar.findNearby(tree, new_node, radius);
-        //new_node = RRTStar.chooseParent(new_node, nearby_nodes);
 
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
@@ -341,13 +285,6 @@ void NBVMultiPlanner::NBV() {
             continue;
         }
 
-        /*if (!success_collision) {
-            //clear_node();
-            trajectory_segment.clear();
-            collision_id_counter_++;
-            continue;
-        }*/
-
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
 
@@ -358,17 +295,6 @@ void NBVMultiPlanner::NBV() {
         //ROS_INFO("[NBVMultiPlanner]: Best gain RayCast: %f", new_node->gain);
         double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
         new_node->gain = result;
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_gain);
-        //new_node->gain = result.first;
-        //new_node->point[3] = result.second;
-        //ROS_INFO("[NBVMultiPlanner]: Best gain AEP: %f", new_node->gain);
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        //ROS_INFO("[NBVMultiPlanner]: Best gain Bircher Optimized: %f", new_node->gain);
-        //new_node->gain = segment_evaluator.computeGain(trajectory_point_gain);
-        //ROS_INFO("[NBVMultiPlanner]: Best gain Bircher: %f", new_node->gain);
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-
-        //ROS_INFO("[NBVMultiPlanner]: Best Gain: %f", new_node->gain);
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -378,13 +304,10 @@ void NBVMultiPlanner::NBV() {
             best_node = new_node;
         }
 
-        //ROS_INFO("[NBVMultiPlanner]: Yaw: %f", new_node->point[3]);
         ROS_INFO("[NBVMultiPlanner]: Best Score: %f", new_node->score);
 
-        //tree.push_back(new_node);
         RRTStar.addKDTreeNode(new_node);
         visualize_edge(new_node, ns);
-        //RRTStar.rewire(tree, new_node, nearby_nodes, radius);
 
         if (j > N_termination) {
             ROS_INFO("[NBVMultiPlanner]: NBV Terminated");

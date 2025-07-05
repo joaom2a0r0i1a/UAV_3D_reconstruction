@@ -5,7 +5,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     //ns = "uav1";
 
     /* Parameter loading */
-    mrs_lib::ParamLoader param_loader(nh_private_, "planner");
+    mrs_lib::ParamLoader param_loader(nh_private_, "NBVPlanner");
 
     // Namespace
     param_loader.loadParam("uav_namespace", ns);
@@ -46,7 +46,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
-    //changeState(STATE_IDLE);
     state_ = STATE_IDLE;
     iteration_ = 0;
 
@@ -61,7 +60,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     segment_evaluator.setEsdfMap(esdf_map_);
             
     // Setup Tf Transformer
-    transformer_ = std::make_unique<mrs_lib::Transformer>("planner");
+    transformer_ = std::make_unique<mrs_lib::Transformer>("NBVPlanner");
     transformer_->setDefaultFrame(frame_id);
     transformer_->setDefaultPrefix(ns);
     transformer_->retryLookupNewest(true);
@@ -86,7 +85,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
     shopts.nh                 = nh_private_;
-    shopts.node_name          = "planner";
+    shopts.node_name          = "NBVPlanner";
     shopts.no_message_timeout = mrs_lib::no_timeout;
     shopts.threadsafe         = true;
     shopts.autostart          = true;
@@ -95,8 +94,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &NBVPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &NBVPlanner::callbackControlManagerDiag, this);
-    sub_tracker_cmd = mrs_lib::SubscribeHandler<mrs_msgs::TrackerCommand>(shopts, "tracker_cmd_in", &NBVPlanner::callbackTrackerCmd, this);
-    sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &NBVPlanner::callbackStart, this);
@@ -136,7 +133,7 @@ void NBVPlanner::GetTransformation() {
     // From Body Frame to Camera Frame
     auto Message_C_B = transformer_->getTransform(body_frame_id, camera_frame_id, ros::Time(0));
     if (!Message_C_B) {
-        ROS_ERROR_THROTTLE(1.0, "[planner]: could not get transform from body frame to the camera frame!");
+        ROS_ERROR_THROTTLE(1.0, "[NBVPlanner]: could not get transform from body frame to the camera frame!");
         return;
     }
 
@@ -152,8 +149,6 @@ void NBVPlanner::GetTransformation() {
 void NBVPlanner::NBV() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
 
     std::shared_ptr<rrt_star::Node> root;
     if (prev_best_branch.size() > 1) {
@@ -188,7 +183,7 @@ void NBVPlanner::NBV() {
                 rotate();
                 changeState(STATE_WAITING_INITIALIZE);
             } else {
-                ROS_INFO("[planner]: Enough");
+                ROS_INFO("[NBVPlanner]: Enough");
                 collision_id_counter_ = 0;
                 break;
             }
@@ -203,40 +198,12 @@ void NBVPlanner::NBV() {
             
             const Eigen::Vector4d& node_position = prev_best_branch[i];
 
-            //double yaw;
-            //RRTStar.computeYaw(bounded_radius, yaw);
-
             std::shared_ptr<rrt_star::Node> nearest_node_best;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
             
             std::shared_ptr<rrt_star::Node> new_node_best;
             new_node_best = std::make_shared<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
-
-            //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes_best;
-            //RRTStar.findNearby(tree, new_node_best, radius, nearby_nodes_best);
-            //RRTStar.chooseParent(new_node_best, nearby_nodes_best);
-
-            /*eth_mav_msgs::EigenTrajectoryPoint::Vector trajectory_segment_best;
-
-            trajectory_point.position_W.head(3) = new_node_best->parent->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->parent->point[3]);
-            trajectory_segment_best.push_back(trajectory_point);
-
-            trajectory_point.position_W.head(3) = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-            trajectory_segment_best.push_back(trajectory_point);
-
-            bool success_collision_best = false;
-            success_collision_best = isPathCollisionFree(trajectory_segment_best);
-
-            if (!success_collision_best) {
-                //clear_node();
-                trajectory_segment_best.clear();
-                break;
-            }
-
-            trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
             trajectory_point.position_W = new_node_best->point.head(3);
@@ -245,35 +212,17 @@ void NBVPlanner::NBV() {
             double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
             new_node_best->gain = result_best;
 
-            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            //new_node_best->gain = result.first;
-            //new_node_best->point[3] = result.second;
-
-            /*eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-            trajectory_point_gain.position_W = new_node_best->point.head(3);
-            trajectory_point_gain.setFromYaw(new_node_best->point[3]);
-            new_node_best->gain = segment_evaluator.computeGain(trajectory_point_gain);*/
-            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
-
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
-
-            /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
-            // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
-            const double EPSILON = 0.000001;
-            if (std::abs(new_node_best->score) < EPSILON) {
-                new_node_best->score = 0.0;
-            }*/
 
             if (new_node_best->score > best_score_) {
                 best_score_ = new_node_best->score;
                 best_node = new_node_best;
             }
 
-            ROS_INFO("[planner]: Best Score BB: %f", new_node_best->score);
+            ROS_INFO("[NBVPlanner]: Best Score BB: %f", new_node_best->score);
 
             RRTStar.addKDTreeNode(new_node_best);
-            //tree.push_back(new_node_best);
             visualize_edge(new_node_best, ns);
 
             ++j;
@@ -292,36 +241,23 @@ void NBVPlanner::NBV() {
         rand_point += root->point.head(3);
 
         std::shared_ptr<rrt_star::Node> nearest_node;
-        //RRTStar.findNearest(tree, rand_point, nearest_node);
         RRTStar.findNearestKD(rand_point, nearest_node);
 
         std::shared_ptr<rrt_star::Node> new_node;
         RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
 
-        //std::shared_ptr<rrt_star::Node> new_node;
         if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
             continue;
         }
 
-        //visualize_node(new_node->point, ns);
-
-        //std::cout << "New Point: " << new_node->point << std::endl;
-        
-        //new_node->parent = nearest_node;
-
-        //std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes = RRTStar.findNearby(tree, new_node, radius);
-        //new_node = RRTStar.chooseParent(new_node, nearby_nodes);
-
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
-        //trajectory_segment.push_back(new_node->parent);
         trajectory_segment.push_back(new_node);
 
         bool success_collision = false;
         success_collision = isPathCollisionFree(trajectory_segment);
 
         if (!success_collision) {
-            //clear_node();
             trajectory_segment.clear();
             collision_id_counter_++;
             continue;
@@ -336,17 +272,6 @@ void NBVPlanner::NBV() {
         trajectory_point_gain.setFromYaw(new_node->point[3]);
         double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
         new_node->gain = result;
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_gain);
-        //new_node->gain = result.first;
-        //new_node->point[3] = result.second;
-        //ROS_INFO("[planner]: Best gain AEP: %f", new_node->gain);
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        //ROS_INFO("[planner]: Best gain Bircher Optimized: %f", new_node->gain);
-        //new_node->gain = segment_evaluator.computeGain(trajectory_point_gain);
-        //ROS_INFO("[planner]: Best gain Bircher: %f", new_node->gain);
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-
-        //ROS_INFO("[planner]: Best Gain: %f", new_node->gain);
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -356,16 +281,13 @@ void NBVPlanner::NBV() {
             best_node = new_node;
         }
 
-        //ROS_INFO("[planner]: Yaw: %f", new_node->point[3]);
-        ROS_INFO("[planner]: Best Score: %f", new_node->score);
+        ROS_INFO("[NBVPlanner]: Best Score: %f", new_node->score);
 
-        //tree.push_back(new_node);
         RRTStar.addKDTreeNode(new_node);
         visualize_edge(new_node, ns);
-        //RRTStar.rewire(tree, new_node, nearby_nodes, radius);
 
         if (j > N_termination) {
-            ROS_INFO("[planner]: NBV Terminated");
+            ROS_INFO("[NBVPlanner]: NBV Terminated");
             RRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
@@ -395,7 +317,7 @@ void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.header.frame_id = ns + "/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
 
-    ROS_INFO("[planner]: Flying 3 meters up");
+    ROS_INFO("[NBVPlanner]: Flying 3 meters up");
 
     initial_reference.reference.position.x = pose[0];
     initial_reference.reference.position.y = pose[1];
@@ -405,7 +327,7 @@ void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     // Max horizontal speed is 1 m/s so we wait 2 second between points
     ros::Duration(3).sleep();
 
-    ROS_INFO("[planner]: Rotating 360 degrees");
+    ROS_INFO("[NBVPlanner]: Rotating 360 degrees");
 
     for (double i = 0.0; i <= 2.0; i = i + 0.4) {
         initial_reference.reference.position.x = pose[0];
@@ -419,7 +341,7 @@ void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
 
     ros::Duration(0.5).sleep();
 
-    ROS_INFO("[planner]: Flying 2 meters down");
+    ROS_INFO("[NBVPlanner]: Flying 2 meters down");
 
     initial_reference.reference.position.x = pose[0];
     initial_reference.reference.position.y = pose[1];
@@ -428,57 +350,6 @@ void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
     ros::Duration(2).sleep();
-
-    /*// Initialization motion, necessary for the planning of initial paths.
-    // Move 10 meters in the z axis and then back to the initial position
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1];
-    initial_reference.reference.position.z = pose[2] + 12;
-    initial_reference.reference.heading = pose[3];
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 10 second between points
-    ros::Duration(12).sleep();
-
-    // Rotate 360 degrees
-    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
-        initial_reference.reference.position.x = pose[0];
-        initial_reference.reference.position.y = pose[1];
-        initial_reference.reference.position.z = pose[2] + 12;
-        initial_reference.reference.heading = pose[3] + M_PI * i;
-        pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
-    }
-
-    // Wait for rotation to finish
-    ros::Duration(0.5).sleep();
-
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1] - 2.5;;
-    initial_reference.reference.position.z = pose[2] + 12;
-    initial_reference.reference.heading = pose[3] - M_PI/2;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 4 seconds between points
-    ros::Duration(2.5).sleep();
-
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1] - 2.5;;
-    initial_reference.reference.position.z = pose[2] + 1;
-    initial_reference.reference.heading = pose[3] - M_PI/2;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 9 second between points
-    ros::Duration(11).sleep();
-
-    // Move 1 meter in the x axis and then back to the initial position
-    for (double j = -2.5; j <= 0.0; j = j + 0.5) {
-        initial_reference.reference.position.x = pose[0];
-        initial_reference.reference.position.y = pose[1] + j;
-        initial_reference.reference.position.z = pose[2] + 1;
-        initial_reference.reference.heading = pose[3];
-        pub_initial_reference.publish(initial_reference);
-        // Max horizontal speed is 1 m/s so we wait 1 second between points
-        ros::Duration(0.5).sleep();
-    }*/
 }
 
 void NBVPlanner::rotate() {
@@ -509,14 +380,13 @@ bool NBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigge
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
-        ROS_ERROR_STREAM_THROTTLE(0.5, "[planner]: " << ss.str());
+        ROS_ERROR_STREAM_THROTTLE(0.5, "[NBVPlanner]: " << ss.str());
 
         res.success = false;
         res.message = ss.str();
         return true;
     }
 
-    interrupted_ = false;
     changeState(STATE_INITIALIZE);
 
     res.success = true;
@@ -536,7 +406,7 @@ bool NBVPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
-        ROS_ERROR_STREAM_THROTTLE(0.5, "[planner]: " << ss.str());
+        ROS_ERROR_STREAM_THROTTLE(0.5, "[NBVPlanner]: " << ss.str());
 
         res.success = false;
         res.message = ss.str();
@@ -557,43 +427,19 @@ void NBVPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagno
     if (!is_initialized) {
         return;
     }
-    ROS_INFO_ONCE("[planner]: getting ControlManager diagnostics");
+    ROS_INFO_ONCE("[NBVPlanner]: getting ControlManager diagnostics");
     control_manager_diag = *msg;
-}
-
-void NBVPlanner::callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg) {
-    if (!is_initialized) {
-        return;
-    }
-    ROS_INFO_ONCE("[planner]: getting TrackerCmd diagnostics");
-    tracker_cmd = *msg;
 }
 
 void NBVPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
     if (!is_initialized) {
         return;
     }
-    ROS_INFO_ONCE("[planner]: getting UavState diagnostics");
+    ROS_INFO_ONCE("[NBVPlanner]: getting UavState diagnostics");
     geometry_msgs::Pose uav_state = msg->pose;
     double yaw = mrs_lib::getYaw(uav_state);
     pose = {uav_state.position.x, uav_state.position.y, uav_state.position.z, yaw};
 }
-
-// MUDAR VELOCIDADE ANGULAR 
-// MUDAR OPTIMIZACAO DO ANGULO 
-// MUDAR INICIALIZAÇÃO 
-
-/*void NBVPlanner::timeoutControlManagerDiag(const std::string& topic, const ros::Time& last_msg) {
-    ROS_INFO_ONCE("[planner]: getting ControlManager diagnostics");
-    if (!is_initialized) {
-        return;
-    }
-    if (!sub_control_manager_diag.hasMsg()) {
-        return;
-    }
-    ROS_INFO("[planner]: I AM GETTING THE INFO");
-    ROS_WARN_THROTTLE(1.0, "[planner]: Control manager diag timeouted!");
-}*/
 
 void NBVPlanner::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
@@ -604,10 +450,9 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 
     const bool got_control_manager_diag = sub_control_manager_diag.hasMsg() && (ros::Time::now() - sub_control_manager_diag.lastMsgTime()).toSec() < 2.0;
     const bool got_uav_state = sub_uav_state.hasMsg() && (ros::Time::now() - sub_uav_state.lastMsgTime()).toSec() < 2.0;
-    const bool got_tracker_cmd = sub_tracker_cmd.hasMsg() && (ros::Time::now() - sub_tracker_cmd.lastMsgTime()).toSec() < 2.0;
 
-    if (!got_control_manager_diag || !got_uav_state || !got_tracker_cmd) {
-        ROS_INFO_THROTTLE(1.0, "[planner]: waiting for data: ControlManagerDiag = %s, UavState = %s, TrackerCmd = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE", got_tracker_cmd ? "TRUE" : "FALSE");
+    if (!got_control_manager_diag || !got_uav_state) {
+        ROS_INFO_THROTTLE(1.0, "[NBVPlanner]: waiting for data: ControlManagerDiag = %s, UavState = %s", got_control_manager_diag ? "TRUE" : "FALSE", got_uav_state ? "TRUE" : "FALSE");
         return;
     } else {
         ready_to_plan_ = true;
@@ -617,31 +462,29 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
     starter.data = true;
     pub_start.publish(starter);
 
-    ROS_INFO_ONCE("[planner]: main timer spinning");
+    ROS_INFO_ONCE("[NBVPlanner]: main timer spinning");
 
     if (!set_variables) {
         GetTransformation();
-        ROS_INFO("[planner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
-        ROS_INFO("[planner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
+        ROS_INFO("[NBVPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
+        ROS_INFO("[NBVPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
         set_variables = true;
     }
-
-    //const mrs_msgs::ControlManagerDiagnosticsConstPtr control_manager_diag_ = sub_control_manager_diag.getMsg();
     
     switch (state_) {
         case STATE_IDLE: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[planner]: tracker has goal");
+                ROS_INFO("[NBVPlanner]: tracker has goal");
             } else {
-                ROS_INFO("[planner]: waiting for command");
+                ROS_INFO("[NBVPlanner]: waiting for command");
             }
             break;
         }
         case STATE_WAITING_INITIALIZE: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[planner]: tracker has goal");
+                ROS_INFO("[NBVPlanner]: tracker has goal");
             } else {
-                ROS_INFO("[planner]: waiting for command");
+                ROS_INFO("[NBVPlanner]: waiting for command");
                 changeState(STATE_PLANNING);
             }
             break;
@@ -669,29 +512,6 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
-
-            /*ros::Time path_stamp;
-            const mrs_msgs::MpcPredictionFullState prediction_full_state = sub_tracker_cmd.getMsg()->full_state_prediction;
-
-            if (prediction_full_state.stamps.size() == 0) {
-                ROS_WARN("[planner]: Setting current trajectory, prediction full state is empty");
-                path_stamp = ros::Time(0);
-            } else {
-                ROS_INFO("[planner]: Setting future trajectory");
-                path_stamp = prediction_full_state.stamps.back();
-                std::stringstream ss;
-                ss << path_stamp.sec << "." << path_stamp.nsec;
-                std::cout << "Stamp: " << ss.str() << std::endl;
-                if (ros::Time::now() > path_stamp || !control_manager_diag.tracker_status.have_goal) {
-                    path_stamp = ros::Time(0);
-                }
-            }*/
-
-            /*ros::Time path_stamp = initial_condition.value().header.stamp;
-
-            if (ros::Time::now() > path_stamp || !control_manager_diag->tracker_status.have_goal) {
-                path_stamp = ros::Time(0);
-            }*/
 
             mrs_msgs::GetPathSrv srv_get_path;
 
@@ -721,12 +541,12 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             bool success = sc_trajectory_generation.call(srv_get_path);
 
             if (!success) {
-                ROS_ERROR("[planner]: service call for trajectory failed");
+                ROS_ERROR("[NBVPlanner]: service call for trajectory failed");
                 changeState(STATE_STOPPED);
                 return;
             } else {
                 if (!srv_get_path.response.success) {
-                    ROS_ERROR("[planner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
+                    ROS_ERROR("[NBVPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
                     changeState(STATE_STOPPED);
                     return;
                 }
@@ -739,12 +559,12 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
 
             if (!success_trajectory) {
-                ROS_ERROR("[planner]: service call for trajectory reference failed");
+                ROS_ERROR("[NBVPlanner]: service call for trajectory reference failed");
                 changeState(STATE_STOPPED);
                 return;
             } else {
                 if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[planner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
+                    ROS_ERROR("[NBVPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
                     changeState(STATE_STOPPED);
                     return;
                 }
@@ -760,34 +580,34 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
         }
         case STATE_MOVING: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[planner]: tracker has goal");
+                ROS_INFO("[NBVPlanner]: tracker has goal");
                 mrs_msgs::UavState::ConstPtr uav_state_here = sub_uav_state.getMsg();
                 geometry_msgs::Pose current_pose = uav_state_here->pose;
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
-                ROS_INFO("[planner]: Distance to waypoint: %.2f", dist);
+                ROS_INFO("[NBVPlanner]: Distance to waypoint: %.2f", dist);
                 if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
                     changeState(STATE_PLANNING);
                 }
             } else {
-                ROS_INFO("[planner]: waiting for command");
+                ROS_INFO("[NBVPlanner]: waiting for command");
                 changeState(STATE_PLANNING);
             }
             break;
         }
         case STATE_STOPPED: {
-            ROS_INFO_ONCE("[planner]: Total Iterations: %d", iteration_);
-            ROS_INFO("[planner]: Shutting down.");
+            ROS_INFO_ONCE("[NBVPlanner]: Total Iterations: %d", iteration_);
+            ROS_INFO("[NBVPlanner]: Shutting down.");
             ros::shutdown();
             return;
         }
         default: {
             if (control_manager_diag.tracker_status.have_goal) {
-                ROS_INFO("[planner]: tracker has goal");
+                ROS_INFO("[NBVPlanner]: tracker has goal");
             } else {
-                ROS_INFO("[planner]: waiting for command");
+                ROS_INFO("[NBVPlanner]: waiting for command");
             }
             break;
         }
@@ -797,24 +617,12 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 void NBVPlanner::changeState(const State_t new_state) {
     const State_t old_state = state_;
 
-    if (interrupted_ && old_state == STATE_STOPPED) {
-        ROS_WARN("[planner]: Planning interrupted, not changing state.");
+    if (old_state == STATE_STOPPED) {
+        ROS_WARN("[NBVPlanner]: Planning interrupted, not changing state.");
         return;
     }
 
-    switch (new_state) {
-
-        case STATE_PLANNING: {
-
-            if (old_state == STATE_STOPPED) {
-                replanning_counter_ = 0;
-            }
-        }
-
-        default: {break;}
-    }
-
-    ROS_INFO("[planner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());
+    ROS_INFO("[NBVPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());
 
     state_ = new_state;
 }

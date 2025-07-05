@@ -23,7 +23,6 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
@@ -33,7 +32,6 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     param_loader.loadParam("local_planning/step_size", step_size);
     param_loader.loadParam("local_planning/tolerance", tolerance);
     param_loader.loadParam("local_planning/g_zero", g_zero);
-    param_loader.loadParam("local_planning/sigma_thresh", sigma_threshold);
 
     // RRT* Tree (global Planning)
     param_loader.loadParam("global_planning/N_min_nodes", N_min_nodes);
@@ -55,7 +53,6 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
 
     // Initialize UAV as state IDLE
     state_ = STATE_IDLE;
-    //changeState(STATE_IDLE);
     iteration_ = 0;
 
     // Get vertical FoV and setup camera
@@ -107,7 +104,6 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &AEPMultiPlanner::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &AEPMultiPlanner::callbackControlManagerDiag, this);
     sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &AEPMultiPlanner::callbackEvade, this);
-    //sub_constraints = mrs_lib::SubscribeHandler<mrs_msgs::DynamicsConstraints>(shopts, "constraints_in");
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &AEPMultiPlanner::callbackStart, this);
@@ -117,7 +113,6 @@ AEPMultiPlanner::AEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandl
     sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
     sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
     sc_best_node = mrs_lib::ServiceClientHandler<cache_nodes::BestNode>(nh_private_, "best_node_out");
-    sc_query = mrs_lib::ServiceClientHandler<cache_nodes::Query>(nh_private_, "gp_query_out");
 
     /* Timer */
     timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &AEPMultiPlanner::timerMain, this);
@@ -176,10 +171,6 @@ void AEPMultiPlanner::AEP() {
             changeState(STATE_STOPPED);
             return;   
         }
-        /*for (size_t i = 0; i < GlobalFrontiers.size(); ++i) {
-            std::cout << "Global Frontier: " << GlobalFrontiers[i] << std::endl;
-            //std::cout << "Gain: " << GlobalFrontiers[i] << std::endl;
-        }*/
         ROS_INFO("[AEPMultiPlanner]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
         next_best_node = best_global_node;
@@ -203,8 +194,6 @@ void AEPMultiPlanner::localPlanner() {
         segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
     }
     
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
     std::shared_ptr<rrt_star::Node> root;
     if (best_branch.size() > 1) {
         root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
@@ -216,7 +205,6 @@ void AEPMultiPlanner::localPlanner() {
     std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
     root->gain = result.first;
     root->point[3] = result.second;
-    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
 
     root->cost = 0;
     root->score = root->gain;
@@ -271,21 +259,6 @@ void AEPMultiPlanner::localPlanner() {
             std::shared_ptr<rrt_star::Node> new_node_best;
             new_node_best = std::make_shared<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
-
-            /*std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_best;
-            trajectory_segment_best.push_back(new_node_best->parent);
-            trajectory_segment_best.push_back(new_node_best);
-
-            bool success_collision_best = false;
-            success_collision_best = isPathCollisionFree(trajectory_segment_best);
-
-            if (!success_collision_best) {
-                clear_node();
-                trajectory_segment_best.clear();
-                break;
-            }
-
-            trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
             trajectory_point.position_W = new_node_best->point.head(3);
@@ -293,8 +266,6 @@ void AEPMultiPlanner::localPlanner() {
             std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
-
-            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
@@ -309,7 +280,6 @@ void AEPMultiPlanner::localPlanner() {
             ROS_INFO("[AEPMultiPlanner]: Best Score BB: %f", new_node_best->score);
 
             RRTStar.addKDTreeNode(new_node_best);
-            //tree.push_back(new_node_best);
             visualize_edge(new_node_best, ns);
 
             ++j;
@@ -326,7 +296,6 @@ void AEPMultiPlanner::localPlanner() {
         rand_point += root->point.head(3);
 
         std::shared_ptr<rrt_star::Node> nearest_node;
-        //RRTStar.findNearest(tree, rand_point, nearest_node);
         RRTStar.findNearestKD(rand_point, nearest_node);
 
         std::shared_ptr<rrt_star::Node> new_node;
@@ -335,15 +304,6 @@ void AEPMultiPlanner::localPlanner() {
         if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
             continue;
         }
-
-        //std::shared_ptr<rrt_star::Node> new_node;
-        /*if (new_node->point[0] < 12 && new_node->point[0] > -12 && new_node->point[1] > -7.0 && new_node->point[1] < 7.0 && new_node->point[2] > 0 && new_node->point[2] < 12.5) {
-            continue;
-        }
-
-        if (new_node->point[2] < 0.5 || new_node->point[2] > 14.5) {
-            continue;
-        }*/
 
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
@@ -362,32 +322,12 @@ void AEPMultiPlanner::localPlanner() {
 
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
-        
-        /*cache_nodes::Query srv;
-        srv.request.point.x = new_node->point[0];
-        srv.request.point.y = new_node->point[1];
-        srv.request.point.z = new_node->point[2];
-
-        bool success_query = sc_query.call(srv);
-
-        if (!success_query) {
-            ROS_WARN("[AEPMultiPlanner]: Service call for Gaussian process failed");
-        }
-
-        if (success_query && srv.response.sigma < sigma_threshold) {
-            new_node->gain = srv.response.mu;
-            new_node->point[3] = srv.response.yaw;
-        } else {
-            segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        }*/
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
         std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
-
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -407,7 +347,6 @@ void AEPMultiPlanner::localPlanner() {
         if (new_node->gain > g_zero) {
             cacheNode(new_node);
         }
-        //cacheNode(new_node);
 
         if (j > N_termination) {
             ROS_INFO("[AEPMultiPlanner]: Going to Global Planning");
@@ -415,7 +354,6 @@ void AEPMultiPlanner::localPlanner() {
             best_branch.clear();
             clearMarkers();
             goto_global_planning = true;
-            //changeState(STATE_STOPPED);
             return;
         }
 
@@ -457,11 +395,8 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
     RRTStar.addKDTreeNode(root);
     std::vector<std::shared_ptr<rrt_star::Node>> all_global_goals;
 
-    //ROS_INFO("[AEPMultiPlanner]: I AM HERE");
-
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
-        // ADD LOGIC FOR BUILDING RRT* TREE TOWARDS GIVEN GOALS FOR N NUMBER OF ITERATIONS
         Eigen::Vector3d rand_point_star;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
         rand_point_star += root->point.head(3);
@@ -471,26 +406,15 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
 
         std::shared_ptr<rrt_star::Node> new_node_star;
         RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star);
-        //RRTStar.steer(nearest_node_star, rand_point_star, step_size, new_node_star);
-
-        /*if (new_node_star->point[0] < 12 && new_node_star->point[0] > -12 && new_node_star->point[1] > -7.0 && new_node_star->point[1] < 7.0 && new_node_star->point[2] > 0 && new_node_star->point[2] < 12.5) {
-            continue;
-        }
-
-        if (new_node_star->point[2] < 0.5 || new_node_star->point[2] > 14.5) {
-            continue;
-        }*/
 
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_star;
-        //trajectory_segment.push_back(new_node->parent);
         trajectory_segment_star.push_back(new_node_star);
 
         bool success_collision_star = false;
         success_collision_star = isPathCollisionFree(trajectory_segment_star);
 
         if (!success_collision_star || multiagent::isInCollision(new_node_star->parent->point, new_node_star->point, uav_radius, segments_)) {
-            //clear_node();
             trajectory_segment_star.clear();
             continue;
         }
@@ -507,9 +431,8 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
         RRTStar.rewire(new_node_star, nearby_nodes_star, radius);
         visualize_edge(new_node_star, ns);
 
-        // ADD LOGIC TO CHECK IF GOAL HAS BEEN REACHED
         bool goal_reached;
-        goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star); // NEED TO ADD FRONTIER HERE
+        goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star);
         if (goal_reached) {
             segment_evaluator.computeScore(new_node_star, global_lambda);
             all_global_goals.push_back(new_node_star);
@@ -520,7 +443,6 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
 
     ROS_INFO("[AEPMultiPlanner]: Global Planner Ends");
 
-    // ADD LOGIC TO GET THE BEST PATH FOR THE REACHED GOALS (SMALLEST COST, I.E., SHORTEST PATH)
     getBestGlobalPath(all_global_goals, best_global_node);
     all_global_goals.clear();
 }
@@ -537,21 +459,7 @@ void AEPMultiPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFro
             frontier[1] = srv.response.best_node[i].y;
             frontier[2] = srv.response.best_node[i].z;
             GlobalFrontiers.push_back(frontier);
-            /*Eigen::Vector4d collision_check(frontier[0], frontier[1], frontier[2], 0.0);
-            if (!multiagent::isInCollision(collision_check, uav_radius, segments_)) {
-                GlobalFrontiers.push_back(frontier);
-            }*/
-            // Remove all elements except the last two
-            //if (GlobalFrontiers.size() > 4) {
-            //    GlobalFrontiers.erase(GlobalFrontiers.begin(), GlobalFrontiers.end() - 4);
-            //}
-            //GlobalFrontiers.push_back(frontier);
         }
-        return;
-        //GlobalFrontiers.push_back(best_global_frontier);
-    }
-    else {
-        return;
     }
 }
 
@@ -561,7 +469,6 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
     for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
         goals_tree.addKDTreePoint(GlobalFrontiers[i]);
     }
-    //goals_tree.initializeKDTreeWithPoints(GlobalFrontiers);
 
     // Find the nearest node in the KD Tree
     Eigen::Vector3d nearest_goal;
@@ -572,20 +479,14 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
     }
 
     if ((nearest_goal - node->point.head(3)).norm() < tolerance) {
-        ROS_INFO("[AEPMultiPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
-        ROS_INFO("[AEPMultiPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);
-        /*std::cout << "Goal X: " << nearest_goal[0] << std::endl;
-        std::cout << "Goal Y: " << nearest_goal[1] << std::endl;
-        std::cout << "Goal Z: " << nearest_goal[2] << std::endl;
-        std::cout << "Real Goal X: " << node->point[0] << std::endl;
-        std::cout << "Real Goal Y: " << node->point[1] << std::endl;
-        std::cout << "Real Goal Z: " << node->point[2] << std::endl;*/
+        //ROS_INFO("[AEPMultiPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
+        //ROS_INFO("[AEPMultiPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);
 
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        //std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point_global);
 
         node->gain = result.first;
         node->point[3] = result.second;
@@ -647,22 +548,8 @@ void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_st
         auxiliar_node = auxiliar_node->parent;
     }
 
-    for (size_t i = 0; i < global_goals.size(); ++i) {
-        ROS_INFO("[AEPMultiPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->point[0], global_goals[i]->point[1], global_goals[i]->point[2]);
-        ROS_INFO("[AEPMultiPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost, global_goals[i]->score);
-        /*std::cout << "Obtained Goal X: " << global_goals[i]->point[0] << std::endl;
-        std::cout << "Obtained Goal Y: " << global_goals[i]->point[1] << std::endl;
-        std::cout << "Obtained Goal Z: " << global_goals[i]->point[2] << std::endl;
-        std::cout << "Obtained Goal Cost: " << global_goals[i]->cost << std::endl;*/
-    }
-
     ROS_INFO("[AEPMultiPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
     ROS_INFO("[AEPMultiPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_node->gain, best_global_node->cost, best_global_node->score);
-    /*std::cout << "Chosen Goal X: " << best_global_node->point[0] << std::endl;
-    std::cout << "Chosen Goal Y: " << best_global_node->point[1] << std::endl;
-    std::cout << "Chosen Goal Z: " << best_global_node->point[2] << std::endl;
-    std::cout << "Chosen Goal Gain: " << best_global_node->gain << std::endl;
-    std::cout << "Chosen Goal Cost: " << best_global_node->cost << std::endl;*/
 
     visualize_path(best_global_node, ns);
 }
@@ -723,57 +610,6 @@ void AEPMultiPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     pub_initial_reference.publish(initial_reference);
     // Max horizontal speed is 1 m/s so we wait 2 second between points
     ros::Duration(1).sleep();
-
-    /*// Initialization motion, necessary for the planning of initial paths.
-    // Move 10 meters in the z axis and then back to the initial position
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1];
-    initial_reference.reference.position.z = pose[2] + 12;
-    initial_reference.reference.heading = pose[3];
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 10 second between points
-    ros::Duration(12).sleep();
-
-    // Rotate 360 degrees
-    for (double i = 0.0; i <= 2.0; i = i + 0.4) {
-        initial_reference.reference.position.x = pose[0];
-        initial_reference.reference.position.y = pose[1];
-        initial_reference.reference.position.z = pose[2] + 12;
-        initial_reference.reference.heading = pose[3] + M_PI * i;
-        pub_initial_reference.publish(initial_reference);
-        // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.8*M_PI).sleep();
-    }
-
-    // Wait for rotation to finish
-    ros::Duration(0.5).sleep();
-
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1] - 2.5;;
-    initial_reference.reference.position.z = pose[2] + 12;
-    initial_reference.reference.heading = pose[3] - M_PI/2;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 4 seconds between points
-    ros::Duration(2.5).sleep();
-
-    initial_reference.reference.position.x = pose[0];
-    initial_reference.reference.position.y = pose[1] - 2.5;;
-    initial_reference.reference.position.z = pose[2] + 1;
-    initial_reference.reference.heading = pose[3] - M_PI/2;
-    pub_initial_reference.publish(initial_reference);
-    // Max horizontal speed is 1 m/s so we wait 9 second between points
-    ros::Duration(11).sleep();
-
-    // Move 1 meter in the x axis and then back to the initial position
-    for (double j = -2.5; j <= 0.0; j = j + 0.5) {
-        initial_reference.reference.position.x = pose[0];
-        initial_reference.reference.position.y = pose[1] + j;
-        initial_reference.reference.position.z = pose[2] + 1;
-        initial_reference.reference.heading = pose[3];
-        pub_initial_reference.publish(initial_reference);
-        // Max horizontal speed is 1 m/s so we wait 1 second between points
-        ros::Duration(0.5).sleep();
-    }*/
 }
 
 void AEPMultiPlanner::rotate() {
@@ -811,7 +647,6 @@ bool AEPMultiPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::T
         return true;
     }
 
-    interrupted_ = false;
     changeState(STATE_INITIALIZE);
 
     res.success = true;
@@ -861,7 +696,6 @@ void AEPMultiPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
         return;
     }
     ROS_INFO_ONCE("[AEPMultiPlanner]: getting UavState diagnostics");
-    //uav_state = *msg;
     geometry_msgs::Pose uav_state = msg->pose;
     double yaw = mrs_lib::getYaw(uav_state);
     pose = {uav_state.position.x, uav_state.position.y, uav_state.position.z, yaw};
@@ -1093,21 +927,9 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
 void AEPMultiPlanner::changeState(const State_t new_state) {
     const State_t old_state = state_;
 
-    if (interrupted_ && old_state == STATE_STOPPED) {
+    if (old_state == STATE_STOPPED) {
         ROS_WARN("[AEPMultiPlanner]: Planning interrupted, not changing state.");
         return;
-    }
-
-    switch (new_state) {
-
-        case STATE_PLANNING: {
-
-            if (old_state == STATE_STOPPED) {
-                replanning_counter_ = 0;
-            }
-        }
-
-        default: {break;}
     }
 
     ROS_INFO("[AEPMultiPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());

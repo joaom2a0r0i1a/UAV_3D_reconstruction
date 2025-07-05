@@ -22,7 +22,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
@@ -53,7 +52,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     // Initialize UAV as state IDLE
     state_ = STATE_IDLE;
-    //changeState(STATE_IDLE);
     iteration_ = 0;
     initial_offset = {0, 0, 0};
 
@@ -70,7 +68,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("AEPlanner");
     transformer_->setDefaultFrame(frame_id);
-    //transformer_->setDefaultPrefix(ns);
     transformer_->retryLookupNewest(true);
 
     set_variables = false;
@@ -170,10 +167,6 @@ void AEPlanner::AEP() {
             changeState(STATE_STOPPED);
             return;   
         }
-        /*for (size_t i = 0; i < GlobalFrontiers.size(); ++i) {
-            std::cout << "Global Frontier: " << GlobalFrontiers[i] << std::endl;
-            //std::cout << "Gain: " << GlobalFrontiers[i] << std::endl;
-        }*/
         ROS_INFO("[AEPlanner]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
         
@@ -191,8 +184,6 @@ void AEPlanner::AEP() {
 void AEPlanner::localPlanner() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    //std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
     std::shared_ptr<rrt_star::Node> root;
     if (best_branch.size() > 1) {
         root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
@@ -201,11 +192,9 @@ void AEPlanner::localPlanner() {
     }
     trajectory_point.position_W = root->point.head(3);
     trajectory_point.setFromYaw(root->point[3]);
-    //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
     std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point, initial_offset);
     root->gain = result.first;
     root->point[3] = result.second;
-    //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
 
     root->cost = 0;
     root->score = root->gain;
@@ -217,10 +206,7 @@ void AEPlanner::localPlanner() {
 
     RRTStar.clearKDTree();
     RRTStar.addKDTreeNode(root);
-    /*if (root->gain > g_zero) {
-        cacheNode(root);
-    }*/
-    //cacheNode(root);
+
     clearMarkers();
 
     visualize_node(root->point, ns);
@@ -260,34 +246,13 @@ void AEPlanner::localPlanner() {
             std::shared_ptr<rrt_star::Node> new_node_best;
             new_node_best = std::make_shared<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
-
-            /*std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_best;
-            trajectory_segment_best.push_back(new_node_best->parent);
-            trajectory_segment_best.push_back(new_node_best);
-
-            bool success_collision_best = false;
-            success_collision_best = isPathCollisionFree(trajectory_segment_best);
-
-            if (!success_collision_best) {
-                clear_node();
-                trajectory_segment_best.clear();
-                break;
-            }
-
-            trajectory_segment_best.clear();*/
             visualize_node(new_node_best->point, ns);
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
             std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point, initial_offset);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
-
-            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
 
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
@@ -297,14 +262,10 @@ void AEPlanner::localPlanner() {
                 best_node = new_node_best;
             }
 
-            //ROS_INFO("[AEPlanner]: Best Gain Optimized BB: %f", new_node_best->gain);
-            //ROS_INFO("[AEPlanner]: Best Gain BB: %f", result2.first);
-            //ROS_INFO("[AEPlanner]: Best Cost BB: %f", new_node_best->cost);
             ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
             
 
             RRTStar.addKDTreeNode(new_node_best);
-            //tree.push_back(new_node_best);
             visualize_edge(new_node_best, ns);
 
             ++j;
@@ -321,7 +282,6 @@ void AEPlanner::localPlanner() {
         rand_point += root->point.head(3);
 
         std::shared_ptr<rrt_star::Node> nearest_node;
-        //RRTStar.findNearest(tree, rand_point, nearest_node);
         RRTStar.findNearestKD(rand_point, nearest_node);
 
         std::shared_ptr<rrt_star::Node> new_node;
@@ -331,18 +291,8 @@ void AEPlanner::localPlanner() {
             continue;
         }
 
-        //std::shared_ptr<rrt_star::Node> new_node;
-        /*if (new_node->point[0] < 12 && new_node->point[0] > -12 && new_node->point[1] > -7.0 && new_node->point[1] < 7.0 && new_node->point[2] > 0 && new_node->point[2] < 12.5) {
-            continue;
-        }
-
-        if (new_node->point[2] < 0.5 || new_node->point[2] > 14.5) {
-            continue;
-        }*/
-
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
-        //trajectory_segment.push_back(new_node->parent);
         trajectory_segment.push_back(new_node);
 
         bool success_collision = false;
@@ -357,36 +307,12 @@ void AEPlanner::localPlanner() {
 
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
-        
-        /*cache_nodes::Query srv;
-        srv.request.point.x = new_node->point[0];
-        srv.request.point.y = new_node->point[1];
-        srv.request.point.z = new_node->point[2];
-
-        bool success_query = sc_query.call(srv);
-
-        if (!success_query) {
-            ROS_WARN("[AEPlanner]: Service call for Gaussian process failed");
-        }
-
-        if (success_query && srv.response.sigma < sigma_threshold) {
-            new_node->gain = srv.response.mu;
-            new_node->point[3] = srv.response.yaw;
-        } else {
-            segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
-        }*/
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
-        //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point, initial_offset);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
-
-        //segment_evaluator.computeGainFromsampledYaw(new_node, num_yaw_samples, trajectory_point);
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -396,9 +322,6 @@ void AEPlanner::localPlanner() {
             best_node = new_node;
         }
 
-        //ROS_INFO("[AEPlanner]: Best Gain Optimized: %f", new_node->gain);
-        //ROS_INFO("[AEPlanner]: Best Gain: %f", result2.first);
-        //ROS_INFO("[AEPlanner]: Best Cost: %f", new_node->cost);
         ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
 
         RRTStar.addKDTreeNode(new_node);
@@ -407,7 +330,6 @@ void AEPlanner::localPlanner() {
         if (new_node->gain > g_zero) {
             cacheNode(new_node);
         }
-        //cacheNode(new_node);
 
         if (j > N_termination) {
             ROS_INFO("[AEPlanner]: Going to Global Planning");
@@ -415,7 +337,6 @@ void AEPlanner::localPlanner() {
             best_branch.clear();
             clearMarkers();
             goto_global_planning = true;
-            //changeState(STATE_STOPPED);
             return;
         }
 
@@ -457,11 +378,8 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
     RRTStar.addKDTreeNode(root);
     std::vector<std::shared_ptr<rrt_star::Node>> all_global_goals;
 
-    //ROS_INFO("[AEPlanner]: I AM HERE");
-
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
-        // ADD LOGIC FOR BUILDING RRT* TREE TOWARDS GIVEN GOALS FOR N NUMBER OF ITERATIONS
         Eigen::Vector3d rand_point_star;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
         rand_point_star += root->point.head(3);
@@ -471,19 +389,9 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
 
         std::shared_ptr<rrt_star::Node> new_node_star;
         RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star);
-        //RRTStar.steer(nearest_node_star, rand_point_star, step_size, new_node_star);
-
-        /*if (new_node_star->point[0] < 12 && new_node_star->point[0] > -12 && new_node_star->point[1] > -7.0 && new_node_star->point[1] < 7.0 && new_node_star->point[2] > 0 && new_node_star->point[2] < 12.5) {
-            continue;
-        }
-
-        if (new_node_star->point[2] < 0.5 || new_node_star->point[2] > 14.5) {
-            continue;
-        }*/
 
         // Collision Check
         std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_star;
-        //trajectory_segment.push_back(new_node->parent);
         trajectory_segment_star.push_back(new_node_star);
 
         bool success_collision_star = false;
@@ -507,9 +415,8 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         RRTStar.rewire(new_node_star, nearby_nodes_star, radius);
         visualize_edge(new_node_star, ns);
 
-        // ADD LOGIC TO CHECK IF GOAL HAS BEEN REACHED
         bool goal_reached;
-        goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star); // NEED TO ADD FRONTIER HERE
+        goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star);
         if (goal_reached) {
             segment_evaluator.computeScore(new_node_star, global_lambda);
             all_global_goals.push_back(new_node_star);
@@ -520,7 +427,6 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
 
     ROS_INFO("[AEPlanner]: Global Planner Ends");
 
-    // ADD LOGIC TO GET THE BEST PATH FOR THE REACHED GOALS (SMALLEST COST, I.E., SHORTEST PATH)
     getBestGlobalPath(all_global_goals, best_global_node);
     all_global_goals.clear();
 }
@@ -536,23 +442,8 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
             frontier[0] = srv.response.best_node[i].x;
             frontier[1] = srv.response.best_node[i].y;
             frontier[2] = srv.response.best_node[i].z;
-            /*if (best_global_gain < srv.response.gain[i]) {
-                best_global_gain = srv.response.gain[i];
-                best_global_frontier = frontier;
-                ROS_INFO("[AEPlanner]: Best Global Gains: %f", best_global_gain);
-                GlobalFrontiers.push_back(best_global_frontier);
-            }*/
-            // Remove all elements except the last two
-            //if (GlobalFrontiers.size() > 4) {
-            //    GlobalFrontiers.erase(GlobalFrontiers.begin(), GlobalFrontiers.end() - 4);
-            //}
             GlobalFrontiers.push_back(frontier);
         }
-        return;
-        //GlobalFrontiers.push_back(best_global_frontier);
-    }
-    else {
-        return;
     }
 }
 
@@ -562,7 +453,6 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
     for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
         goals_tree.addKDTreePoint(GlobalFrontiers[i]);
     }
-    //goals_tree.initializeKDTreeWithPoints(GlobalFrontiers);
 
     // Find the nearest node in the KD Tree
     Eigen::Vector3d nearest_goal;
@@ -580,7 +470,6 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global, initial_offset);
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point_global);
 
         node->gain = result.first;
         node->point[3] = result.second;
@@ -588,7 +477,6 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
         std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global, initial_offset);
-        //ROS_INFO("[AEPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
     }
@@ -642,27 +530,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
         auxiliar_node = auxiliar_node->parent;
     }
 
-    for (size_t i = 0; i < global_goals.size(); ++i) {
-        //ROS_INFO("[AEPlanner]: Obtained Goal: [%f, %f, %f]", global_goals[i]->point[0], global_goals[i]->point[1], global_goals[i]->point[2]);
-        //ROS_INFO("[AEPlanner]: Obtained Goal Gain, Cost & Score: [%f, %f, %f]", global_goals[i]->gain, global_goals[i]->cost, global_goals[i]->score);
-        /*std::cout << "Obtained Goal X: " << global_goals[i]->point[0] << std::endl;
-        std::cout << "Obtained Goal Y: " << global_goals[i]->point[1] << std::endl;
-        std::cout << "Obtained Goal Z: " << global_goals[i]->point[2] << std::endl;
-        std::cout << "Obtained Goal Cost: " << global_goals[i]->cost << std::endl;*/
-    }
-
     ROS_INFO("[AEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
     ROS_INFO("[AEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_node->gain, best_global_node->cost, best_global_node->score);
     
     if (best_global_node->gain < 0.2) {
         go_terminate = true;
     }
-    
-    /*std::cout << "Chosen Goal X: " << best_global_node->point[0] << std::endl;
-    std::cout << "Chosen Goal Y: " << best_global_node->point[1] << std::endl;
-    std::cout << "Chosen Goal Z: " << best_global_node->point[2] << std::endl;
-    std::cout << "Chosen Goal Gain: " << best_global_node->gain << std::endl;
-    std::cout << "Chosen Goal Cost: " << best_global_node->cost << std::endl;*/
 
     visualize_path(best_global_node, ns);
 }
@@ -706,7 +579,6 @@ bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
         return true;
     }
 
-    interrupted_ = false;
     changeState(STATE_PLANNING);
 
     res.success = true;
@@ -810,7 +682,6 @@ void AEPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg
     }
     
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
-    //ROS_INFO("[AEPlanner]: [%f, %f, %f, %f]", uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw);
 }
 
 void AEPlanner::timerMain(const ros::TimerEvent& event) {
@@ -916,21 +787,9 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
 void AEPlanner::changeState(const State_t new_state) {
     const State_t old_state = state_;
 
-    if (interrupted_ && old_state == STATE_STOPPED) {
+    if (old_state == STATE_STOPPED) {
         ROS_WARN("[AEPlanner]: Planning interrupted, not changing state.");
         return;
-    }
-
-    switch (new_state) {
-
-        case STATE_PLANNING: {
-
-            if (old_state == STATE_STOPPED) {
-                replanning_counter_ = 0;
-            }
-        }
-
-        default: {break;}
     }
 
     ROS_INFO("[AEPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());

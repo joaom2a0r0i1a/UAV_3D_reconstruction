@@ -22,7 +22,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    param_loader.loadParam("bounded_box/planner_range", planner_range);
 
     // UAV Parameters
     param_loader.loadParam("uav_parameters/max_vel", max_velocity);
@@ -53,7 +52,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     param_loader.loadParam("timer_main/rate", timer_main_rate);
 
     // Initialize UAV as state IDLE
-    //changeState(STATE_IDLE);
     state_ = STATE_IDLE;
     iteration_ = 0;
     reset_velocity = true;
@@ -72,7 +70,6 @@ KinoNBVPlanner::KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle&
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("KinoNBVplanner");
     transformer_->setDefaultFrame(frame_id);
-    //transformer_->setDefaultPrefix(ns);
     transformer_->retryLookupNewest(true);
 
     set_variables = false;
@@ -171,7 +168,6 @@ void KinoNBVPlanner::KinoNBV() {
 
     Root->cost = 0.0;
     Root->score = 0.0;
-    //Root->score = Root->gain;
 
     if (Root->score > best_score_) {
         best_score_ = Root->score;
@@ -282,7 +278,6 @@ void KinoNBVPlanner::KinoNBV() {
             }
 
             if (OutOfBounds) {
-                //ROS_INFO("[KinoNBVPlanner]: Out of Bounds");
                 // Avoid Memory Leak
                 new_trajectory.reset();
                 continue;
@@ -329,10 +324,6 @@ void KinoNBVPlanner::KinoNBV() {
 
         expanded_num_nodes += accel_iteration;
 
-        /*if (collision_id_counter_ > 1000 * j) {
-            continue;
-        }*/
-
         if (j > N_termination) {
             ROS_INFO("[KinoNBVPlanner]: KinoNBV Terminated");
             KinoRRTStar.clearKDTree();
@@ -347,7 +338,6 @@ void KinoNBVPlanner::KinoNBV() {
         ++j;
     }
 
-    //ROS_INFO("Reset Velocity: %s", reset_velocity ? "true" : "false");
     ROS_INFO("[KinoNBVPlanner]: Final Best Score: %f", best_score_);
     ROS_INFO("[KinoNBVPlanner]: Node Iterations: %d", j);
     ROS_INFO("[KinoNBVPlanner]: Full Node Iterations: %d", expanded_num_nodes);
@@ -379,7 +369,6 @@ bool KinoNBVPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Tr
         return true;
     }
 
-    interrupted_ = false;
     changeState(STATE_PLANNING);
 
     res.success = true;
@@ -483,7 +472,6 @@ void KinoNBVPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPt
     }
     
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
-    //ROS_INFO("[KinoNBVPlanner]: [%f, %f, %f, %f]", uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw);
 }
 
 void KinoNBVPlanner::callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg) {
@@ -611,21 +599,9 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 void KinoNBVPlanner::changeState(const State_t new_state) {
     const State_t old_state = state_;
 
-    if (interrupted_ && old_state == STATE_STOPPED) {
+    if (old_state == STATE_STOPPED) {
         ROS_WARN("[KinoNBVPlanner]: Planning interrupted, not changing state.");
         return;
-    }
-
-    switch (new_state) {
-
-        case STATE_PLANNING: {
-
-            if (old_state == STATE_STOPPED) {
-                replanning_counter_ = 0;
-            }
-        }
-
-        default: {break;}
     }
 
     ROS_INFO("[KinoNBVPlanner]: changing state '%s' -> '%s'", _state_names_[old_state].c_str(), _state_names_[new_state].c_str());

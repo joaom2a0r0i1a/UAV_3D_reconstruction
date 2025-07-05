@@ -16,7 +16,7 @@ windows:
       layout: tiled
       panes:
         #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_fire_station gui:=true
-        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school gui:=true
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school gui:=false
         #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_police_station_full gui:=false
         #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_maze gui:=true
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
@@ -88,6 +88,7 @@ windows:
       panes:
         - waitForControl; roslaunch motion_planning process_pointcloud.launch 
           config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
+          config_pcl_freespace_filter_rs_front_pitched:=./config/rs_front_pitched_freespace_filter.yaml 
           config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
   #- rqt_plot:
       #layout: tiled

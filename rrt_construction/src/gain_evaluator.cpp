@@ -5,6 +5,20 @@
 #include "rrt_construction/gain_evaluator.h"
 
 GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
+  nh_private.param("gain_evaluation/min_x", min_x_, -17.0f);
+  nh_private.param("gain_evaluation/max_x", max_x_, 17.0f);
+  nh_private.param("gain_evaluation/min_y", min_y_, -12.0f);
+  nh_private.param("gain_evaluation/max_y", max_y_, 7.0f);
+  nh_private.param("gain_evaluation/min_z", min_z_, 0.0f);
+  nh_private.param("gain_evaluation/max_z", max_z_, 14.5f);
+
+  nh_private.param("camera_intrinsics/hfov", fov_y_rad_, 1.51844);
+  nh_private.param("camera_intrinsics/vfov", fov_p_rad_, 1.01229);
+  nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0);
+  nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
+
+  nh_private.param("map/voxel_size", dr_, 0.2);
+
   /*// IST Lamp
   min_x_ = 2.0;
   max_x_ = 7.0;
@@ -45,32 +59,6 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   min_z_ = 0.0;
   max_z_ = 9.0;*/
 
-  /*fov_y_rad_ = 1.51844;
-  fov_p_rad_ = 1.01229;
-  r_max_ = 5.0;
-  yaw_samples = 15;*/
-
-  nh_private.param("gain_evaluation/min_x", min_x_, -17.0f);
-  nh_private.param("gain_evaluation/max_x", max_x_, 17.0f);
-  nh_private.param("gain_evaluation/min_y", min_y_, -12.0f);
-  nh_private.param("gain_evaluation/max_y", max_y_, 7.0f);
-  nh_private.param("gain_evaluation/min_z", min_z_, 0.0f);
-  nh_private.param("gain_evaluation/max_z", max_z_, 14.5f);
-
-  nh_private.param("camera_intrinsics/hfov", fov_y_rad_, 1.51844);
-  nh_private.param("camera_intrinsics/vfov", fov_p_rad_, 1.01229);
-  nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0);
-  nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
-
-  nh_private.param("map/voxel_size", dr_, 0.2);
-
-  /*ROS_INFO_STREAM("[GainEvaluator] Bounding Box: \n"
-                << "  min_x: " << min_x_ << "\n"
-                << "  max_x: " << max_x_ << "\n"
-                << "  min_y: " << min_y_ << "\n"
-                << "  max_y: " << max_y_ << "\n"
-                << "  min_z: " << min_z_ << "\n"
-                << "  max_z: " << max_z_);*/
 }
 
 double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y){
