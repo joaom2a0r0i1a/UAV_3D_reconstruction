@@ -1,0 +1,12 @@
+data_row_major: true
+sensor:
+  hfov: !degrees 360
+  vfov: !degrees 45
+  max_range: 20 # metres
+box:
+  min_x: -17
+  max_x: 17
+  min_y: -12
+  max_y: 7
+  min_z: 0.0
+  max_z: 14.5
