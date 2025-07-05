@@ -11,6 +11,7 @@
     <node pkg="motion_planning" type="KinoNBV" name="planner_node" output="screen">
       <!--launch-prefix="valgrind -(-)tool=callgrind -(-)callgrind-out-file=callgrind.out"-->
       <!--launch-prefix="debug_roslaunch"-->
+      <rosparam file="$(find rrt_construction)/config/GainConfig.yaml" />
       <rosparam file="$(find motion_planning)/config/KinoNBVplanner.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->

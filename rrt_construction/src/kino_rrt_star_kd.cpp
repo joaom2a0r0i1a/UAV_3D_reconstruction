@@ -73,10 +73,6 @@ void kino_rrt_star::computeAccelerationSampling(double a_max, Eigen::Vector3d& r
     while (!solutionFound) {
         a_x = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
         a_y = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
-        //a_z = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);      
-        /*if (Eigen::Vector3d(a_x, a_y, a_z).norm() > a_max) {
-            continue;
-        }*/
         if (Eigen::Vector2d(a_x, a_y).norm() > a_max) {
             continue;
         }
@@ -94,7 +90,6 @@ void kino_rrt_star::findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<
     resultSet.init(&index, &out_dist_sqr);
     kdtree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParameters(10));
     nearestTrajectory = tree_data_.data[index];
-    //nearestNode = nearestTrajectory->TrajectoryPoints.back();
 }
 
 void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {

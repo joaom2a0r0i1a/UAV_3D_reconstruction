@@ -99,6 +99,9 @@ private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
 
+    // Gain Evaluator Instance
+    GainEvaluator segment_evaluator;
+
     // Voxblox Map Server
     voxblox::EsdfServer voxblox_server_;
 
@@ -202,7 +205,6 @@ private:
     bool go_terminate = false;
 
     // Instances
-    GainEvaluator segment_evaluator;
     rrt_star RRTStar;
     kd_tree goals_tree;
 

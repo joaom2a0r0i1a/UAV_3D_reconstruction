@@ -1,6 +1,6 @@
 #include "multidrone_motion_planning/KinoAEPMultiplanner.h"
 
-KinoAEPMultiPlanner::KinoAEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+KinoAEPMultiPlanner::KinoAEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
 
     //ns = "uav1";
 
@@ -117,7 +117,6 @@ KinoAEPMultiPlanner::KinoAEPMultiPlanner(const ros::NodeHandle& nh, const ros::N
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KinoAEPMultiPlanner::callbackStart, this);
     ss_stop = nh_private_.advertiseService("stop_in", &KinoAEPMultiPlanner::callbackStop, this);
-    //ss_reevaluate = nh_private_.advertiseService("reevaluate_in", &KinoAEPMultiPlanner::callbackReevaluate, this);
 
     /* Service Clients */
     sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
@@ -892,23 +891,6 @@ bool KinoAEPMultiPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs
     return true;
 
 }
-
-/*bool KinoAEPMultiPlanner::callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res) {
-    ROS_DEBUG_STREAM("Reevaluation Start!");
-
-    for (std::vector<geometry_msgs::Point>::iterator iter = req.point.begin(); iter != req.point.end(); ++iter) {
-        Eigen::Vector4d pos(iter->x, iter->y, iter->z, 0);
-        std::shared_ptr<rrt_star::Node> node = std::make_shared<rrt_star::Node>(pos);
-        eth_mav_msgs::EigenTrajectoryPoint traj_point;
-        segment_evaluator.computeGainFromsampledYaw(node, num_yaw_samples, traj_point);
-        res.gain.push_back(node->gain);
-        res.yaw.push_back(node->point[3]);
-    }
-
-    ROS_DEBUG_STREAM("Reevaluation Finish!");
-
-    return true;
-}*/
 
 void KinoAEPMultiPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
     if (!is_initialized) {

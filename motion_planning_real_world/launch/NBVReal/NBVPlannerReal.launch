@@ -9,6 +9,7 @@
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning_real_world" type="NBVReal" name="planner_node" output="screen">
+      <rosparam file="$(find rrt_construction)/config/GainConfig.yaml" />
       <rosparam file="$(find motion_planning_real_world)/config/NBVplannerReal.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->

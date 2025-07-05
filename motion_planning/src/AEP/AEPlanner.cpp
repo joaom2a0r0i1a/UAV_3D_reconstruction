@@ -1,6 +1,6 @@
 #include "motion_planning/AEP/AEPlanner.h"
 
-AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
 
     //ns = "uav1";
 
@@ -215,7 +215,7 @@ void AEPlanner::localPlanner() {
     }
     trajectory_point.position_W = root->point.head(3);
     trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+    std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
     root->gain = result.first;
     root->point[3] = result.second;
     //segment_evaluator.computeGainFromsampledYaw(root, num_yaw_samples, trajectory_point);
@@ -297,7 +297,7 @@ void AEPlanner::localPlanner() {
             //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
             //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-            std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -386,7 +386,7 @@ void AEPlanner::localPlanner() {
         //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
         //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
         //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
@@ -603,7 +603,7 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
         //std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-        std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
 
         auto end3 = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end3 - start3;
@@ -872,23 +872,6 @@ bool AEPlanner::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger:
     return true;
 
 }
-
-/*bool AEPlanner::callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res) {
-    ROS_DEBUG_STREAM("Reevaluation Start!");
-
-    for (std::vector<geometry_msgs::Point>::iterator iter = req.point.begin(); iter != req.point.end(); ++iter) {
-        Eigen::Vector4d pos(iter->x, iter->y, iter->z, 0);
-        std::shared_ptr<rrt_star::Node> node = std::make_shared<rrt_star::Node>(pos);
-        eth_mav_msgs::EigenTrajectoryPoint traj_point;
-        segment_evaluator.computeGainFromsampledYaw(node, num_yaw_samples, traj_point);
-        res.gain.push_back(node->gain);
-        res.yaw.push_back(node->point[3]);
-    }
-
-    ROS_DEBUG_STREAM("Reevaluation Finish!");
-
-    return true;
-}*/
 
 void AEPlanner::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
     if (!is_initialized) {

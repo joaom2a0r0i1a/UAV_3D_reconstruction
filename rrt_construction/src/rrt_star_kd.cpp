@@ -60,17 +60,9 @@ void rrt_star::computeSamplingDimensions(double radius, Eigen::Vector3d& result)
 }
 
 void rrt_star::computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result) {
-    //static std::random_device rd;
-    //static std::mt19937 gen(rd());
-    //std::uniform_real_distribution<double> dis(-radius, radius);
-    //std::uniform_real_distribution<double> yaw_dis(-M_PI, M_PI);
-
     bool solutionFound = false;
     double rand_x, rand_y, rand_z, rand_yaw;
     while (!solutionFound) {
-        //rand_x = dis(gen);
-        //rand_y = dis(gen);
-        //rand_z = dis(gen);
         rand_x = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
         rand_y = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
         rand_z = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);        
@@ -79,7 +71,6 @@ void rrt_star::computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& resu
         }
         solutionFound = true;
     }
-    //rand_yaw = yaw_dis(gen);
     rand_yaw = 2.0 * M_PI * (((double) rand()) / ((double) RAND_MAX) - 0.5);
 
     result = Eigen::Vector4d(rand_x, rand_y, rand_z, rand_yaw);
@@ -135,7 +126,6 @@ void rrt_star::steer_parent(const std::shared_ptr<Node>& fromNode, const Eigen::
         new_node = std::make_shared<Node>(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.w()));
         new_node->parent = fromNode;
     }
-    //addKDTreeNode(new_node);
 }
 
 bool rrt_star::collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles) {

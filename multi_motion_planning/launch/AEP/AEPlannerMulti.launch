@@ -10,6 +10,7 @@
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="multi_motion_planning" type="AEPMulti" name="planner_node" output="screen">
+      <rosparam file="$(find rrt_construction)/config/GainConfig.yaml" />
       <rosparam file="$(find multi_motion_planning)/config/AEPMultiplanner.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <param name="uav_id" value="$(arg UAV_ID)" />

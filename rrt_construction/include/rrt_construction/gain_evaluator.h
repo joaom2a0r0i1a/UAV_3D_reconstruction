@@ -16,7 +16,7 @@ enum VoxelStatus {kUnknown = 0, kOccupied, kFree};
 
 class GainEvaluator {
  public:
-  GainEvaluator();
+  GainEvaluator(const ros::NodeHandle& nh_private);
 
   // Function to find vertical FoV.  
   double getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y);
@@ -46,43 +46,62 @@ class GainEvaluator {
 
   void visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& pose, std::vector<geometry_msgs::Point>& points);
 
-  // Use raycasting to discard occluded voxels and compute gain.
-  double evaluateExplorationGainWithRaycasting(
-      const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
-
+  // Use raycasting to calculate volume of unknown voxels for fixed angle.
   double computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
+  // corresponds to the biggest gain given the camera frustum, with uniform yaw optimization.
   std::pair<double, double> computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
+  // corresponds to the biggest gain given the camera frustum, with informative yaw optimization.
   std::pair<double, double> computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
-
+  
+  // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
+  // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (uniform yaw optimization).
   std::pair<double, double> computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
   
+  // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
+  // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (informative yaw optimization).
   std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
 
+  // Use sparse raycasting to calculate volume of unknown voxels for fixed angle.
   double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus = 1);
 
-  // Use sparse raycasting to discard occluded voxels, AEP-style implementation.
+  // Use sparse raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
+  // corresponds to the biggest gain given the camera frustum, AEP-style implementation with uniform gain 
+  // optimization.
   std::pair<double, double> computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
-
+  
+  // Use sparse raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
+  // corresponds to the biggest gain given the camera frustum, AEP-style implementation with informative gain 
+  // optimization.
   std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
   std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus = 1);
-
+  
+  // Use sparse raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
+  // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (uniform yaw optimization).
   std::pair<double, double> computeGainFromSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
 
+  // Use sparse raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
+  // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (informative yaw optimization).
   std::pair<double, double> computeGainFromOptimizedSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position);
 
-  // Initialization for visualization
+  // Initialization for visualization of unknown voxels.
   void visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);
   
-  // Use raycasting to discard occluded voxels, Bircher-style implementation.
+  // Use raycasting to calculate number of unknown voxels and discard occluded voxels, Bircher-style 
+  // implementation.
   double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  // Use raycasting to calculate number of unknown voxels and discard occluded voxels, Bircher-style 
+  // implementation with uniform gain optimization.
   void computeGainFromsampledYaw(const std::shared_ptr<rrt_star::Node>& node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point);
 
+  // Calculate cost and score
   void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
 
   void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
@@ -114,8 +133,9 @@ class GainEvaluator {
   float gain_range_; 
   double fov_y_rad_, fov_p_rad_;
   double r_max_;
+  double dr_;
 
-  int yaw_samples;
+  int yaw_samples_;
 
   // Cached parameters of the layer.
   float voxel_size_;

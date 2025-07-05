@@ -4,7 +4,7 @@
 
 #include "rrt_construction/gain_evaluator.h"
 
-GainEvaluator::GainEvaluator() {
+GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   /*// IST Lamp
   min_x_ = 2.0;
   max_x_ = 7.0;
@@ -21,21 +21,13 @@ GainEvaluator::GainEvaluator() {
   min_z_ = 0.0;
   max_z_ = 5.0;*/
 
-  /*// Lourenha
-  min_x_ = -4;
-  max_x_ = 4;
-  min_y_ = 1;
-  max_y_ = 7.0;
-  min_z_ = 0.0;
-  max_z_ = 5.0;*/
-
-  // School
+  /*// School
   min_x_ = -17;
   max_x_ = 17;
   min_y_ = -12;
   max_y_ = 7.0;
   min_z_ = 0.0;
-  max_z_ = 14.5;
+  max_z_ = 14.5;*/
 
   /*// Maze
   min_x_ = -10.0;
@@ -53,11 +45,32 @@ GainEvaluator::GainEvaluator() {
   min_z_ = 0.0;
   max_z_ = 9.0;*/
 
-
-  fov_y_rad_ = 1.51844;
+  /*fov_y_rad_ = 1.51844;
   fov_p_rad_ = 1.01229;
   r_max_ = 5.0;
-  yaw_samples = 15;
+  yaw_samples = 15;*/
+
+  nh_private.param("gain_evaluation/min_x", min_x_, -17.0f);
+  nh_private.param("gain_evaluation/max_x", max_x_, 17.0f);
+  nh_private.param("gain_evaluation/min_y", min_y_, -12.0f);
+  nh_private.param("gain_evaluation/max_y", max_y_, 7.0f);
+  nh_private.param("gain_evaluation/min_z", min_z_, 0.0f);
+  nh_private.param("gain_evaluation/max_z", max_z_, 14.5f);
+
+  nh_private.param("camera_intrinsics/hfov", fov_y_rad_, 1.51844);
+  nh_private.param("camera_intrinsics/vfov", fov_p_rad_, 1.01229);
+  nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0);
+  nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
+
+  nh_private.param("map/voxel_size", dr_, 0.2);
+
+  /*ROS_INFO_STREAM("[GainEvaluator] Bounding Box: \n"
+                << "  min_x: " << min_x_ << "\n"
+                << "  max_x: " << max_x_ << "\n"
+                << "  min_y: " << min_y_ << "\n"
+                << "  max_y: " << max_y_ << "\n"
+                << "  min_z: " << min_z_ << "\n"
+                << "  max_z: " << max_z_);*/
 }
 
 double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y){
@@ -108,8 +121,6 @@ VoxelStatus GainEvaluator::getVoxelStatus(const Eigen::Vector3d& position) const
     return VoxelStatus::kUnknown;
   }
   if (voxel->weight < 1e-6) {
-    //std::cout << "Voxel weight: " << voxel->weight << std::endl;
-    //std::cout << "Voxel distance: " << voxel->distance << std::endl;
     return VoxelStatus::kUnknown;
   }
   if (voxel->distance > 0.0) {
@@ -161,184 +172,6 @@ void GainEvaluator::visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& 
   }
 }
 
-double GainEvaluator::evaluateExplorationGainWithRaycasting(
-    const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  //eth_trajectory_generation::timing::Timer timer_gain(
-  //    "exploration/exp_gain_raycast");
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double num_unknown = 0.0;
-  double num_occluded = 0.0;
-  double num_free = 0.0;
-  double num_occupied = 0.0;
-
-  // This is a set of all the checked voxels so that they don't get checked
-  // multiple times...
-  voxblox::HierarchicalIndexSet checked_voxels_set;
-
-  // Get the plane bounds for the back plane of the frustum and just iterate
-  // over these points.
-  // For each voxel, cast a ray to the camera center and check whether it is
-  // occluded or not.
-  double gain = 0.0;
-  int checked_voxels = 0;
-  int voxel_index = 0;
-
-  // Get the three points defining the back plane of the camera frustum.
-  voxblox::AlignedVector<voxblox::Point> plane_points;
-  cam_model_.getFarPlanePoints(&plane_points);
-
-  // We map the plane into u and v coordinates, which are the plane's coordinate
-  // system, with the origin at plane_points[1] and outer bounds at
-  // plane_points[0] and plane_points[2].
-  Eigen::Vector3f u_distance = plane_points[0] - plane_points[1];
-  Eigen::Vector3f u_slope = u_distance.normalized();
-  int u_max = static_cast<int>(
-      std::ceil(u_distance.norm() * voxel_size_inv_));  // Round this up.
-
-  Eigen::Vector3f v_distance = plane_points[2] - plane_points[1];
-  Eigen::Vector3f v_slope = v_distance.normalized();
-  int v_max = static_cast<int>(
-      std::ceil(v_distance.norm() * voxel_size_inv_));  // Round this up.
-
-  /*min_x_ = -11;
-  max_x_ = 11;
-  min_y_ = -6.5;
-  max_y_ = 6.5;
-  min_z_ = 0;
-  max_z_ = 11.5;*/
-
-  // We then iterate over all the voxels in the coordinate space of the back
-  // bounding plane of the frustum.
-  Eigen::Vector3f pos = plane_points[1];
-  for (int u = 0; u < u_max; u++) {
-    for (int v = 0; v < v_max; v++) {
-      if (voxel_index % modulus != 0) {
-        voxel_index++;
-        continue;
-      }
-      voxel_index++;
-
-      // Get the 'real' coordinates back from the plane coordinate space.
-      pos = plane_points[1] + u * u_slope * voxel_size_ +
-            v * v_slope * voxel_size_;
-
-      // Get the block + voxel index of this voxel by projecting it into
-      // the voxel grid and then computing from the global index.
-      // This is a truncating cast, which is I think what we want in this
-      // case.
-      voxblox::GlobalIndex global_voxel_idx =
-          (voxel_size_inv_ * pos).cast<voxblox::LongIndexElement>();
-      voxblox::BlockIndex block_index =
-          voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                     voxels_per_side_inv_);
-      voxblox::VoxelIndex voxel_index = voxblox::getLocalFromGlobalVoxelIndex(
-          global_voxel_idx, voxels_per_side_);
-
-      // Should we check if we already cast this?
-      if (checked_voxels_set[block_index].count(voxel_index) > 0) {
-        continue;
-        std::cout << "THIS MIGHT NOT BE NEEDED" << std::endl;
-      }
-      // Otherwise we should probably cast the ray through it and then
-      // look up all the voxels and count them.
-      const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-      const voxblox::Point end_scaled = pos * voxel_size_inv_;
-
-      voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-      voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-      // Iterate over all the voxels in the index in order.
-      // Put them in the checked queue, and classify them. We're starting from
-      // the camera center to the current pose, so this defines how we handle
-      // occlusions.
-      int unknown_ray = 0;
-      int occluded_ray = 0;
-      int free_ray = 0;
-      int occupied_ray = 0;
-      bool ray_occluded = false;
-      for (int i = 0; i < global_voxel_indices.size(); i++) {
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices[i];
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                       voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        bool voxel_checked = (checked_voxels_set[block_index_ray].count(voxel_index_ray) > 0);
-        if (voxel_checked) {
-          continue;
-        } else {
-          voxblox::Point recovered_pos = global_voxel_idx.cast<float>() * voxel_size_;
-          if (!cam_model_.isPointInView(recovered_pos) ||
-              recovered_pos.x() < min_x_ || recovered_pos.x() > max_x_ ||
-              recovered_pos.y() < min_y_ || recovered_pos.y() > max_y_ ||
-              recovered_pos.z() < min_z_ || recovered_pos.z() > max_z_) {
-            continue;
-          }
-        }
-
-        // This is as far as we need to go if this ray is already occluded.
-        if (ray_occluded) {
-          occluded_ray++;
-          checked_voxels++;
-          checked_voxels_set[block_index_ray].insert(voxel_index_ray);
-          continue;
-        }
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight <= 1e-2) {
-            unknown_ray++;
-          } else if (voxel.distance <= 0.0) {
-            // This is an occupied voxel! Mark all the stuff behind
-            // it as occluded.
-            occupied_ray++;
-            ray_occluded = true;
-          } else {
-            free_ray++;
-          }
-        } else {
-          unknown_ray++;
-        }
-
-        checked_voxels++;
-        checked_voxels_set[block_index_ray].insert(voxel_index_ray);
-      }
-
-      // Now that we have the whole ray, add up the counts.
-      num_unknown += unknown_ray;
-      num_free += free_ray;
-      num_occluded += occluded_ray;
-      num_occupied += occupied_ray;
-    }
-  }
-  // Divide percentages by the checked voxels.
-  //num_unknown /= checked_voxels;
-
-  //timer_gain.Stop();
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::cout << "evaluateExplorationGainWithRaycasting took " << elapsed.count() << " seconds." << std::endl;
-  return num_unknown;
-}
-
 double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
   CHECK_NOTNULL(tsdf_layer_);
 
@@ -360,9 +193,8 @@ double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajec
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2;
-  double dphi_rad = dr / r_max_;
-  double dtheta_rad = dr / r_max_;
+  double dphi_rad = dr_ / r_max_;
+  double dtheta_rad = dr_ / r_max_;
   double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
   double r;
   double phi, theta;
@@ -385,7 +217,7 @@ double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajec
 
       double g = 0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -404,7 +236,7 @@ double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajec
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
       }
       gain += g;
@@ -437,9 +269,8 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msg
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2;
-  double dphi_rad = dr / r_max_;
-  double dtheta_rad = dr / r_max_;
+  double dphi_rad = dr_ / r_max_;
+  double dtheta_rad = dr_ / r_max_;
   double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
   double r;
   double phi, theta;
@@ -464,7 +295,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msg
 
       double g = 0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -483,7 +314,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msg
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
       }
       gain += g;
@@ -549,9 +380,8 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const et
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2;
-  double dphi_rad = dr / r_max_;
-  double dtheta_rad = dr / r_max_;
+  double dphi_rad = dr_ / r_max_;
+  double dtheta_rad = dr_ / r_max_;
   double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
   double r;
   double phi, theta;
@@ -576,7 +406,7 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const et
 
       double g = 0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -595,68 +425,9 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const et
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }*/
       }
-      
-      /*if (!occupied_ray) {
-        gain += g;
-        gain_per_yaw[theta] += g;
-      } else {
-        gain += 0.0;
-        gain_per_yaw[theta] += 0.0;
-      }*/
 
       gain += g;
       gain_per_yaw[theta] += g;
@@ -749,8 +520,8 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(eth
 
   //auto start = std::chrono::high_resolution_clock::now();
 
-  for (int k = 0; k < yaw_samples; ++k) {
-    double yaw = k * 2 * M_PI / yaw_samples;
+  for (int k = 0; k < yaw_samples_; ++k) {
+    double yaw = k * 2 * M_PI / yaw_samples_;
     //position.position_W = node->point.head(3);
     position.setFromYaw(yaw);
     double gain = computeFixedGainRaycasting(position);
@@ -775,8 +546,8 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
   std::vector<double> yaws;
   std::vector<double> gains;
   double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 2 * M_PI / yaw_samples;
-  int aditional_angles = (yaw_samples - min_yaw_samples) / min_yaw_samples;
+  double yaw_step = 2 * M_PI / yaw_samples_;
+  int aditional_angles = (yaw_samples_ - min_yaw_samples) / min_yaw_samples;
 
   //auto start = std::chrono::high_resolution_clock::now();
 
@@ -804,10 +575,6 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
     if ((gains[i] + gains[next] > best_gain)) {
       filteredYaws.push_back(yaws[i]);
     }
-
-    /*if ((gains[i] + gains[next] > best_gain) || (gains[i] + gains[prev] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }*/
   }
 
   for (int j = 0; j < filteredYaws.size(); ++j) {
@@ -850,7 +617,7 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2, dphi = 10, dtheta = 10;
+  double dphi = 10, dtheta = 10;
   double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
   double r;
   int phi, theta;
@@ -873,7 +640,7 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
 
       double g = 0.0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -892,64 +659,9 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }*/
       }
-      
-      /*if (!occupied_ray) {
-        gain += g;
-      }*/
 
       gain += g;
     }
@@ -983,7 +695,7 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2, dphi = 10, dtheta = 10;
+  double dphi = 10, dtheta = 10;
   double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
   double r;
   int phi, theta;
@@ -1006,7 +718,7 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
 
       double g = 0.0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -1025,65 +737,9 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }*/
       }
-      
-      /*if (!occupied_ray) {
-        gain += g;
-      }*/
-
       gain += g;
     }
   }
@@ -1113,7 +769,7 @@ std::pair<double, double> GainEvaluator::computeGainAEP(const eth_mav_msgs::Eige
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2, dphi = 10, dtheta = 10;
+  double dphi = 10, dtheta = 10;
   double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
   double r;
   int phi, theta;
@@ -1138,7 +794,7 @@ std::pair<double, double> GainEvaluator::computeGainAEP(const eth_mav_msgs::Eige
 
       double g = 0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -1157,69 +813,9 @@ std::pair<double, double> GainEvaluator::computeGainAEP(const eth_mav_msgs::Eige
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }*/
       }
-      
-      /*if (!occupied_ray) {
-        gain += g;
-        gain_per_yaw[theta] += g;
-      } else {
-        gain += 0.0;
-        gain_per_yaw[theta] += 0.0;
-      }*/
-
       gain += g;
       gain_per_yaw[theta] += g;
     }
@@ -1283,7 +879,7 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2, dphi = 10, dtheta = 10;
+  double dphi = 10, dtheta = 10;
   double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
   double r;
   int phi, theta;
@@ -1308,7 +904,7 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
 
       double g = 0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -1327,69 +923,9 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }*/
       }
-      
-      /*if (!occupied_ray) {
-        gain += g;
-        gain_per_yaw[theta] += g;
-      } else {
-        gain += 0.0;
-        gain_per_yaw[theta] += 0.0;
-      }*/
-
       gain += g;
       gain_per_yaw[theta] += g;
     }
@@ -1407,8 +943,6 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
   double min_yaw_step = 2 * M_PI / min_yaw_samples;
   double yaw_step = 1; // degree
   int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
-
-  //auto start = std::chrono::high_resolution_clock::now();
 
   for (int k = 0; k < min_yaw_samples; ++k) {
     double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
@@ -1435,7 +969,6 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
   std::vector<double> filteredYaws;
 
   for (int i = 0; i < min_yaw_samples; ++i) {
-    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
     int next = (i + 1) % min_yaw_samples;
 
     if ((gains[i] + gains[next] > best_gain)) {
@@ -1493,7 +1026,7 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2, dphi = 10, dtheta = 10;
+  double dphi = 10, dtheta = 10;
   double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
   double r;
   int phi, theta;
@@ -1518,7 +1051,7 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
 
       double g = 0;
       bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -1537,69 +1070,9 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }*/
       }
-      
-      /*if (!occupied_ray) {
-        gain += g;
-        gain_per_yaw[theta] += g;
-      } else {
-        gain += 0.0;
-        gain_per_yaw[theta] += 0.0;
-      }*/
-
       gain += g;
       gain_per_yaw[theta] += g;
     }
@@ -1617,8 +1090,6 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
   double min_yaw_step = 2 * M_PI / min_yaw_samples;
   double yaw_step = 1; // degree
   int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
-
-  //auto start = std::chrono::high_resolution_clock::now();
 
   for (int k = 0; k < min_yaw_samples; ++k) {
     double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
@@ -1691,8 +1162,8 @@ std::pair<double, double> GainEvaluator::computeGainFromSampledYawAEP(eth_mav_ms
 
   //auto start = std::chrono::high_resolution_clock::now();
 
-  for (int k = 0; k < yaw_samples; ++k) {
-    double yaw = k * 2 * M_PI / yaw_samples;
+  for (int k = 0; k < yaw_samples_; ++k) {
+    double yaw = k * 2 * M_PI / yaw_samples_;
     //position.position_W = node->point.head(3);
     position.setFromYaw(yaw);
     double gain = computeGainFixedAngleAEP(position);
@@ -1717,8 +1188,8 @@ std::pair<double, double> GainEvaluator::computeGainFromOptimizedSampledYawAEP(e
   std::vector<double> yaws;
   std::vector<double> gains;
   double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 2 * M_PI / yaw_samples;
-  int aditional_angles = (yaw_samples - min_yaw_samples) / min_yaw_samples;
+  double yaw_step = 2 * M_PI / yaw_samples_;
+  int aditional_angles = (yaw_samples_ - min_yaw_samples) / min_yaw_samples;
 
   //auto start = std::chrono::high_resolution_clock::now();
 
@@ -1740,16 +1211,11 @@ std::pair<double, double> GainEvaluator::computeGainFromOptimizedSampledYawAEP(e
   std::vector<double> filteredYaws;
 
   for (int i = 0; i < min_yaw_samples; ++i) {
-    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
     int next = (i + 1) % min_yaw_samples;
 
     if ((gains[i] + gains[next] > best_gain)) {
       filteredYaws.push_back(yaws[i]);
     }
-
-    /*if ((gains[i] + gains[next] > best_gain) || (gains[i] + gains[prev] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }*/
   }
 
   for (int j = 0; j < filteredYaws.size(); ++j) {
@@ -1791,7 +1257,7 @@ void GainEvaluator::visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& p
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
-  double dr = 0.2, dphi = 10, dtheta = 10;
+  double dphi = 10, dtheta = 10;
   double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
   double r;
   int phi, theta;
@@ -1815,7 +1281,7 @@ void GainEvaluator::visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& p
       bool occupied_ray = false;
       double g = 0;
       voxblox::Pointcloud voxels_ray;
-      for (r = 0; r < r_max_; r += dr) {
+      for (r = 0; r < r_max_; r += dr_) {
         vec[0] = pose.position_W[0] + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = pose.position_W[1] + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = pose.position_W[2] + r * cos(phi_rad);
@@ -1834,7 +1300,7 @@ void GainEvaluator::visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& p
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
           Eigen::Vector3d Voxel;
           getVoxelCenter(&Voxel, vec);
           
@@ -1842,68 +1308,9 @@ void GainEvaluator::visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& p
           VoxelCenter[0] = Voxel[0];
           VoxelCenter[1] = Voxel[1];
           VoxelCenter[2] = Voxel[2];
-          //voxels.push_back(VoxelCenter);
           voxels_ray.push_back(VoxelCenter);
         }
-
-        /*double distance = 0.0;
-        if (esdf_map_->getDistanceAtPosition(vec, &distance)) {
-          if (distance < voxel_size_) {
-            break;
-          }
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          std::cout << "Position X: " << vec[0] << std::endl;
-          std::cout << "Position Y: " << vec[1] << std::endl;
-          std::cout << "Position Z: " << vec[2] << std::endl;
-        }*/
-
-        /*std::cout << "Position X: " << vec[0] << std::endl;
-        std::cout << "Position Y: " << vec[1] << std::endl;
-        std::cout << "Position Z: " << vec[2] << std::endl;*/
-
-        /*const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = vec * voxel_size_inv_;
-        
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        int unknown_ray = 0;
-        int free_ray = 0;
-        bool ray_occluded = false;
-        const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices.back();
-        voxblox::BlockIndex block_index_ray =
-            voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx,
-                                                      voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index_ray =
-            voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx,
-                                                  voxels_per_side_);
-
-        // Otherwise look up this voxel and add it to checked.
-        const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr =
-            tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-        if (block_ptr) {
-          // If this block exists, get the voxel.
-          const voxblox::TsdfVoxel& voxel =
-              block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-          if (voxel.weight < 1e-6) {
-            g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-            voxels.push_back(vec);
-          } else if (voxel.distance <= 0.0) {
-          //if (voxel.distance <= 0.0 && voxel.weight >= 1e-6) {
-            ray_occluded = true;
-            break;
-          } 
-        } else {
-          g += (2 * r * r * dr + 1 / 6 * dr * dr * dr) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          voxels.push_back(vec);
-        }*/
       }
-
-      /*if (!occupied_ray) {
-        voxels.insert(voxels.end(), voxels_ray.begin(), voxels_ray.end());
-      }*/
-
       voxels.insert(voxels.end(), voxels_ray.begin(), voxels_ray.end());      
       gain += g;
     }
@@ -1938,39 +1345,12 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
   int voxel_index = 0;
   Eigen::Vector3f pos = aabb_min.cast<float>();
 
-  /*min_x_ = -11;
-  max_x_ = 11;
-  min_y_ = -6.5;
-  max_y_ = 6.5;
-  min_z_ = 0;
-  max_z_ = 11.5;*/
-
-  /*min_x_ = -14;
-  max_x_ = 14;
-  min_y_ = -10;
-  max_y_ = 10;
-  min_z_ = 0;
-  max_z_ = 14;*/
-
   const float min_x = std::max(aabb_min.x(), min_x_);
   const float max_x = std::min(aabb_max.x(), max_x_);
   const float min_y = std::max(aabb_min.y(), min_y_);
   const float max_y = std::min(aabb_max.y(), max_y_);
   const float min_z = std::max(aabb_min.z(), min_z_);
   const float max_z = std::min(aabb_max.z(), max_z_);
-
-  //return std::max(aabb_min.z(), min_z_);
-
-  /*for (pos[0] = std::max(camera_center[0] - gain_range_, min_x_);
-      pos[0] < std::min(camera_center[0] + gain_range_, max_x_); pos[0] += voxel_size_) {
-    for (pos[1] = std::max(camera_center[1] - gain_range_, min_y_);
-        pos[1] < std::min(camera_center[1] + gain_range_, max_y_); pos[1] += voxel_size_) {
-      for (pos[2] = std::max(camera_center[2] - gain_range_, min_z_);
-          pos[2] < std::min(camera_center[2] + gain_range_, max_z_); pos[2] += voxel_size_) {*/
-
-  /*for (pos.x() = std::max(aabb_min.x(), min_x_); pos.x() < std::min(aabb_max.x(), max_x_); pos.x() += voxel_size_) {
-    for (pos.y() = std::max(aabb_min.y(), min_y_); pos.y() < std::min(aabb_max.y(), max_y_); pos.y() += voxel_size_) {
-      for (pos.z() = std::max(aabb_min.z(), min_z_); pos.z() < std::min(aabb_max.z(), max_z_); pos.z() += voxel_size_) {*/
 
   for (pos.x() = min_x; pos.x() < max_x; pos.x() += voxel_size_) {
     for (pos.y() = min_y; pos.y() < max_y; pos.y() += voxel_size_) {
@@ -2025,21 +1405,6 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
         if (ray_occluded) {
           num_occluded++;
         } else {
-          // If it's not occluded, ACTUALLY look up this voxel.
-          /*const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr = tsdf_layer_->getBlockPtrByIndex(block_index);
-          if (block_ptr) {
-            const voxblox::TsdfVoxel& voxel = block_ptr->getVoxelByCoordinates(pos);
-            if (voxel.weight <= 1e-6) {
-              num_unknown++;
-            } else if (voxel.distance >= 0.0) {
-            //if (voxel.distance >= 0.0) {
-              num_free++;
-            } else {
-              num_occupied++;
-            }
-          } else {
-            num_unknown++;
-          }*/
           double distance = 0.0;
           Eigen::Vector3d position = pos.cast<double>();
           if (esdf_map_->getDistanceAtPosition(position, &distance)) {
@@ -2054,12 +1419,6 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
     }
   }
   //timer_gain.Stop();
-
-  // Divide percentages by the checked voxels.
-  //num_unknown /= checked_voxels;
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::cout << "BircherGain took " << elapsed.count() << " seconds." << std::endl;
 
   return num_unknown;
 }

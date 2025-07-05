@@ -1,6 +1,6 @@
 #include "cache_nodes/cached_multi.h"
 
-MultiCached::MultiCached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+MultiCached::MultiCached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     ss_best_node = nh_private_.advertiseService("best_node_in", &MultiCached::callbackBestNode, this);
 
     /* Parameter loading */

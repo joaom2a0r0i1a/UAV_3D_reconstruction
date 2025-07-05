@@ -1,6 +1,6 @@
 #include "multidrone_motion_planning/NBVMultiplanner.h"
 
-NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+NBVMultiPlanner::NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
 
     //ns = "uav1";
 
@@ -355,7 +355,6 @@ void NBVMultiPlanner::NBV() {
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
         trajectory_point_gain.position_W = new_node->point.head(3);
         trajectory_point_gain.setFromYaw(new_node->point[3]);
-        //new_node->gain = segment_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point_gain);
         //ROS_INFO("[NBVMultiPlanner]: Best gain RayCast: %f", new_node->gain);
         double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
         new_node->gain = result;

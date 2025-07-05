@@ -88,9 +88,11 @@ private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
 
+    // Gain Evaluator Instance
+    GainEvaluator segment_evaluator;
+
     // Voxblox Map Server
     voxblox::EsdfServer voxblox_server_;
-    //voxblox::EsdfPoseGraphServer voxblox_server_;
 
     // Shortcut to Maps
     voxblox::EsdfMap::Ptr esdf_map_;
@@ -179,7 +181,6 @@ private:
     int iteration_;
 
     // Instances
-    GainEvaluator segment_evaluator;
     rrt_star RRTStar;
 
     // Subscribers

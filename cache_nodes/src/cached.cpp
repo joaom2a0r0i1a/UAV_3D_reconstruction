@@ -6,7 +6,7 @@ namespace bgi = boost::geometry::index;
 typedef bg::model::point<float, 3, bg::cs::cartesian> Point;
 typedef std::pair<Point, cache_nodes::Node> RTreeValue;
 
-Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     
     ss_best_node = nh_private_.advertiseService("best_node_in", &Cached::callbackBestNode, this);
     

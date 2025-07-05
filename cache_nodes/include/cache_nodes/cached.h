@@ -49,6 +49,8 @@ private:
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
 
+    GainEvaluator evaluator;
+
     voxblox::EsdfServer voxblox_server_;
     std::shared_ptr<voxblox::TsdfMap> tsdf_map_;
     std::shared_ptr<voxblox::EsdfMap> esdf_map_;
@@ -72,7 +74,6 @@ private:
     double g_zero;
     double range;
     int num_yaw_samples;
-    GainEvaluator evaluator;
 
     double horizontal_fov;
     double vertical_fov;

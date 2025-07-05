@@ -1,6 +1,6 @@
 #include "motion_planning_real_world/KinoAEPReal/KinoAEPlannerReal.h"
 
-KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
 
     //ns = "uav1";
 

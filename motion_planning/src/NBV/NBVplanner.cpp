@@ -1,6 +1,6 @@
 #include "motion_planning/NBV/NBVplanner.h"
 
-NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), voxblox_server_(nh_, nh_private_) {
+NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
 
     //ns = "uav1";
 
@@ -334,8 +334,6 @@ void NBVPlanner::NBV() {
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
         trajectory_point_gain.position_W = new_node->point.head(3);
         trajectory_point_gain.setFromYaw(new_node->point[3]);
-        //new_node->gain = segment_evaluator.evaluateExplorationGainWithRaycasting(trajectory_point_gain);
-        //ROS_INFO("[planner]: Best gain RayCast: %f", new_node->gain);
         double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
         new_node->gain = result;
         //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_gain);
@@ -352,13 +350,6 @@ void NBVPlanner::NBV() {
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
-
-        /*// ROS INFO will represent a float (7 decimal digits), whereas score is a double (15 decimal digits)
-        // This will make sure to ignore decimal cases bigger than 6. Beware this might terminate the simulation earlier than expected!
-        const double EPSILON = 0.000001;
-        if (std::abs(new_node->score) < EPSILON) {
-            new_node->score = 0.0;
-        }*/
 
         if (new_node->score > best_score_) {
             best_score_ = new_node->score;
