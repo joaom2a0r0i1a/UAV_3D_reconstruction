@@ -10,3 +10,7 @@
 	#path = multidrone_motion_planning
 	#url = git@github.com:joaom2a0r0i1a/multidrone_motion_planning.git
 	#branch = main
+[submodule "traj_generation"]
+	path = traj_generation
+	url = git@github.com:joaom2a0r0i1a/traj_generation.git
+	branch = traject_generation_kino
