@@ -51,6 +51,12 @@ bounded_box:
   #min_z: 1.0 # [m]
   #max_z: 15.0 # [m]
 
+uav_parameters:
+  max_vel: 1.0 # [m/s]
+  max_accel: 1.0 # [m/s^2]
+  max_heading_vel: 2.0 # [rad/s]
+  max_heading_accel: 2.0 # [rad/s^2]
+
 local_planning:
   N_max: 50
   N_termination: 300

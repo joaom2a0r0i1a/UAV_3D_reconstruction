@@ -130,7 +130,7 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
     newTrajectory->parent = fromTrajectory;
 }
 
-void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
+void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
     double dt = 0.1;
     size_t trajectory_size = fromTrajectory->TrajectoryPoints.size();
     Eigen::Vector3d current_velocity; 
@@ -144,9 +144,6 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
     double distance = 0.0;
     //double time = 0.0;
     //double max_time = 1.0;
-
-    double max_heading_velocity = 2.0;
-    double max_heading_acceleration = 2.0;
 
     double current_heading = fromTrajectory->TrajectoryPoints.back()->point[3];
     double current_heading_velocity = 0.0;
@@ -291,10 +288,8 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
     newTrajectory->parent = fromTrajectory;
 }
 
-void kino_rrt_star::steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, std::shared_ptr<Trajectory>& toChangeTrajectory) {
+void kino_rrt_star::steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, std::shared_ptr<Trajectory>& toChangeTrajectory) {
     double dt = 0.1;
-    double max_heading_velocity = 2.0;
-    double max_heading_acceleration = 2.0;
     double current_heading = fromTrajectory->TrajectoryPoints.back()->point[3];
     double current_heading_velocity = 0.0;
     double accel_heading;

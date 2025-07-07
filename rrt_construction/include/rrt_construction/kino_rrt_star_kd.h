@@ -104,11 +104,11 @@ public:
 
     void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
-    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
     void steer_trajectory_linear(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
-    void steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, std::shared_ptr<Trajectory>& toChangeTrajectory);
+    void steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, std::shared_ptr<Trajectory>& toChangeTrajectory);
 
     void backtrackTrajectory(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory, std::shared_ptr<Trajectory>& nextBestTrajectory);
 

@@ -152,7 +152,8 @@ private:
 
     // Log files
     int num_nodes_count;
-    std::ofstream outfile;
+    std::ofstream outfile_uniform;
+    std::ofstream outfile_informed;
 
     // RRT* Parameters
     int N_min_nodes;

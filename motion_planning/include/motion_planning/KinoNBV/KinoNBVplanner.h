@@ -122,6 +122,12 @@ private:
     float max_z;
     double bounded_radius;
 
+    // UAV parameters
+    double max_velocity;
+    double max_accel;
+    double max_heading_velocity;
+    double max_heading_accel;
+
     // Tree Parameters
     int N_max;
     int N_termination;

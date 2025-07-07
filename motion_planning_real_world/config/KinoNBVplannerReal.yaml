@@ -27,6 +27,8 @@ bounded_box:
 uav_parameters:
   max_vel: 0.5 # [m/s]
   max_accel: 1.0 # [m/s^2]
+  max_heading_vel: 2.0 # [rad/s]
+  max_heading_accel: 2.0 # [rad/s^2]
 
 rrt:
   N_max: 20

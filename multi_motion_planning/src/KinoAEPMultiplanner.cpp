@@ -24,6 +24,12 @@ KinoAEPMultiPlanner::KinoAEPMultiPlanner(const ros::NodeHandle& nh, const ros::N
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
 
+    // UAV Parameters
+    param_loader.loadParam("uav_parameters/max_vel", max_velocity);
+    param_loader.loadParam("uav_parameters/max_accel", max_accel);
+    param_loader.loadParam("uav_parameters/max_heading_vel", max_heading_velocity);
+    param_loader.loadParam("uav_parameters/max_heading_accel", max_heading_accel);
+
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
     param_loader.loadParam("local_planning/N_termination", N_termination);
@@ -297,7 +303,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             }
 
             new_trajectory_best->TrajectoryPoints.back()->point[3] = result_best.second;
-            KinoRRTStar.steer_trajectory_angular(nearest_trajectory_best, result_best.second, new_trajectory_best);
+            KinoRRTStar.steer_trajectory_angular(nearest_trajectory_best, result_best.second, max_heading_velocity, max_heading_accel, new_trajectory_best);
             
             // Make sure the heading of the last node is correct
             new_trajectory_best->TrajectoryPoints.back()->point[3] = result_best.second;
@@ -397,7 +403,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             }
 
             new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
-            KinoRRTStar.steer_trajectory_angular(nearest_trajectory, result.second, new_trajectory);
+            KinoRRTStar.steer_trajectory_angular(nearest_trajectory, result.second, max_heading_velocity, max_heading_accel, new_trajectory);
 
             // Make sure the heading of the last node is correct
             new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
@@ -614,7 +620,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
         }
 
         trajectory->TrajectoryPoints.back()->point[3] = result.second;
-        KinoRRTStar.steer_trajectory_angular(trajectory->parent, result.second, trajectory);
+        KinoRRTStar.steer_trajectory_angular(trajectory->parent, result.second, max_heading_velocity, max_heading_accel, trajectory);
 
         // Make sure the heading of the last node is correct
         trajectory->TrajectoryPoints.back()->point[3] = result.second;

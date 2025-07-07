@@ -6,15 +6,6 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
-# Fire Station
-#bounded_box:
-  #min_x: -16.0 # [m]
-  #max_x: 16.0 # [m]
-  #min_y: -11.0 # [m]
-  #max_y: 11.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 14.5 # [m]
-
 # School
 bounded_box:
   min_x: -25.0 # [m]
@@ -42,14 +33,11 @@ bounded_box:
   #min_z: 0.2 # [m]
   #max_z: 2.5 # [m]
 
-# House
-#bounded_box:
-  #min_x: -15.0 # [m]
-  #max_x: 15.0 # [m]
-  #min_y: -10.0 # [m]
-  #max_y: 15.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 15.0 # [m]
+uav_parameters:
+  max_vel: 1.0 # [m/s]
+  max_accel: 1.0 # [m/s^2]
+  max_heading_vel: 2.0 # [rad/s]
+  max_heading_accel: 2.0 # [rad/s^2]
 
 rrt:
   N_max: 50
@@ -60,17 +48,11 @@ rrt:
   tolerance: 1.5 # [m]
 
 camera:
-  #frame_id: "rgbd/aligned_depth_to_color_optical"
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"
-  #frame_id: "rgbd/aligned_depth_to_color"
-  #frame_id: "rgbd/link"
-  #frame_id: "velodyne_sensor"
   h_fov: 1.51844 # [rad]
-  #h_fov: 1.570796 # [rad]
   width: 1080
   height: 720
   min_distance: 0.2 # [m]
-  #max_distance: 12 # [m]
   max_distance: 5 # [m]
 
 path:

@@ -23,6 +23,12 @@ KinoAEPlanner::KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& n
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
 
+    // UAV Parameters
+    param_loader.loadParam("uav_parameters/max_vel", max_velocity);
+    param_loader.loadParam("uav_parameters/max_accel", max_accel);
+    param_loader.loadParam("uav_parameters/max_heading_vel", max_heading_velocity);
+    param_loader.loadParam("uav_parameters/max_heading_accel", max_heading_accel);
+
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
     param_loader.loadParam("local_planning/N_termination", N_termination);
@@ -291,7 +297,7 @@ void KinoAEPlanner::localPlanner() {
             }
 
             new_trajectory_best->TrajectoryPoints.back()->point[3] = result_best.second;
-            KinoRRTStar.steer_trajectory_angular(nearest_trajectory_best, result_best.second, new_trajectory_best);
+            KinoRRTStar.steer_trajectory_angular(nearest_trajectory_best, result_best.second, max_heading_velocity, max_heading_accel, new_trajectory_best);
             
             // Make sure the heading of the last node is correct
             new_trajectory_best->TrajectoryPoints.back()->point[3] = result_best.second;
@@ -333,8 +339,6 @@ void KinoAEPlanner::localPlanner() {
         std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory;
         KinoRRTStar.findNearestKD(rand_point, nearest_trajectory);
 
-        double max_velocity = 1.0;
-        double max_accel = 1.0;
         int accel_iteration = 0;
         int accel_tries = 0;
         while (accel_iteration < max_accel_iterations && accel_tries < 100 * max_accel_iterations) {
@@ -384,7 +388,7 @@ void KinoAEPlanner::localPlanner() {
             }
 
             new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
-            KinoRRTStar.steer_trajectory_angular(nearest_trajectory, result.second, new_trajectory);
+            KinoRRTStar.steer_trajectory_angular(nearest_trajectory, result.second, max_heading_velocity, max_heading_accel, new_trajectory);
 
             // Make sure the heading of the last node is correct
             new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
@@ -489,8 +493,6 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
         std::shared_ptr<kino_rrt_star::Trajectory> global_nearest_trajectory;
         KinoRRTStar.findNearestKD(global_rand_point, global_nearest_trajectory);
 
-        double max_velocity = 1.0;
-        double max_accel = 1.0;
         int accel_iteration = 0;
         int accel_tries = 0;
         while (accel_iteration < global_max_accel_iterations && accel_tries < 100 * global_max_accel_iterations) {
@@ -603,7 +605,7 @@ bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFron
         }
 
         trajectory->TrajectoryPoints.back()->point[3] = result.second;
-        KinoRRTStar.steer_trajectory_angular(trajectory->parent, result.second, trajectory);
+        KinoRRTStar.steer_trajectory_angular(trajectory->parent, result.second, max_heading_velocity, max_heading_accel, trajectory);
 
         // Make sure the heading of the last node is correct
         trajectory->TrajectoryPoints.back()->point[3] = result.second;

@@ -24,6 +24,12 @@ KinoNBVPMultiPlanner::KinoNBVPMultiPlanner(const ros::NodeHandle& nh, const ros:
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
 
+    // UAV Parameters
+    param_loader.loadParam("uav_parameters/max_vel", max_velocity);
+    param_loader.loadParam("uav_parameters/max_accel", max_accel);
+    param_loader.loadParam("uav_parameters/max_heading_vel", max_heading_velocity);
+    param_loader.loadParam("uav_parameters/max_heading_accel", max_heading_accel);
+
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
     param_loader.loadParam("rrt/N_termination", N_termination);
@@ -270,8 +276,6 @@ void KinoNBVPMultiPlanner::KinoNBV() {
         std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory;
         KinoRRTStar.findNearestKD(rand_point, nearest_trajectory);
 
-        double max_velocity = 1.0;
-        double max_accel = 1.0;
         int accel_iteration = 0;
         int accel_tries = 0;
         while (accel_iteration < max_accel_iterations && accel_tries < 100 * max_accel_iterations) {
@@ -281,7 +285,7 @@ void KinoNBVPMultiPlanner::KinoNBV() {
 
             std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
             new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
-            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, step_size, new_trajectory);
+            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, max_heading_velocity, max_heading_accel, step_size, new_trajectory);
             new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
 
             bool OutOfBounds = false;

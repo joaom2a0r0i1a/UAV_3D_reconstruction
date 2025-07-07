@@ -6,15 +6,6 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
-# Fire Station
-#bounded_box:
-  #min_x: -16.0 # [m]
-  #max_x: 16.0 # [m]
-  #min_y: -11.0 # [m]
-  #max_y: 11.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 14.5 # [m]
-
 # School
 bounded_box:
   min_x: -25.0 # [m]
@@ -42,21 +33,12 @@ bounded_box:
   #min_z: 0.2 # [m]
   #max_z: 2.5 # [m]
 
-# House
-#bounded_box:
-  #min_x: -15.0 # [m]
-  #max_x: 15.0 # [m]
-  #min_y: -10.0 # [m]
-  #max_y: 15.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 15.0 # [m]
-
 local_planning:
   N_max: 50
   N_termination: 300
   N_yaw_samples: 15
-  radius: 2.0 # [m]
-  step_size: 1.0 # [m]
+  radius: 3.0 # [m]
+  step_size: 2.0 # [m]
   tolerance: 1.5 # [m]
   g_zero: 5.0
 
@@ -64,18 +46,11 @@ global_planning:
   N_min_nodes: 300
 
 camera:
-  #frame_id: "rgbd/aligned_depth_to_color_optical"
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"
-  #frame_id: "rgbd/aligned_depth_to_color"
-  #frame_id: "rgbd/link"
-  #frame_id: "velodyne_sensor"
-  #h_fov: 1.211259 # [rad]
   h_fov: 1.51844 # [rad]
-  #h_fov: 1.570796 # [rad]
   width: 1080
   height: 720
   min_distance: 0.2 # [m]
-  #max_distance: 12 # [m]
   max_distance: 5 # [m]
 
 path:
