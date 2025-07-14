@@ -59,7 +59,7 @@ git clone --recursive git@github.com:joaom2a0r0i1a/UAV_3D_reconstruction.git
 # OR using HTTPS
 git clone --recursive https://github.com/joaom2a0r0i1a/UAV_3D_reconstruction.git
 ```
-If you clone without ```--recursive```, initialize submodule manually:
+If you clone without ```--recursive```, initialize submodules manually:
 ```bash
 cd UAV_3D_reconstruction
 git submodule update --init --recursive
