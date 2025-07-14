@@ -1,5 +1,5 @@
 # Kinodynamic Trajectory Framework
-This work contains the **Kinodynamic Autonomous Exploration Planner (KAEP)** and the **Kinodynamic Receding-Horizon Next-Best-View Planner (KRH-NBVP)** - real-time next-best-view planners designed for efficient 3D exploration with Unmanned Aerial Vehicles (UAVs). These planners use a Kinodynamic RRT (KRRT) to identify the next viewpoint that maximizes information gain while considering for the robot’s kinodynamic constraints in the planning process. 
+This work contains the **Kinodynamic Autonomous Exploration Planner (KAEP)** and the **Kinodynamic Receding-Horizon Next-Best-View Planner (KRH-NBVP)** - real-time kinodynamic trajectory planners designed for efficient 3D exploration with Unmanned Aerial Vehicles (UAVs). These planners use a Kinodynamic RRT (KRRT) to identify the next viewpoint that maximizes information gain while considering for the robot’s kinodynamic constraints in the planning process. 
 
 # Installation
 
@@ -17,13 +17,13 @@ Find the instruction [here](https://wiki.ros.org/ROS/Installation).
 ### 2. Install MRS UAV System
 
 Follow the full setup instructions from the official repository:  
-[MRS UAV System](https://github.com/ctu-mrs/mrs_uav_system)
+[MRS UAV System](https://github.com/ctu-mrs/mrs_uav_system).
 
 ### 3. Install [Voxblox](https://github.com/ethz-asl/voxblox)
 
 This project uses a **modified version of Voxblox**, that support:
-- Freespace pointcloud integration in static environments (without deletion of existing surfaces)
-- Centralized Multi-robot mapping
+- Freespace pointcloud integration in static environments (without deletion of existing surfaces).
+- Centralized Multi-robot mapping.
 
 Clone and build the customized Voxblox used in this project from [here](https://github.com/...), following the same installation steps as in the official [Voxblox instructions](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
 
@@ -31,7 +31,7 @@ Clone and build the customized Voxblox used in this project from [here](https://
 
 ### 1. Setup your catkin workspace 
 
-Based on the MRS UAV System setup guide (see ["Start developing your own package"](https://github.com/ctu-mrs/mrs_uav_system))
+Based on the MRS UAV System setup guide (see ["Start developing your own package"](https://github.com/ctu-mrs/mrs_uav_system)).
 
 ```bash
 mkdir -p ~/catkin_ws/src
@@ -65,17 +65,46 @@ cd UAV_3D_reconstruction
 git submodule update --init --recursive
 ```
 
-### 3. Build the workspace
+### 3. Source the workspace
 ```bash
-cd UAV_3D_reconstruction
+cd ~/catkin_ws
+source devel/setup.bash
+```
+
+### 4. Build the workspace
+```bash
+cd ~/catkin_ws/src/UAV_3D_reconstruction
 catkin build
 ```
 
-## Notes
+# Start the Simulation
+
+### Single Drone Simulation
+
+To start the simulation with one drone:
+
+```bash
+cd ~/catkin_ws/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone
+./start.sh
+```
+### Multi-Drone Simulation
+
+For a three-drone simulation:
+
+```bash
+cd ~/catkin_ws/src/UAV_3D_reconstruction/multi_motion_planning/tmux/three_drones
+./start.sh
+```
+To configure which simulation scenario and algorithms to run, edit the ```session.yml``` file accordingly. This follows the standard MRS UAV System format. 
+
+You can find additional MRS examples in the [mrs_core_examples](https://github.com/ctu-mrs/mrs_core_examples) repository.
+
+
+# Notes
 - For reproducibility of the results shown in the paper, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
 - Performance may vary depending on your hardware. The experiments in the paper were conducted using:
   - **CPU:** Intel® Core™ i9 (14th Gen)
   - **GPU:** NVIDIA GeForce RTX 4060
 
-## Credits
+# Credits
 TBA
