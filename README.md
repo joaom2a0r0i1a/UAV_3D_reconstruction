@@ -99,6 +99,14 @@ To configure which simulation scenario and algorithms to run, edit the ```sessio
 
 You can find additional MRS examples in the [mrs_core_examples](https://github.com/ctu-mrs/mrs_core_examples) repository.
 
+# Environments
+The three Gazebo environments used to evaluate the exploration algorithms can be downloaded [here](https://github.com/joaom2a0r0i1a/UAV_3D_reconstruction/releases/tag/environments-v1/Environments.zip). They are provided as a ```.zip``` archive containing the ```.world``` files.
+
+To use these environments with the MRS UAV System, extract the contents of the archive and move the ```.world``` files into the following directory:
+```bash
+/opt/ros/noetic/share/mrs_gazebo_common_resources/worlds/
+```
+This is the default location used by the MRS framework to load world files. After moving, you can select the desired world in your ```session.yml``` file via the ```world_name``` argument.
 
 # Notes
 - For reproducibility of the results shown in the paper, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
