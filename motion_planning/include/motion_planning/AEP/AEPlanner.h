@@ -79,7 +79,7 @@ public:
     void getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node);
 
     void cacheNode(std::shared_ptr<rrt_star::Node> Node);
-    double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
+    double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
     
@@ -175,13 +175,17 @@ private:
     double lambda;
     double global_lambda;
 
-    mrs_msgs::Reference current_waypoint_;
+    // Backtrack
+    bool backtrack = false;
+
+    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
 
     // Local Planner variables
     std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
-    std::shared_ptr<rrt_star::Node> previous_root;
+    std::shared_ptr<rrt_star::Node> previous_node;
     std::shared_ptr<rrt_star::Node> next_best_node;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d next_start;
 
     // Global Planner variables
     std::shared_ptr<rrt_star::Node> best_global_node;

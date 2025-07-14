@@ -69,7 +69,7 @@ public:
     bool isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const;
     void GetTransformation();
 
-    void AEP();
+    void KAEP();
     void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
 
@@ -78,7 +78,7 @@ public:
     void getBestGlobalTrajectory(const std::vector<std::shared_ptr<kino_rrt_star::Trajectory>>& global_goals, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
 
     void cacheNode(std::shared_ptr<kino_rrt_star::Trajectory> trajectory);
-    double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
+    double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
     
@@ -180,12 +180,16 @@ private:
     int max_accel_iterations;
     bool reset_velocity;
 
+    // Backtrack
+    bool backtrack = false;
+
     // Local Planner variables
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
     std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> previous_best_global_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d next_start;
 
     // Global Planner variables
     std::shared_ptr<kino_rrt_star::Trajectory> best_global_trajectory;
@@ -199,7 +203,7 @@ private:
     Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
-    mrs_msgs::Reference current_waypoint_;
+    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;

@@ -1,9 +1,6 @@
 #include "motion_planning/AEP/AEPlanner.h"
 
 AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
-
-    //ns = "uav1";
-
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "AEPlanner");
 
@@ -90,15 +87,25 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     std::stringstream ss;
     ss << std::put_time(now_tm, "%Y%m%d_%H%M%S");
 
-    outfile.open("/home/joaomendes/motion_workspace/src/data/raycast_optimized/computation_time_gain_" + ss.str() + ".csv", std::ios_base::out);
-    if (!outfile.is_open()) {
+    /*outfile_uniform.open("/home/joaomendes/motion_workspace/src/data/raycast_uniform_sample_720/computation_time_gain_uniform_" + ss.str() + ".csv", std::ios_base::out);
+    if (!outfile_uniform.is_open()) {
         ROS_ERROR("Failed to open the file: computation_time_gain.csv");
         return;
     }
 
-    if (outfile.tellp() == 0) {
-        outfile << "NumberNodes,GainComputationTime\n";
+    if (outfile_uniform.tellp() == 0) {
+        outfile_uniform << "NumberNodes,GainComputationTime\n";
     }
+
+    outfile_informed.open("/home/joaomendes/motion_workspace/src/data/raycast_informed_sample_720/computation_time_gain_informed_" + ss.str() + ".csv", std::ios_base::out);
+    if (!outfile_informed.is_open()) {
+        ROS_ERROR("Failed to open the file: computation_time_gain.csv");
+        return;
+    }
+
+    if (outfile_informed.tellp() == 0) {
+        outfile_informed << "NumberNodes,GainComputationTime\n";
+    }*/
     //std::ofstream outfile;
     //outfile.open("computation_time_gain.csv", std::ios::out);
     
@@ -192,7 +199,12 @@ void AEPlanner::AEP() {
         }
         ROS_INFO("[AEPlanner]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
-        next_best_node = best_global_node;
+        if (!backtrack) {
+            next_best_node = best_global_node;
+        } else {
+            backtrack = false;
+            return;
+        }
         goto_global_planning = false;
     }
 }
@@ -200,8 +212,13 @@ void AEPlanner::AEP() {
 void AEPlanner::localPlanner() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
+
+    ROS_INFO("[AEPlanner]: Start Expanding Local");
+
     std::shared_ptr<rrt_star::Node> root;
-    if (best_branch.size() > 1) {
+    if (current_waypoint_) {
+        root = std::make_shared<rrt_star::Node>(next_start);
+    } else if (best_branch.size() > 1) {
         root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
     } else {
         root = std::make_shared<rrt_star::Node>(pose);
@@ -228,22 +245,21 @@ void AEPlanner::localPlanner() {
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
-    if (best_branch.size() > 0) {
-        previous_root = best_branch[0];
-    }
     while (j < N_max || best_score_ <= g_zero) {
         // Backtrack
         if (collision_id_counter_ > 10000 * j) {
-            if (previous_root) {
-                //next_best_node = previous_root;
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
+            if (previous_node) {
+                ROS_INFO("[AEPlanner]: Backtracking to [%f, %f, %f]", previous_node->point[0], previous_node->point[1], previous_node->point[2]);
+                next_best_node = previous_node;
+                best_branch.clear();
+                return;
+                //rotate();
+                //changeState(STATE_WAITING_INITIALIZE);
             } else {
-                ROS_INFO("[AEPlanner]: Enough");
+                ROS_INFO("[AEPlanner]: Backtrack Rotation");
+                rotate();
                 collision_id_counter_ = 0;
-                break;
             }
-            return;
         }
 
         // Add previous best branch 
@@ -267,19 +283,32 @@ void AEPlanner::localPlanner() {
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+
             //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
             std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
-            auto end1 = std::chrono::high_resolution_clock::now();
+            /*auto end1 = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> elapsed = end1 - start1;
             num_nodes_count += 1;
 
             // Write the iteration count and elapsed time to the file
-            outfile << num_nodes_count << "," << elapsed.count() << "\n";
+            outfile_uniform << num_nodes_count << "," << elapsed.count() << "\n";
+
+            auto startinformed1 = std::chrono::high_resolution_clock::now();
+
+            trajectory_point.position_W = new_node_best->point.head(3);
+            trajectory_point.setFromYaw(new_node_best->point[3]);
+            std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+            new_node_best->gain = result2.first;
+            new_node_best->point[3] = result2.second;
+
+            auto endinformed1 = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsedinformed = endinformed1 - startinformed1;
+
+            // Write the iteration count and elapsed time to the file
+            outfile_informed << num_nodes_count << "," << elapsedinformed.count() << "\n";*/
 
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
@@ -342,19 +371,34 @@ void AEPlanner::localPlanner() {
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
-        //std::pair<double, double> result = segment_evaluator.computeGainFromSampledYawAEP(trajectory_point);
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+
         //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
-        auto end2 = std::chrono::high_resolution_clock::now();
+        /*auto end2 = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end2 - start2;
         num_nodes_count += 1;
 
         // Write the iteration count and elapsed time to the file
-        outfile << num_nodes_count << "," << elapsed.count() << "\n";
+        outfile_uniform << num_nodes_count << "," << elapsed.count() << "\n";
+
+        auto startinformed2 = std::chrono::high_resolution_clock::now();
+
+        trajectory_point.position_W = new_node->point.head(3);
+        trajectory_point.setFromYaw(new_node->point[3]);
+
+        std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
+        new_node->gain = result2.first;
+        new_node->point[3] = result2.second;
+
+        auto endinformed2 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsedinformed = endinformed2 - startinformed2;
+
+        // Write the iteration count and elapsed time to the file
+        outfile_informed << num_nodes_count << "," << elapsedinformed.count() << "\n";*/
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -389,9 +433,13 @@ void AEPlanner::localPlanner() {
 
     }
 
-    if (num_nodes_count >= 10000 && outfile.is_open()) {
-        outfile.close();
+    /*if (num_nodes_count >= 10000 && outfile_uniform.is_open()) {
+        outfile_uniform.close();
     }
+
+    if (num_nodes_count >= 10000 && outfile_informed.is_open()) {
+        outfile_informed.close();
+    }*/
     
     if (best_node) {
         next_best_node = best_node;
@@ -423,12 +471,36 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         return;
     }
 
-    std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
+    ROS_INFO("[KinoAEPlanner]: Start Expanding Global");
+    
+    std::shared_ptr<rrt_star::Node> root;
+    if (current_waypoint_) {
+        root = std::make_shared<rrt_star::Node>(next_start);
+    } else {
+        root = std::make_shared<rrt_star::Node>(pose);
+    }
+
     RRTStar.addKDTreeNode(root);
     std::vector<std::shared_ptr<rrt_star::Node>> all_global_goals;
 
+    collision_id_counter_ = 0;
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
+        if (collision_id_counter_ > 10000 * (m+1)) {
+            if (previous_node) {
+                ROS_INFO("[AEPlanner]: Backtracking to [%f, %f, %f]", previous_node->point[0], previous_node->point[1], previous_node->point[2]);
+                next_best_node = previous_node;
+                backtrack = true;
+                return;
+                //rotate();
+                //changeState(STATE_WAITING_INITIALIZE);
+            } else {
+                ROS_INFO("[AEPlanner]: Backtrack Rotation");
+                rotate();
+                collision_id_counter_ = 0;
+            }
+        }
+
         Eigen::Vector3d rand_point_star;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
         rand_point_star += root->point.head(3);
@@ -519,23 +591,41 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point_global);
+        
+        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point_global);
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
 
-        auto end3 = std::chrono::high_resolution_clock::now();
+        /*auto end3 = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = end3 - start3;
         num_nodes_count += 1;
 
         // Write the iteration count and elapsed time to the file
-        outfile << num_nodes_count << "," << elapsed.count() << "\n";
+        outfile_uniform << num_nodes_count << "," << elapsed.count() << "\n";
+
+        auto startinformed3 = std::chrono::high_resolution_clock::now();           
+
+        trajectory_point_global.position_W = node->point.head(3);
+        trajectory_point_global.setFromYaw(node->point[3]);
+
+        std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point_global);
+
+        auto endinformed3 = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsedinformed = endinformed3 - startinformed3;
+
+        // Write the iteration count and elapsed time to the file
+        outfile_informed << num_nodes_count << "," << elapsedinformed.count() << "\n";*/
 
         node->gain = result.first;
         node->point[3] = result.second;
 
-        trajectory_point_global.position_W = nearest_goal;
-        trajectory_point_global.setFromYaw(0.0);
-        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-        ROS_INFO("[AEPlanner]: Goal Best Gain: %f", result_original.first);
+        if (node->gain < 0.1) {
+            return false;
+        }
+
+        //trajectory_point_global.position_W = nearest_goal;
+        //trajectory_point_global.setFromYaw(0.0);
+        //std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        //ROS_INFO("[AEPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
     }
@@ -552,12 +642,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
 
     best_global_node = global_goals[0];
 
-    /*// Cost Criteria
+    // Cost Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->cost > global_goals[i]->cost) {
             best_global_node = global_goals[i];
         }
-    }*/
+    }
 
     /*// Gain Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
@@ -566,12 +656,12 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
         }
     }*/
 
-    // Score Criteria
+    /*// Score Criteria
     for (int i = 0; i < global_goals.size(); ++i) {
         if (best_global_node->score < global_goals[i]->score) {
             best_global_node = global_goals[i];
         }
-    }
+    }*/
 
     std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
 
@@ -608,14 +698,14 @@ void AEPlanner::cacheNode(std::shared_ptr<rrt_star::Node> Node) {
     pub_node.publish(cached_node);
 }
 
-double AEPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
+double AEPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) {
 
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+  return mrs_lib::geometry::dist(vec3_t(waypoint->position.x, waypoint->position.y, waypoint->position.z),
                                  vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
 void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
-    initial_reference.header.frame_id = "uav1/" + frame_id;
+    initial_reference.header.frame_id = ns + "/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
 
     ROS_INFO("[AEPlanner]: Flying 3 meters up");
@@ -655,7 +745,7 @@ void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
 
 void AEPlanner::rotate() {
     mrs_msgs::ReferenceStamped initial_reference;
-    initial_reference.header.frame_id = "uav1/" + frame_id;
+    initial_reference.header.frame_id = ns + "/" + frame_id;
     initial_reference.header.stamp = ros::Time::now();
 
     // Rotate 360 degrees
@@ -807,22 +897,35 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            current_waypoint_.position.x = next_best_node->point[0];
-            current_waypoint_.position.y = next_best_node->point[1];
-            current_waypoint_.position.z = next_best_node->point[2];
-            current_waypoint_.heading = next_best_node->point[3];
+            if (!current_waypoint_) {
+                current_waypoint_ = std::make_unique<mrs_msgs::Reference>();
+            }
+
+            current_waypoint_->position.x = next_best_node->point[0];
+            current_waypoint_->position.y = next_best_node->point[1];
+            current_waypoint_->position.z = next_best_node->point[2];
+            current_waypoint_->heading = next_best_node->point[3];
+
+            next_start[0] = current_waypoint_->position.x;
+            next_start[1] = current_waypoint_->position.y;
+            next_start[2] = current_waypoint_->position.z;
+            next_start[3] = current_waypoint_->heading;
 
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
             mrs_msgs::GetPathSrv srv_get_path;
 
-            srv_get_path.request.path.header.frame_id = "uav1/" + frame_id;
+            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
             srv_get_path.request.path.header.stamp = ros::Time::now();
             srv_get_path.request.path.fly_now = false;
             srv_get_path.request.path.use_heading = true;
 
             mrs_msgs::Reference reference;
+
+            if (next_best_node && next_best_node->parent) {
+                previous_node = std::make_shared<rrt_star::Node>(*next_best_node->parent);
+            }
 
             while (next_best_node && next_best_node->parent) {
                 reference.position.x = next_best_node->point[0];
@@ -891,7 +994,7 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
                 double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
+                double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
                 ROS_INFO("[AEPlanner]: Distance to waypoint: %.2f", dist);
                 if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
                     changeState(STATE_PLANNING);
@@ -905,9 +1008,12 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[AEPlanner]: Total Iterations: %d", iteration_);
             ROS_INFO("[AEPlanner]: Closing output file.");
-            if (outfile.is_open()) {
-                outfile.close();
+            /*if (outfile_uniform.is_open()) {
+                outfile_uniform.close();
             }
+            if (outfile_informed.is_open()) {
+                outfile_informed.close();
+            }*/
             ROS_INFO("[AEPlanner]: Shutting down.");
             ros::shutdown();
             return;

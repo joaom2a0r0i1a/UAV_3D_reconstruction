@@ -176,7 +176,7 @@ void KinoAEPlanner::GetTransformation() {
     segment_evaluator.setCameraExtrinsics(T_C_B);
 }
 
-void KinoAEPlanner::AEP() {
+void KinoAEPlanner::KAEP() {
     localPlanner();
     if (goto_global_planning) {
         // Clear variables from possible previous iterations
@@ -201,9 +201,14 @@ void KinoAEPlanner::AEP() {
             changeState(STATE_STOPPED);
             return;   
         }
-        ROS_INFO("[KinoAEPlanner]: Planning Path to Global Frontiers");
+        ROS_INFO("[KinoAEPlanner]: Planning Trajectory to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_trajectory);
-        next_best_trajectory = best_global_trajectory;
+        if (!backtrack) {
+            next_best_trajectory = best_global_trajectory;
+        } else {
+            backtrack = false;
+            return;
+        }
         goto_global_planning = false;
     }
 }
@@ -212,9 +217,18 @@ void KinoAEPlanner::localPlanner() {
     best_score_ = 0;
     std::shared_ptr<kino_rrt_star::Trajectory> best_trajectory = nullptr;
 
+    ROS_INFO("[KinoAEPlanner]: Start Expanding Local");
+
     std::shared_ptr<kino_rrt_star::Node> root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
-    if (best_branch.size() > 1) {
+    if (current_waypoint_) {
+        if (!reset_velocity) {
+            root_node = std::make_shared<kino_rrt_star::Node>(next_start, velocity, Eigen::Vector3d::Zero());
+        } else {
+            root_node = std::make_shared<kino_rrt_star::Node>(next_start, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        }
+        Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
+    } else if (best_branch.size() > 1) {
         if (!reset_velocity) {
             root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
         } else {
@@ -230,6 +244,7 @@ void KinoAEPlanner::localPlanner() {
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
     
+    //Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     Root->cost = 0.0;
     Root->score = 0.0;
     //Root->score = Root->gain;
@@ -248,22 +263,22 @@ void KinoAEPlanner::localPlanner() {
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
-    if (best_branch.size() > 0) {
-        previous_trajectory = best_branch[0];
-    }
     while (j < N_max || best_score_ <= g_zero) {
         // Backtrack
-        if (collision_id_counter_ > 1000000 * j) {
+        if (collision_id_counter_ > 10000 * j) {
             if (previous_trajectory) {
-                //next_best_trajectory = previous_trajectory;
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
+                ROS_INFO("[KinoAEPlanner]: Backtracking to [%f, %f, %f]", previous_trajectory->TrajectoryPoints.back()->point[0], previous_trajectory->TrajectoryPoints.back()->point[1], previous_trajectory->TrajectoryPoints.back()->point[2]);
+                next_best_trajectory = previous_trajectory;
+                reset_velocity = true;
+                best_branch.clear();
+                return;
+                //rotate();
+                //changeState(STATE_WAITING_INITIALIZE);
             } else {
-                ROS_INFO("[KinoAEPlanner]: Trying the existing Nodes");
+                ROS_INFO("[KinoAEPlanner]: Backtrack Rotation");
+                rotate();
                 collision_id_counter_ = 0;
-                break;
             }
-            return;
         }
 
         // Add previous best branch 
@@ -287,9 +302,6 @@ void KinoAEPlanner::localPlanner() {
             trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
             trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
             std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
-            //std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
-            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
             new_trajectory_best->gain = result_best.first;
             
             if (result_best.second > M_PI) {
@@ -302,11 +314,6 @@ void KinoAEPlanner::localPlanner() {
             // Make sure the heading of the last node is correct
             new_trajectory_best->TrajectoryPoints.back()->point[3] = result_best.second;
 
-            //segment_evaluator.computeGainFromsampledYaw(new_node_best, num_yaw_samples, trajectory_point);
-
-            //segment_evaluator.computeCost(new_trajectory_best);
-            //segment_evaluator.computeScore(new_trajectory_best, lambda);
-
             segment_evaluator.computeCostTwo(new_trajectory_best);
             segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
 
@@ -315,7 +322,6 @@ void KinoAEPlanner::localPlanner() {
                 best_trajectory = new_trajectory_best;
             }
 
-            //ROS_INFO("[KinoAEPlanner]: Best Gain Optimized BB: %f", new_node_best->gain);
             //ROS_INFO("[KinoAEPlanner]: Best Gain BB: %f", result2.first);
             //ROS_INFO("[KinoAEPlanner]: Best Cost BB: %f", new_node_best->cost);
             ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", new_trajectory_best->score);
@@ -460,7 +466,7 @@ void KinoAEPlanner::localPlanner() {
 
 void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory) {
     if (GlobalFrontiers.size() == 0) {
-        ROS_INFO("[KinoAEPlanner]: Terminate AEP");
+        ROS_INFO("[KinoAEPlanner]: Terminate KAEP");
 
         KinoRRTStar.clearKDTree();
         best_branch.clear();
@@ -470,13 +476,23 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
         return;
     }
 
+    ROS_INFO("[KinoAEPlanner]: Start Expanding Global");
+
     std::shared_ptr<kino_rrt_star::Node> global_root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> global_root;
 
-    if (!reset_velocity) {
-        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d::Zero());
+    if (current_waypoint_) {
+        if (!reset_velocity) {
+            global_root_node = std::make_shared<kino_rrt_star::Node>(next_start, velocity, Eigen::Vector3d::Zero());
+        } else {
+            global_root_node = std::make_shared<kino_rrt_star::Node>(next_start, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        }
     } else {
-        global_root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        if (!reset_velocity) {
+            global_root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d::Zero());
+        } else {
+            global_root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        }
     }
     
     global_root = std::make_shared<kino_rrt_star::Trajectory>(global_root_node);
@@ -484,8 +500,24 @@ void KinoAEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFron
 
     std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> all_global_goals;
 
+    collision_id_counter_ = 0;
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
+        if (collision_id_counter_ > 10000 * (m+1)) {
+            if (previous_trajectory) {
+                ROS_INFO("[KinoAEPlanner]: Global Backtracking to [%f, %f, %f]", previous_trajectory->TrajectoryPoints.back()->point[0], previous_trajectory->TrajectoryPoints.back()->point[1], previous_trajectory->TrajectoryPoints.back()->point[2]);
+                next_best_trajectory = previous_trajectory;
+                reset_velocity = true;
+                backtrack = true;
+                return;
+                //rotate();
+                //changeState(STATE_WAITING_INITIALIZE);
+            } else {
+                ROS_INFO("[KinoAEPlanner]: Trying the existing Nodes");
+                rotate();
+                collision_id_counter_ = 0;
+            }
+        }
         Eigen::Vector3d global_rand_point;
         KinoRRTStar.computeSamplingDimensions(bounded_radius, global_rand_point);
         global_rand_point += global_root_node->point.head(3);
@@ -599,6 +631,10 @@ bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFron
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
         trajectory->gain = result.first;
 
+        if (trajectory->gain < 0.1) {
+            return false;
+        }
+
         // Convert from [0, 2*PI[ to [-PI, PI[ 
         if (result.second > M_PI) {
             result.second -= 2*M_PI;
@@ -613,7 +649,7 @@ bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFron
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
         std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-        ROS_INFO("[KinoAEPlanner]: Goal Best Gain: %f", result_original.first);
+        //ROS_INFO("[KinoAEPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
     }
@@ -670,9 +706,9 @@ void KinoAEPlanner::cacheNode(std::shared_ptr<kino_rrt_star::Trajectory> traject
     pub_node.publish(cached_node);
 }
 
-double KinoAEPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
+double KinoAEPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) {
 
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+  return mrs_lib::geometry::dist(vec3_t(waypoint->position.x, waypoint->position.y, waypoint->position.z),
                                  vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
@@ -866,7 +902,7 @@ void KinoAEPlanner::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
-            AEP();
+            KAEP();
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
@@ -875,10 +911,19 @@ void KinoAEPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            current_waypoint_.position.x = next_best_trajectory->TrajectoryPoints.back()->point[0];
-            current_waypoint_.position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
-            current_waypoint_.position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
-            current_waypoint_.heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
+            if (!current_waypoint_) {
+                current_waypoint_ = std::make_unique<mrs_msgs::Reference>();
+            }
+
+            current_waypoint_->position.x = next_best_trajectory->TrajectoryPoints.back()->point[0];
+            current_waypoint_->position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
+            current_waypoint_->position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
+            current_waypoint_->heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
+
+            next_start[0] = current_waypoint_->position.x;
+            next_start[1] = current_waypoint_->position.y;
+            next_start[2] = current_waypoint_->position.z;
+            next_start[3] = current_waypoint_->heading;
 
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
@@ -894,6 +939,16 @@ void KinoAEPlanner::timerMain(const ros::TimerEvent& event) {
             srv_trajectory_reference.request.trajectory.dt = 0.1;
 
             mrs_msgs::Reference reference;
+            
+            if (next_best_trajectory) {
+                previous_trajectory = std::make_shared<kino_rrt_star::Trajectory>(*next_best_trajectory);
+            }
+            if (next_best_trajectory->parent) {
+                std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent = std::make_shared<kino_rrt_star::Trajectory>(*next_best_trajectory->parent);
+                previous_trajectory->parent = previous_trajectory_parent;
+            }
+
+            std::reverse(previous_trajectory->TrajectoryPoints.begin(), previous_trajectory->TrajectoryPoints.end());
 
             while (next_best_trajectory && next_best_trajectory->parent) {
                 for (int i = next_best_trajectory->TrajectoryPoints.size() - 1; i >= 0; i--) {
@@ -940,7 +995,7 @@ void KinoAEPlanner::timerMain(const ros::TimerEvent& event) {
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
                 double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
+                double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
                 ROS_INFO("[KinoAEPlanner]: Distance to waypoint: %.2f", dist);
                 if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
                     changeState(STATE_PLANNING);

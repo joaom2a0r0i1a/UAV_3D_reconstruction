@@ -60,14 +60,13 @@ public:
 
     void NBV();
     
-    double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
+    double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
 
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
-    void callbackTrackerCmd(const mrs_msgs::TrackerCommand::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
     
@@ -151,15 +150,16 @@ private:
     std::vector<Eigen::Vector4d> prev_best_branch;
     std::vector<Eigen::Vector4d> best_branch;
     std::shared_ptr<rrt_star::Node> next_best_node;
-    std::shared_ptr<rrt_star::Node> previous_root;
+    std::shared_ptr<rrt_star::Node> previous_node;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d next_start;
 
     // UAV variables
     bool is_initialized = false;
     Eigen::Vector4d pose;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
-    mrs_msgs::Reference current_waypoint_;
+    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;

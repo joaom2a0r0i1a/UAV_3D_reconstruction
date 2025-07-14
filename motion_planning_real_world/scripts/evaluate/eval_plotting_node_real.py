@@ -251,7 +251,7 @@ class EvalPlotting(object):
         # Read all the data
         fig, axes = plt.subplots(2, 2)
         #series_dir = ["nbv", "aep", "knbv", "kaep"]
-        series_dir = ["RH-NBVP", "AEP", "Kinodynamic RH-NBVP (ours)", "Kinodynamic AEP (ours)"]
+        series_dir = ["RH-NBVP", "AEP", "KRH-NBVP (ours)", "KAEP (ours)"]
         #series_dir = ["JS - RH-NBVP", "JS - AEP", "JS - Kinodynamic RH-NBVP (ours)", "JS - Kinodynamic AEP (ours)"]
         #series_dir = ["SS - RH-NBVP", "SS - AEP", "SS - Kinodynamic RH-NBVP (ours)", "SS - Kinodynamic AEP (ours)"]
         #series_dir = ["RH-NBVP/JS", "RH-NBVP/SS", "AEP/JS", "AEP/SS", "Kinodynamic RH-NBVP (ours)/JS", "Kinodynamic RH-NBVP (ours)/SS", "Kinodynamic AEP (ours)/JS", "Kinodynamic AEP (ours)/SS"]

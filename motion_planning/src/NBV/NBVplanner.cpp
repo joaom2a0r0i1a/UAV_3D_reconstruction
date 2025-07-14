@@ -151,7 +151,9 @@ void NBVPlanner::NBV() {
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
 
     std::shared_ptr<rrt_star::Node> root;
-    if (prev_best_branch.size() > 1) {
+    if (current_waypoint_) {
+        root = std::make_shared<rrt_star::Node>(next_start);
+    } else if (best_branch.size() > 1) {
         root = std::make_shared<rrt_star::Node>(prev_best_branch[1]);
     } else {
         root = std::make_shared<rrt_star::Node>(pose);
@@ -172,23 +174,22 @@ void NBVPlanner::NBV() {
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
-    if (prev_best_branch.size() > 0) {
-        previous_root = std::make_shared<rrt_star::Node>(prev_best_branch[0]);
-    }
     while (j < N_max || best_score_ == 0.0) {
-        /*// Backtrack
-        if (collision_id_counter_ > 1000 * j) {
-            if (previous_root) {
-                //next_best_node = previous_root;
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
+        // Backtrack
+        if (collision_id_counter_ > 10000 * j) {
+            if (previous_node) {
+                ROS_INFO("[NBVPlanner]: Backtracking to [%f, %f, %f]", previous_node->point[0], previous_node->point[1], previous_node->point[2]);
+                next_best_node = previous_node;
+                best_branch.clear();
+                return;
+                //rotate();
+                //changeState(STATE_WAITING_INITIALIZE);
             } else {
-                ROS_INFO("[NBVPlanner]: Enough");
+                ROS_INFO("[NBVPlanner]: Backtrack Rotation");
+                rotate();
                 collision_id_counter_ = 0;
-                break;
             }
-            return;
-        }*/
+        }
 
         for (size_t i = 1; i < prev_best_branch.size(); ++i) {
             if (isFirstIteration) {
@@ -287,7 +288,7 @@ void NBVPlanner::NBV() {
         visualize_edge(new_node, ns);
 
         if (j > N_termination) {
-            ROS_INFO("[NBVPlanner]: NBV Terminated");
+            ROS_INFO("[NBVPlanner]: RH-NBVP Terminated");
             RRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
@@ -307,9 +308,9 @@ void NBVPlanner::NBV() {
 
 }
 
-double NBVPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
+double NBVPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) {
 
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+  return mrs_lib::geometry::dist(vec3_t(waypoint->position.x, waypoint->position.y, waypoint->position.z),
                                  vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
@@ -505,10 +506,19 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            current_waypoint_.position.x = next_best_node->point[0];
-            current_waypoint_.position.y = next_best_node->point[1];
-            current_waypoint_.position.z = next_best_node->point[2];
-            current_waypoint_.heading = next_best_node->point[3];
+            if (!current_waypoint_) {
+                current_waypoint_ = std::make_unique<mrs_msgs::Reference>();
+            }
+
+            current_waypoint_->position.x = next_best_node->point[0];
+            current_waypoint_->position.y = next_best_node->point[1];
+            current_waypoint_->position.z = next_best_node->point[2];
+            current_waypoint_->heading   = next_best_node->point[3];
+
+            next_start[0] = current_waypoint_->position.x;
+            next_start[1] = current_waypoint_->position.y;
+            next_start[2] = current_waypoint_->position.z;
+            next_start[3] = current_waypoint_->heading;
 
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
@@ -521,6 +531,10 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             srv_get_path.request.path.use_heading = true;
 
             mrs_msgs::Reference reference;
+
+            if (next_best_node && next_best_node->parent) {
+                previous_node = std::make_shared<rrt_star::Node>(*next_best_node->parent);
+            }
 
             // Add parent node so UAV goes to last incomplete node
             if (next_best_node->parent) {
@@ -586,7 +600,7 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
                 double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
+                double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
                 ROS_INFO("[NBVPlanner]: Distance to waypoint: %.2f", dist);
                 if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
                     changeState(STATE_PLANNING);

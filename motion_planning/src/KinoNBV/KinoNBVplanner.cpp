@@ -173,11 +173,26 @@ void KinoNBVPlanner::KinoNBV() {
 
     std::shared_ptr<kino_rrt_star::Node> root_node;
     std::shared_ptr<kino_rrt_star::Trajectory> Root;
-    if (best_branch.size() > 1) {
-        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
+    if (current_waypoint_) {
+        if (!reset_velocity) {
+            root_node = std::make_shared<kino_rrt_star::Node>(next_start, velocity, Eigen::Vector3d::Zero());
+        } else {
+            root_node = std::make_shared<kino_rrt_star::Node>(next_start, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        }
+        Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
+    } else if (best_branch.size() > 1) {
+        if (!reset_velocity) {
+            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
+        } else {
+            root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        }
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     } else {
-        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d(0, 0, 0));
+        if (!reset_velocity) {
+            root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d::Zero());
+        } else {
+            root_node = std::make_shared<kino_rrt_star::Node>(pose, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero());
+        }
         Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
     }
 
@@ -199,25 +214,23 @@ void KinoNBVPlanner::KinoNBV() {
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
-    if (best_branch.size() > 0) {
-        previous_trajectory = best_branch[0];
-    }
     while (j < N_max || best_score_ <= 0.0) {
         // Backtrack
-        /*if (collision_id_counter_ > 1000 * j) {
+        if (collision_id_counter_ > 10000 * j) {
             if (previous_trajectory) {
+                ROS_INFO("[KinoNBVPlanner]: Backtracking to [%f, %f, %f]", previous_trajectory->TrajectoryPoints.back()->point[0], previous_trajectory->TrajectoryPoints.back()->point[1], previous_trajectory->TrajectoryPoints.back()->point[2]);
                 next_best_trajectory = previous_trajectory;
-                //rotate();
                 reset_velocity = true;
+                best_branch.clear();
                 return;
+                //rotate();
                 //changeState(STATE_WAITING_INITIALIZE);
             } else {
-                ROS_INFO("[KinoNBVPlanner]: Enough");
+                ROS_INFO("[KinoNBVPlanner]: Backtrack Rotation");
+                rotate();
                 collision_id_counter_ = 0;
-                break;
             }
-            return;
-        }*/
+        }
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -338,7 +351,7 @@ void KinoNBVPlanner::KinoNBV() {
         expanded_num_nodes += accel_iteration;
 
         if (j > N_termination) {
-            ROS_INFO("[KinoNBVPlanner]: KinoNBV Terminated");
+            ROS_INFO("[KinoNBVPlanner]: KRH-NBVP Terminated");
             KinoRRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
@@ -364,9 +377,9 @@ void KinoNBVPlanner::KinoNBV() {
 
 }
 
-double KinoNBVPlanner::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
+double KinoNBVPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) {
 
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+  return mrs_lib::geometry::dist(vec3_t(waypoint->position.x, waypoint->position.y, waypoint->position.z),
                                  vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
@@ -569,10 +582,19 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            current_waypoint_.position.x = next_best_trajectory->TrajectoryPoints.back()->point[0];
-            current_waypoint_.position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
-            current_waypoint_.position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
-            current_waypoint_.heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
+            if (!current_waypoint_) {
+                current_waypoint_ = std::make_unique<mrs_msgs::Reference>();
+            }
+
+            current_waypoint_->position.x = next_best_trajectory->TrajectoryPoints.back()->point[0];
+            current_waypoint_->position.y = next_best_trajectory->TrajectoryPoints.back()->point[1];
+            current_waypoint_->position.z = next_best_trajectory->TrajectoryPoints.back()->point[2];
+            current_waypoint_->heading = next_best_trajectory->TrajectoryPoints.back()->point[3];
+
+            next_start[0] = current_waypoint_->position.x;
+            next_start[1] = current_waypoint_->position.y;
+            next_start[2] = current_waypoint_->position.z;
+            next_start[3] = current_waypoint_->heading;
 
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
@@ -588,6 +610,16 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
             srv_trajectory_reference.request.trajectory.dt = 0.1;
 
             mrs_msgs::Reference reference;
+            
+            if (next_best_trajectory) {
+                previous_trajectory = std::make_shared<kino_rrt_star::Trajectory>(*next_best_trajectory);
+            }
+            if (next_best_trajectory->parent) {
+                std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent = std::make_shared<kino_rrt_star::Trajectory>(*next_best_trajectory->parent);
+                previous_trajectory->parent = previous_trajectory_parent;
+            }
+
+            std::reverse(previous_trajectory->TrajectoryPoints.begin(), previous_trajectory->TrajectoryPoints.end());
 
             if (next_best_trajectory->parent) {
                 for (size_t i = 0; i < next_best_trajectory->parent->TrajectoryPoints.size(); i++) {
@@ -636,7 +668,7 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
                 double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
+                double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
                 ROS_INFO("[KinoNBVPlanner]: Distance to waypoint: %.2f", dist);
                 if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
                     changeState(STATE_PLANNING);

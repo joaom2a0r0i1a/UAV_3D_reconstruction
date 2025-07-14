@@ -62,8 +62,7 @@
         <arg name="topic_3d_lidar_in" value="freespace_pc_rs_front_pitched/points_freespace" />
     </include>
 
-
-    <!--Process Pointcloud-->
+    <!--Process MultiRobot Pointcloud-->
     <include file="$(find process_pointcloud)/launch/process_pointcloud.launch">
         <arg name="standalone" value="$(arg standalone)" />
         <arg name="max_distance" value="$(arg MAX_DIST)" />

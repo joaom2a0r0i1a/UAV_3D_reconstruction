@@ -60,7 +60,7 @@ public:
 
     void KinoNBV();
     
-    double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
+    double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
 
@@ -159,6 +159,7 @@ private:
     std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d next_start;
 
     // UAV variables
     bool is_initialized = false;
@@ -166,7 +167,7 @@ private:
     Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
-    mrs_msgs::Reference current_waypoint_;
+    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;
