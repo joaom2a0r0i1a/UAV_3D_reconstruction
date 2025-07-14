@@ -1,12 +1,3 @@
-# Sweeping Generator
+# Single Drone Motion Planner
 
-## How to start
-
-```bash
-./tmux/start.sh
-```
-
-When ready, call the service prepared in the bottom terminal window:
-```bash
-rosservice call /$UAV_NAME/sweeping_generator/start 3.0
-```
+This is the core package of the repository. It contains the proposed exploration algorithms, as well as the RH-NBVP and AEP baselines for comparison. The package also includes simulation configurations, algorithm parameters, and performance evaluation scripts used in the experiments.

@@ -1,4 +1,4 @@
-# Kinodynamic Trajectory Framework
+# Kinodynamic Trajectory Planning Framework
 This work contains the **Kinodynamic Autonomous Exploration Planner (KAEP)** and the **Kinodynamic Receding-Horizon Next-Best-View Planner (KRH-NBVP)** - real-time kinodynamic trajectory planners designed for efficient 3D exploration with Unmanned Aerial Vehicles (UAVs). These planners use a Kinodynamic RRT (KRRT) to identify the next viewpoint that maximizes information gain while considering for the robot’s kinodynamic constraints in the planning process. 
 
 # Installation

@@ -1,12 +1,3 @@
-# Sweeping Generator
+# Real-World Motion Planning
 
-## How to start
-
-```bash
-./tmux/start.sh
-```
-
-When ready, call the service prepared in the bottom terminal window:
-```bash
-rosservice call /$UAV_NAME/sweeping_generator/start 3.0
-```
+This package contains adaptations of the planning framework for real-world deployment. It is based on MAVROS and MAVLink communication and is tailored for onboard execution with real UAV hardware.
