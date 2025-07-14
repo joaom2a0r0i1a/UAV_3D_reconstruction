@@ -110,7 +110,7 @@ This is the default location used by the MRS framework to load world files. Afte
 
 # Notes
 - For reproducibility of the results shown in the paper, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
-- Performance may vary depending on your hardware. The experiments in the paper were conducted using:
+- Performance may vary depending on your hardware (slower hardware leads to worse results). The experiments in the paper were conducted using:
   - **CPU:** Intel® Core™ i9 (14th Gen)
   - **GPU:** NVIDIA GeForce RTX 4060
 
