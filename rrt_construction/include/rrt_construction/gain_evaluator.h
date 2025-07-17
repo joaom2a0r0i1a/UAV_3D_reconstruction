@@ -30,6 +30,8 @@ class GainEvaluator {
         double max_distance);
   void setCameraExtrinsics(const voxblox::Transformation& T_C_B);
 
+  bool isPointInView(const voxblox::Point& point, bool first_node) const;
+
   // Bind the TSDF layer to one OWNED BY ANOTHER OBJECT. It is up to the user
   // to ensure the layer exists and does not go out of scope.
   void setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer);
@@ -64,6 +66,9 @@ class GainEvaluator {
   // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
   // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (informative yaw optimization).
   std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
+
+  // Use sparse raycasting to calculate volume of unknown voxels for fixed angle (for trajectories).
+  double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& previous_pose, const eth_mav_msgs::EigenTrajectoryPoint& pose, bool first_node, int modulus = 1);
 
   // Use sparse raycasting to calculate volume of unknown voxels for fixed angle.
   double computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
@@ -126,7 +131,10 @@ class GainEvaluator {
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
   voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
   voxblox::EsdfMap::Ptr esdf_map_;
+  voxblox::CameraModel prev_cam_model_;
   voxblox::CameraModel cam_model_;
+
+  voxblox::AlignedVector<voxblox::Plane> bounding_planes_;
 
   // Get map Bounds
   float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;
@@ -134,6 +142,7 @@ class GainEvaluator {
   double fov_y_rad_, fov_p_rad_;
   double r_max_;
   double dr_;
+  double camera_pitch_;
 
   int yaw_samples_;
 

@@ -25,7 +25,7 @@ This project uses a **modified version of Voxblox**, that support:
 - Freespace pointcloud integration in static environments (without deletion of existing surfaces).
 - Centralized Multi-robot mapping.
 
-Clone and build the customized Voxblox used in this project from [here](https://github.com/...), following the same installation steps as in the official [Voxblox instructions](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
+Clone and build the customized Voxblox used in this project from [here](https://github.com/joaom2a0r0i1a/feature-centralized_multi_robot_voxblox), following the same installation steps as in the official [Voxblox instructions](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
 
 ## Repository Installation
 

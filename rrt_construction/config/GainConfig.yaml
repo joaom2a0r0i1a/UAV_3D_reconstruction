@@ -11,6 +11,7 @@ camera_intrinsics:
   v_fov: 1.01229 # [rad]
   max_distance: 5 # [m]
   yaw_samples: 15
+  pitch: 10.0 # [deg]
 
 map:
   voxel_size: 0.2 # [m]

@@ -188,6 +188,7 @@ private:
     std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
     std::shared_ptr<kino_rrt_star::Trajectory> previous_best_global_trajectory;
+    eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
 
