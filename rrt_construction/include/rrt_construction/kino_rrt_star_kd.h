@@ -102,8 +102,6 @@ public:
 
     void findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Trajectory>& nearestTrajectory);
 
-    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
-
     void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
 
     void steer_trajectory_linear(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);

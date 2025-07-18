@@ -42,7 +42,7 @@ uav_parameters:
 rrt:
   N_max: 50
   N_termination: 300
-  N_yaw_samples: 10
+  N_yaw_samples: 15
   radius: 2.0 # [m]
   step_size: 2.0 # [m]
   tolerance: 1.5 # [m]
@@ -57,7 +57,7 @@ camera:
 
 path:
   uav_radius: 1.5 # [m]
-  lambda: 0.25 # (tunning factor)
+  lambda: 0.2 # (tunning factor)
   lambda2: 0.5 # (tunning factor)
   max_acceleration_iterations: 3
 

@@ -42,10 +42,10 @@ uav_parameters:
 local_planning:
   N_max: 50
   N_termination: 300
-  N_yaw_samples: 10
+  N_yaw_samples: 15
   radius: 3.0 # [m]
   step_size: 2.0 # [m]
-  tolerance: 1.5 # [m]
+  tolerance: 2.0 # [m]
   g_zero: 5.0
 
 global_planning:
@@ -62,9 +62,9 @@ camera:
 
 path:
   uav_radius: 1.5 # [m]
-  lambda: 0.25 # (tunning factor)
+  lambda: 0.2 # (tunning factor)
   lambda2: 0.5 # (tunning factor)
-  global_lambda: 0.025 # (tunning factor)
+  global_lambda: 0.02 # (tunning factor)
   global_lambda2: 0.05 # (tunning factor)
   max_acceleration_iterations: 3
 
