@@ -251,10 +251,10 @@ void KinoNBVPlanner::KinoNBV() {
             trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
             trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
 
-            //double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
-            //new_trajectory_best->gain = result_best;
+            double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
+            new_trajectory_best->gain = result_best;
 
-            bool first_node = true;
+            /*bool first_node = true;
             for (int i = 0; i < new_trajectory_best->TrajectoryPoints.size() - 1; i++) {
                 previous_trajectory_point.position_W = new_trajectory_best->TrajectoryPoints[i]->point.head(3);
                 previous_trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints[i]->point[3]);
@@ -265,7 +265,7 @@ void KinoNBVPlanner::KinoNBV() {
                 double result_traj = segment_evaluator.computeGainFixedAngleAEP(previous_trajectory_point, trajectory_point, first_node);
                 new_trajectory_best->gain += result_traj;
                 first_node = false;
-            }
+            }*/
 
             segment_evaluator.computeCostTwo(new_trajectory_best);
             segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
@@ -310,19 +310,12 @@ void KinoNBVPlanner::KinoNBV() {
             KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, max_heading_velocity, max_heading_accel, step_size, new_trajectory);
             new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
 
-            bool OutOfBounds = false;
-
            if (new_trajectory->TrajectoryPoints.back()->point[0] > max_x || new_trajectory->TrajectoryPoints.back()->point[0] < min_x 
                 || new_trajectory->TrajectoryPoints.back()->point[1] < min_y || new_trajectory->TrajectoryPoints.back()->point[1] > max_y 
                 || new_trajectory->TrajectoryPoints.back()->point[2] < min_z || new_trajectory->TrajectoryPoints.back()->point[2] > max_z) {
-                OutOfBounds = true;
-                break;
-            }
-
-            if (OutOfBounds) {
-                // Avoid Memory Leak
                 new_trajectory.reset();
-                continue;
+                collision_id_counter_++;
+                break;
             }
 
             // Collision Check
@@ -336,12 +329,12 @@ void KinoNBVPlanner::KinoNBV() {
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
 
-            //trajectory_point.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
-            //trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
-            //double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
-            //new_trajectory->gain = result;
+            trajectory_point.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
+            trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
+            double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
+            new_trajectory->gain = result;
 
-            bool first_node = true;
+            /*bool first_node = true;
             for (int i = 0; i < new_trajectory->TrajectoryPoints.size() - 1; i++) {
                 previous_trajectory_point.position_W = new_trajectory->TrajectoryPoints[i]->point.head(3);
                 previous_trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints[i]->point[3]);
@@ -352,7 +345,7 @@ void KinoNBVPlanner::KinoNBV() {
                 double result_traj = segment_evaluator.computeGainFixedAngleAEP(previous_trajectory_point, trajectory_point, first_node);
                 new_trajectory->gain += result_traj;
                 first_node = false;
-            }
+            }*/
 
             segment_evaluator.computeCostTwo(new_trajectory);
             segment_evaluator.computeScore(new_trajectory, lambda, lambda2);

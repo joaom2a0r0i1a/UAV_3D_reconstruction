@@ -18,7 +18,48 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
   nh_private.param("camera_intrinsics/pitch", camera_pitch_, 10.0);
 
+  nh_private.param("accurate_frontiers", p_accurate_frontiers_, false);
+  nh_private.param("checking_distance", p_checking_distance_, 2.0);
+
   nh_private.param("map/voxel_size", dr_, 0.2);
+
+  // initialize neighbor offsets
+  auto vs = dr_ * p_checking_distance_;
+  if (!p_accurate_frontiers_) {
+    c_neighbor_voxels_[0] = Eigen::Vector3d(vs, 0, 0);
+    c_neighbor_voxels_[1] = Eigen::Vector3d(-vs, 0, 0);
+    c_neighbor_voxels_[2] = Eigen::Vector3d(0, vs, 0);
+    c_neighbor_voxels_[3] = Eigen::Vector3d(0, -vs, 0);
+    c_neighbor_voxels_[4] = Eigen::Vector3d(0, 0, vs);
+    c_neighbor_voxels_[5] = Eigen::Vector3d(0, 0, -vs);
+  } else {
+    c_neighbor_voxels_[0] = Eigen::Vector3d(vs, 0, 0);
+    c_neighbor_voxels_[1] = Eigen::Vector3d(vs, vs, 0);
+    c_neighbor_voxels_[2] = Eigen::Vector3d(vs, -vs, 0);
+    c_neighbor_voxels_[3] = Eigen::Vector3d(vs, 0, vs);
+    c_neighbor_voxels_[4] = Eigen::Vector3d(vs, vs, vs);
+    c_neighbor_voxels_[5] = Eigen::Vector3d(vs, -vs, vs);
+    c_neighbor_voxels_[6] = Eigen::Vector3d(vs, 0, -vs);
+    c_neighbor_voxels_[7] = Eigen::Vector3d(vs, vs, -vs);
+    c_neighbor_voxels_[8] = Eigen::Vector3d(vs, -vs, -vs);
+    c_neighbor_voxels_[9] = Eigen::Vector3d(0, vs, 0);
+    c_neighbor_voxels_[10] = Eigen::Vector3d(0, -vs, 0);
+    c_neighbor_voxels_[11] = Eigen::Vector3d(0, 0, vs);
+    c_neighbor_voxels_[12] = Eigen::Vector3d(0, vs, vs);
+    c_neighbor_voxels_[13] = Eigen::Vector3d(0, -vs, vs);
+    c_neighbor_voxels_[14] = Eigen::Vector3d(0, 0, -vs);
+    c_neighbor_voxels_[15] = Eigen::Vector3d(0, vs, -vs);
+    c_neighbor_voxels_[16] = Eigen::Vector3d(0, -vs, -vs);
+    c_neighbor_voxels_[17] = Eigen::Vector3d(-vs, 0, 0);
+    c_neighbor_voxels_[18] = Eigen::Vector3d(-vs, vs, 0);
+    c_neighbor_voxels_[19] = Eigen::Vector3d(-vs, -vs, 0);
+    c_neighbor_voxels_[20] = Eigen::Vector3d(-vs, 0, vs);
+    c_neighbor_voxels_[21] = Eigen::Vector3d(-vs, vs, vs);
+    c_neighbor_voxels_[22] = Eigen::Vector3d(-vs, -vs, vs);
+    c_neighbor_voxels_[23] = Eigen::Vector3d(-vs, 0, -vs);
+    c_neighbor_voxels_[24] = Eigen::Vector3d(-vs, vs, -vs);
+    c_neighbor_voxels_[25] = Eigen::Vector3d(-vs, -vs, -vs);
+  }
 
   /*// IST Lamp
   min_x_ = 2.0;
@@ -98,6 +139,29 @@ bool GainEvaluator::isPointInView(const voxblox::Point& point, bool first_node) 
   return true;
 }
 
+bool GainEvaluator::isFrontierVoxel(const Eigen::Vector3d& voxel) {
+  // Check all neighboring voxels
+  VoxelStatus voxel_state;
+  if (!p_accurate_frontiers_) {
+    for (int i = 0; i < 6; ++i) {
+      voxel_state = getVoxelStatus(voxel + c_neighbor_voxels_[i]);
+      if (voxel_state == kUnknown) {
+        continue;
+      }
+      return voxel_state == kOccupied;
+    }
+  } else {
+    for (int i = 0; i < 26; ++i) {
+      voxel_state = getVoxelStatus(voxel + c_neighbor_voxels_[i]);
+      if (voxel_state == kUnknown) {
+        continue;
+      }
+      return voxel_state == kOccupied;
+    }
+  }
+  return false;
+}
+
 void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer) {
   tsdf_layer_ = tsdf_layer;
   voxel_size_ = tsdf_layer_->voxel_size();
@@ -126,7 +190,7 @@ VoxelStatus GainEvaluator::getVoxelStatus(const Eigen::Vector3d& position) const
   if (voxel->weight < 1e-6) {
     return VoxelStatus::kUnknown;
   }
-  if (voxel->distance > 0.0) {
+  if (voxel->distance > voxel_size_) {
     return VoxelStatus::kFree;
   }
   return VoxelStatus::kOccupied;
@@ -681,6 +745,9 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
           continue;
         } else if (node == kUnknown) {
           g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          /*if (isFrontierVoxel(vec)) {
+            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2) / (voxel_size_ * voxel_size_ * voxel_size_);
+          }*/
         }
       }
 
@@ -759,6 +826,9 @@ double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajecto
           continue;
         } else if (node == kUnknown) {
           g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          /*if (isFrontierVoxel(vec)) {
+            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2) / (voxel_size_ * voxel_size_ * voxel_size_);
+          }*/
         }
       }
 
@@ -1023,6 +1093,9 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_m
           continue;
         } else if (node == kUnknown) {
           g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          /*if (isFrontierVoxel(vec)) {
+            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2) / (voxel_size_ * voxel_size_ * voxel_size_);
+          }*/
         }
       }
       gain += g;
@@ -1399,7 +1472,11 @@ void GainEvaluator::visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& p
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          /*if (isFrontierVoxel(vec)) {
+            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          } else {
+            continue;
+          }*/
           Eigen::Vector3d Voxel;
           getVoxelCenter(&Voxel, vec);
           

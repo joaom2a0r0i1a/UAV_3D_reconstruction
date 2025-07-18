@@ -32,6 +32,8 @@ class GainEvaluator {
 
   bool isPointInView(const voxblox::Point& point, bool first_node) const;
 
+  bool isFrontierVoxel(const Eigen::Vector3d& voxel);
+
   // Bind the TSDF layer to one OWNED BY ANOTHER OBJECT. It is up to the user
   // to ensure the layer exists and does not go out of scope.
   void setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer);
@@ -145,6 +147,10 @@ class GainEvaluator {
   double camera_pitch_;
 
   int yaw_samples_;
+
+  bool p_accurate_frontiers_;
+  Eigen::Vector3d c_neighbor_voxels_[26];
+  double p_checking_distance_;
 
   // Cached parameters of the layer.
   float voxel_size_;
