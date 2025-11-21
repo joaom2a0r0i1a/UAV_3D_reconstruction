@@ -1,5 +1,5 @@
 # Kinodynamic Trajectory Planning For Exploration and 3D Reconstruction
-This work contains the **Kinodynamic Autonomous Exploration Planner (KAEP)** and the **Kinodynamic Receding-Horizon Next-Best-View Planner (KRH-NBVP)** - real-time kinodynamic trajectory planners designed for efficient 3D exploration with Unmanned Aerial Vehicles (UAVs). These planners use a Kinodynamic RRT (KRRT) to identify the next viewpoint that maximizes information gain while considering for the robot’s kinodynamic constraints in the planning process. 
+This repository contains two real-time kinodynamic trajectory planners for efficient Unmanned Aerial Vehicle (UAV) exploration: the **Kinodynamic Autonomous Exploration Planner (KAEP)** and the **Kinodynamic Receding-Horizon Next-Best-View Planner (KRH-NBVP)**. Both planners use a Kinodynamic Rapidly-Exploring Random Tree (KRRT) to evaluate and select the next-best viewpoints that maximize expected information gain while minimizing flight cost. The methods explicitly account for the UAV’s kinodynamic model and constraints, enabling fast, smooth, and feasible trajectories for exploration and 3D reconstruction tasks.
 
 # Installation
 
@@ -21,11 +21,11 @@ Follow the full setup instructions from the official repository:
 
 ### 3. Install [Voxblox](https://github.com/ethz-asl/voxblox)
 
-This project uses a **modified version of Voxblox**, that support:
-- Freespace pointcloud integration in static environments (without deletion of existing surfaces).
-- Centralized Multi-robot mapping.
+By default, the project works with the **standard [Voxblox](https://github.com/ethz-asl/voxblox)** installation. Follow the installation steps [here](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
 
-Clone and build the customized Voxblox used in this project from [here](https://github.com/joaom2a0r0i1a/feature-centralized_multi_robot_voxblox), following the same installation steps as in the official [Voxblox instructions](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
+If you plan to use the **multi-robot version** of these planners, you must instead install a **modified version of Voxblox** that supports centralized multi-robot mapping.
+
+To install the customized version, clone and build it from [here](https://github.com/joaom2a0r0i1a/feature-centralized_multi_robot_voxblox), following the same installation steps as in the official [Voxblox instructions](https://voxblox.readthedocs.io/en/latest/pages/Installation.html).
 
 ## Repository Installation
 
@@ -115,4 +115,15 @@ This is the default location used by the MRS framework to load world files. Afte
   - **GPU:** NVIDIA GeForce RTX 4060
 
 # Credits
-TBA
+If you use this work in your research, please cite the following paper:
+
+Joao Felix Mendes, Meysam Basiri, and Rodrigo Ventura.,**“Kinodynamic Trajectory Planning for Efficient UAV Exploration and Reconstruction of Unknown Environments.”** in IEEE Robotics and Automation Letters (RAL), Accepted, November 2025.
+```bash
+@article{mendes2025kinodynamic,
+  title={Kinodynamic Trajectory Planning for Efficient UAV Exploration and Reconstruction of Unknown Environments},
+  author={Mendes, Joao Felix and Basiri, Meysam and Ventura, Rodrigo},
+  journal={IEEE Robotics and Automation Letters},
+  year={2025},
+  note={Accepted, November 2025}
+}
+```
