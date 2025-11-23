@@ -158,7 +158,10 @@ void NBVPlanner::NBV() {
     } else {
         root = std::make_shared<rrt_star::Node>(pose);
     }
-
+    trajectory_point.position_W = root->point.head(3);
+    trajectory_point.setFromYaw(root->point[3]);
+    double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
+    root->gain = result;
     root->cost = 0;
     root->score = root->gain;
 
@@ -523,68 +526,23 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
-            mrs_msgs::GetPathSrv srv_get_path;
-
-            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
-            srv_get_path.request.path.header.stamp = ros::Time::now(); //path_stamp;
-            srv_get_path.request.path.fly_now = false;
-            srv_get_path.request.path.use_heading = true;
-
             mrs_msgs::Reference reference;
 
             if (next_best_node && next_best_node->parent) {
                 previous_node = std::make_shared<rrt_star::Node>(*next_best_node->parent);
             }
 
-            // Add parent node so UAV goes to last incomplete node
-            if (next_best_node->parent) {
-                reference.position.x = next_best_node->parent->point[0];
-                reference.position.y = next_best_node->parent->point[1];
-                reference.position.z = next_best_node->parent->point[2];
-                reference.heading = next_best_node->parent->point[3];
-                srv_get_path.request.path.points.push_back(reference);
-            }
+            mrs_msgs::ReferenceStamped initial_reference;
+            initial_reference.header.frame_id = ns + "/" + frame_id;
+            initial_reference.header.stamp = ros::Time::now();
 
-            // Add Node
-            reference.position.x = next_best_node->point[0];
-            reference.position.y = next_best_node->point[1];
-            reference.position.z = next_best_node->point[2];
-            reference.heading = next_best_node->point[3];
-            pub_reference.publish(reference);
-            srv_get_path.request.path.points.push_back(reference);
-            bool success = sc_trajectory_generation.call(srv_get_path);
+            initial_reference.reference.position.x = next_best_node->point[0];
+            initial_reference.reference.position.y = next_best_node->point[1];
+            initial_reference.reference.position.z = next_best_node->point[2];
+            initial_reference.reference.heading = next_best_node->point[3];
+            pub_reference.publish(initial_reference.reference);
+            pub_initial_reference.publish(initial_reference);
 
-            if (!success) {
-                ROS_ERROR("[NBVPlanner]: service call for trajectory failed");
-                changeState(STATE_STOPPED);
-                return;
-            } else {
-                if (!srv_get_path.response.success) {
-                    ROS_ERROR("[NBVPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                    changeState(STATE_STOPPED);
-                    return;
-                }
-            }
-
-            mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
-            srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
-            srv_trajectory_reference.request.trajectory.fly_now = true;
-
-            bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
-
-            if (!success_trajectory) {
-                ROS_ERROR("[NBVPlanner]: service call for trajectory reference failed");
-                changeState(STATE_STOPPED);
-                return;
-            } else {
-                if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[NBVPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    changeState(STATE_STOPPED);
-                    return;
-                }
-            }
-
-            //tree.clear();
             best_branch.clear();
             ros::Duration(1).sleep();
 
@@ -602,9 +560,6 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
                 ROS_INFO("[NBVPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
-                    changeState(STATE_PLANNING);
-                }
             } else {
                 ROS_INFO("[NBVPlanner]: waiting for command");
                 changeState(STATE_PLANNING);

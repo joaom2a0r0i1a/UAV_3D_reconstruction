@@ -77,38 +77,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
 
-    // Open file in append mode
-    num_nodes_count = 0;
-
-    std::time_t now = std::time(nullptr);
-    std::tm* now_tm = std::localtime(&now);
-
-    // Create a string stream to format the date and time
-    std::stringstream ss;
-    ss << std::put_time(now_tm, "%Y%m%d_%H%M%S");
-
-    /*outfile_uniform.open("/home/joaomendes/motion_workspace/src/data/raycast_uniform_sample_720/computation_time_gain_uniform_" + ss.str() + ".csv", std::ios_base::out);
-    if (!outfile_uniform.is_open()) {
-        ROS_ERROR("Failed to open the file: computation_time_gain.csv");
-        return;
-    }
-
-    if (outfile_uniform.tellp() == 0) {
-        outfile_uniform << "NumberNodes,GainComputationTime\n";
-    }
-
-    outfile_informed.open("/home/joaomendes/motion_workspace/src/data/raycast_informed_sample_720/computation_time_gain_informed_" + ss.str() + ".csv", std::ios_base::out);
-    if (!outfile_informed.is_open()) {
-        ROS_ERROR("Failed to open the file: computation_time_gain.csv");
-        return;
-    }
-
-    if (outfile_informed.tellp() == 0) {
-        outfile_informed << "NumberNodes,GainComputationTime\n";
-    }*/
-    //std::ofstream outfile;
-    //outfile.open("computation_time_gain.csv", std::ios::out);
-    
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 500);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
@@ -223,19 +191,6 @@ void AEPlanner::localPlanner() {
     } else {
         root = std::make_shared<rrt_star::Node>(pose);
     }
-    trajectory_point.position_W = root->point.head(3);
-    trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
-    root->gain = result.first;
-    root->point[3] = result.second;
-
-    root->cost = 0;
-    root->score = root->gain;
-
-    if (root->score > best_score_) {
-        best_score_ = root->score;
-        best_node = root;
-    }
 
     RRTStar.clearKDTree();
     RRTStar.addKDTreeNode(root);
@@ -253,8 +208,6 @@ void AEPlanner::localPlanner() {
                 next_best_node = previous_node;
                 best_branch.clear();
                 return;
-                //rotate();
-                //changeState(STATE_WAITING_INITIALIZE);
             } else {
                 ROS_INFO("[AEPlanner]: Backtrack Rotation");
                 rotate();
@@ -279,36 +232,13 @@ void AEPlanner::localPlanner() {
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
-            auto start1 = std::chrono::high_resolution_clock::now();
-
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
 
-            //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
             std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
-
-            /*auto end1 = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> elapsed = end1 - start1;
-            num_nodes_count += 1;
-
-            // Write the iteration count and elapsed time to the file
-            outfile_uniform << num_nodes_count << "," << elapsed.count() << "\n";
-
-            auto startinformed1 = std::chrono::high_resolution_clock::now();
-
-            trajectory_point.position_W = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
-            new_node_best->gain = result2.first;
-            new_node_best->point[3] = result2.second;
-
-            auto endinformed1 = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> elapsedinformed = endinformed1 - startinformed1;
-
-            // Write the iteration count and elapsed time to the file
-            outfile_informed << num_nodes_count << "," << elapsedinformed.count() << "\n";*/
 
             segment_evaluator.computeCost(new_node_best);
             segment_evaluator.computeScore(new_node_best, lambda);
@@ -318,9 +248,6 @@ void AEPlanner::localPlanner() {
                 best_node = new_node_best;
             }
 
-            //ROS_INFO("[AEPlanner]: Best Gain Optimized BB: %f", new_node_best->gain);
-            //ROS_INFO("[AEPlanner]: Best Gain BB: %f", result2.first);
-            //ROS_INFO("[AEPlanner]: Best Cost BB: %f", new_node_best->cost);
             ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
             
 
@@ -367,38 +294,13 @@ void AEPlanner::localPlanner() {
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
 
-        auto start2 = std::chrono::high_resolution_clock::now();
-
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
 
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point);
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
 
         new_node->gain = result.first;
         new_node->point[3] = result.second;
-
-        /*auto end2 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed = end2 - start2;
-        num_nodes_count += 1;
-
-        // Write the iteration count and elapsed time to the file
-        outfile_uniform << num_nodes_count << "," << elapsed.count() << "\n";
-
-        auto startinformed2 = std::chrono::high_resolution_clock::now();
-
-        trajectory_point.position_W = new_node->point.head(3);
-        trajectory_point.setFromYaw(new_node->point[3]);
-
-        std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point);
-        new_node->gain = result2.first;
-        new_node->point[3] = result2.second;
-
-        auto endinformed2 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsedinformed = endinformed2 - startinformed2;
-
-        // Write the iteration count and elapsed time to the file
-        outfile_informed << num_nodes_count << "," << elapsedinformed.count() << "\n";*/
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);
@@ -433,30 +335,13 @@ void AEPlanner::localPlanner() {
 
     }
 
-    /*if (num_nodes_count >= 10000 && outfile_uniform.is_open()) {
-        outfile_uniform.close();
-    }
-
-    if (num_nodes_count >= 10000 && outfile_informed.is_open()) {
-        outfile_informed.close();
-    }*/
-    
     if (best_node) {
         next_best_node = best_node;
         RRTStar.backtrackPathAEP(best_node, best_branch);
         visualize_path(best_node, ns);
     }
 
-    for (int k = 1; k < best_branch.size(); ++k) {
-        if (best_branch[k]->gain > g_zero) {
-            next_best_node = best_branch[k];
-            std::vector<std::shared_ptr<rrt_star::Node>>::iterator start = best_branch.begin() + k - 1;
-            std::vector<std::shared_ptr<rrt_star::Node>>::iterator end = best_branch.end();
-            std::vector<std::shared_ptr<rrt_star::Node>> sliced_branch(start, end);
-            best_branch = sliced_branch;
-            break;
-        }
-    }
+    next_best_node = best_branch[1];
 }
 
 void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node) {
@@ -471,7 +356,7 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         return;
     }
 
-    ROS_INFO("[KinoAEPlanner]: Start Expanding Global");
+    ROS_INFO("[AEPlanner]: Start Expanding Global");
     
     std::shared_ptr<rrt_star::Node> root;
     if (current_waypoint_) {
@@ -492,8 +377,6 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
                 next_best_node = previous_node;
                 backtrack = true;
                 return;
-                //rotate();
-                //changeState(STATE_WAITING_INITIALIZE);
             } else {
                 ROS_INFO("[AEPlanner]: Backtrack Rotation");
                 rotate();
@@ -583,37 +466,12 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
     }
 
     if ((nearest_goal - node->point.head(3)).norm() < tolerance) {
-        //ROS_INFO("[AEPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
-        //ROS_INFO("[AEPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);
-
-        auto start3 = std::chrono::high_resolution_clock::now();            
-
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
+
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point_global);
+
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-
-        /*auto end3 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsed = end3 - start3;
-        num_nodes_count += 1;
-
-        // Write the iteration count and elapsed time to the file
-        outfile_uniform << num_nodes_count << "," << elapsed.count() << "\n";
-
-        auto startinformed3 = std::chrono::high_resolution_clock::now();           
-
-        trajectory_point_global.position_W = node->point.head(3);
-        trajectory_point_global.setFromYaw(node->point[3]);
-
-        std::pair<double, double> result2 = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point_global);
-
-        auto endinformed3 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> elapsedinformed = endinformed3 - startinformed3;
-
-        // Write the iteration count and elapsed time to the file
-        outfile_informed << num_nodes_count << "," << elapsedinformed.count() << "\n";*/
 
         node->gain = result.first;
         node->point[3] = result.second;
@@ -622,10 +480,6 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
             return false;
         }
 
-        //trajectory_point_global.position_W = nearest_goal;
-        //trajectory_point_global.setFromYaw(0.0);
-        //std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
-        //ROS_INFO("[AEPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
     }
@@ -927,58 +781,29 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
                 previous_node = std::make_shared<rrt_star::Node>(*next_best_node->parent);
             }
 
+            waypoints_.clear();
+            waypoint_index_ = 0;
+
             while (next_best_node && next_best_node->parent) {
-                reference.position.x = next_best_node->point[0];
-                reference.position.y = next_best_node->point[1];
-                reference.position.z = next_best_node->point[2];
-                reference.heading = next_best_node->point[3];
-                srv_get_path.request.path.points.push_back(reference);
+                mrs_msgs::Reference ref;
+                ref.position.x = next_best_node->point[0];
+                ref.position.y = next_best_node->point[1];
+                ref.position.z = next_best_node->point[2];
+                ref.heading    = next_best_node->point[3];
+
+                waypoints_.push_back(ref);
+
                 next_best_node = next_best_node->parent;
             }
+            std::reverse(waypoints_.begin(), waypoints_.end());
 
-            reference.position.x = next_best_node->point[0];
-            reference.position.y = next_best_node->point[1];
-            reference.position.z = next_best_node->point[2];
-            reference.heading = next_best_node->point[3];
-            srv_get_path.request.path.points.push_back(reference);
+            mrs_msgs::ReferenceStamped initial_reference;
+            initial_reference.header.frame_id = ns + "/" + frame_id;
+            initial_reference.header.stamp = ros::Time::now();
 
-            std::reverse(srv_get_path.request.path.points.begin(), srv_get_path.request.path.points.end());
-
-            for (const auto& point : srv_get_path.request.path.points) {
-                pub_reference.publish(point);
-            }
-
-            bool success = sc_trajectory_generation.call(srv_get_path);
-
-            if (!success) {
-                ROS_ERROR("[AEPlanner]: service call for trajectory failed");
-                changeState(STATE_STOPPED);
-                return;
-            } else {
-                if (!srv_get_path.response.success) {
-                    ROS_ERROR("[AEPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                    changeState(STATE_STOPPED);
-                    return;
-                }
-            }
-
-            mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
-            srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
-            srv_trajectory_reference.request.trajectory.fly_now = true;
-
-            bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
-
-            if (!success_trajectory) {
-                ROS_ERROR("[AEPlanner]: service call for trajectory reference failed");
-                changeState(STATE_STOPPED);
-                return;
-            } else {
-                if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[AEPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    changeState(STATE_STOPPED);
-                    return;
-                }
-            }
+            initial_reference.reference = waypoints_[0];
+            pub_reference.publish(initial_reference.reference);
+            pub_initial_reference.publish(initial_reference);
 
             ros::Duration(1).sleep();
 
@@ -993,11 +818,35 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
                 geometry_msgs::Pose current_pose = uav_state_here->pose;
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
-                double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
-                ROS_INFO("[AEPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.6*step_size && yaw_difference <= 0.4*M_PI) {
-                    changeState(STATE_PLANNING);
+                const mrs_msgs::Reference& wp = waypoints_[waypoint_index_];
+                std::unique_ptr<mrs_msgs::Reference> wp_ptr = std::make_unique<mrs_msgs::Reference>(wp);
+
+                double dist = distance(wp_ptr, current_pose);
+                double yaw_difference = fabs(atan2(sin(wp.heading - current_yaw), cos(wp.heading - current_yaw)));
+                ROS_INFO("[NBVPlanner]: WP %d/%zu: dist=%.2f, yaw=%.2f",
+                        waypoint_index_+1,
+                        waypoints_.size(),
+                        dist, yaw_difference);
+
+                if (dist < 0.8 && yaw_difference < 0.4) {
+                    waypoint_index_++;
+
+                    if (waypoint_index_ >= waypoints_.size()) {
+                        ROS_INFO("[AEPlanner]: Going to final waypoint, waiting for tracker to finish.");
+                        break;
+                    }
+
+                    mrs_msgs::ReferenceStamped next_ref;
+                    next_ref.header.frame_id = ns + "/" + frame_id;
+                    next_ref.header.stamp = ros::Time::now();
+                    next_ref.reference = waypoints_[waypoint_index_];
+
+                    pub_reference.publish(next_ref.reference);
+                    pub_initial_reference.publish(next_ref);
+
+                    current_waypoint_ = std::make_unique<mrs_msgs::Reference>(next_ref.reference);
+
+                    ROS_INFO("[NBVPlanner]: Publishing next waypoint");
                 }
             } else {
                 ROS_INFO("[AEPlanner]: waiting for command");
@@ -1007,13 +856,6 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
         }
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[AEPlanner]: Total Iterations: %d", iteration_);
-            ROS_INFO("[AEPlanner]: Closing output file.");
-            /*if (outfile_uniform.is_open()) {
-                outfile_uniform.close();
-            }
-            if (outfile_informed.is_open()) {
-                outfile_informed.close();
-            }*/
             ROS_INFO("[AEPlanner]: Shutting down.");
             ros::shutdown();
             return;
@@ -1085,11 +927,9 @@ void AEPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, const
     e.ns = "tree_branches";
     e.type = visualization_msgs::Marker::ARROW;
     e.action = visualization_msgs::Marker::ADD;
-    //ROS_INFO("[AEPlanner]: HERE 8");
     e.pose.position.x = node->parent->point[0];
     e.pose.position.y = node->parent->point[1];
     e.pose.position.z = node->parent->point[2];
-    //ROS_INFO("[AEPlanner]: HERE 9");
     Eigen::Quaternion<double> q;
     Eigen::Vector3d init(1.0, 0.0, 0.0);
     Eigen::Vector3d dir(node->point[0] - node->parent->point[0],

@@ -128,19 +128,7 @@ double KinoNBVPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool KinoNBVPlanner::isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const {
-    /*int size = trajectory->TrajectoryPoints.size();
-    int half_size = std::ceil(size/2);
-    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator start = trajectory->TrajectoryPoints.begin() + half_size;
-    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator end = trajectory->TrajectoryPoints.end();
-    std::vector<std::shared_ptr<kino_rrt_star::Node>> sliced_nodes(start, end);
-
-    for (const std::shared_ptr<kino_rrt_star::Node>& node : sliced_nodes) {
-        if (getMapDistance(node->point.head(3)) < uav_radius) {
-            return false;
-        }
-    }*/
-    
+bool KinoNBVPlanner::isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const {   
     std::shared_ptr<kino_rrt_star::Node>& node = trajectory->TrajectoryPoints.back();
     if (getMapDistance(node->point.head(3)) < uav_radius) {
         return false;
@@ -223,8 +211,6 @@ void KinoNBVPlanner::KinoNBV() {
                 reset_velocity = true;
                 best_branch.clear();
                 return;
-                //rotate();
-                //changeState(STATE_WAITING_INITIALIZE);
             } else {
                 ROS_INFO("[KinoNBVPlanner]: Backtrack Rotation");
                 rotate();
@@ -253,19 +239,6 @@ void KinoNBVPlanner::KinoNBV() {
 
             double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
             new_trajectory_best->gain = result_best;
-
-            /*bool first_node = true;
-            for (int i = 0; i < new_trajectory_best->TrajectoryPoints.size() - 1; i++) {
-                previous_trajectory_point.position_W = new_trajectory_best->TrajectoryPoints[i]->point.head(3);
-                previous_trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints[i]->point[3]);
-
-                trajectory_point.position_W = new_trajectory_best->TrajectoryPoints[i+1]->point.head(3);
-                trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints[i+1]->point[3]);
-
-                double result_traj = segment_evaluator.computeGainFixedAngleAEP(previous_trajectory_point, trajectory_point, first_node);
-                new_trajectory_best->gain += result_traj;
-                first_node = false;
-            }*/
 
             segment_evaluator.computeCostTwo(new_trajectory_best);
             segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
@@ -333,19 +306,6 @@ void KinoNBVPlanner::KinoNBV() {
             trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
             double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
             new_trajectory->gain = result;
-
-            /*bool first_node = true;
-            for (int i = 0; i < new_trajectory->TrajectoryPoints.size() - 1; i++) {
-                previous_trajectory_point.position_W = new_trajectory->TrajectoryPoints[i]->point.head(3);
-                previous_trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints[i]->point[3]);
-
-                trajectory_point.position_W = new_trajectory->TrajectoryPoints[i+1]->point.head(3);
-                trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints[i+1]->point[3]);
-
-                double result_traj = segment_evaluator.computeGainFixedAngleAEP(previous_trajectory_point, trajectory_point, first_node);
-                new_trajectory->gain += result_traj;
-                first_node = false;
-            }*/
 
             segment_evaluator.computeCostTwo(new_trajectory);
             segment_evaluator.computeScore(new_trajectory, lambda, lambda2);

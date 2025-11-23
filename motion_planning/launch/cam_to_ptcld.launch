@@ -1,12 +1,16 @@
 <launch>
-  <!--Sensor model -->
-  <node name="sensor_model" pkg="motion_planning" type="cam_to_ptcld.py" output="screen">
-    <param name="model_type" value="ground_truth"/>
-    <param name="color_topic" value="/uav1/rgbd_front_pitched/color/image_raw" />
-    <param name="depth_topic" value="/uav1/rgbd_front_pitched/aligned_depth_to_color/image_raw" />
-    <param name="info_topic"  value="/uav1/rgbd_front_pitched/aligned_depth_to_color/camera_info" />
-    <param name="frame_id"  value="uav1/rgbd_front_pitched/aligned_depth_to_color" />
-    <param name="pointcloud_out" value="/uav1/rgbd_front_pitched/aligned_depth_to_color/points" />
-    <param name="flatten_distance" value="6.0" />
-  </node>
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+
+  <group ns="$(arg UAV_NAME)">
+    <!--Sensor model -->
+    <node name="sensor_model" pkg="motion_planning" type="cam_to_ptcld.py" output="screen">
+      <param name="model_type" value="ground_truth"/>
+      <param name="color_topic" value="/$(arg UAV_NAME)/rgbd_front_pitched/color/image_raw" />
+      <param name="depth_topic" value="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/image_raw" />
+      <param name="info_topic"  value="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/camera_info" />
+      <param name="frame_id"  value="$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color" />
+      <param name="pointcloud_out" value="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points" />
+      <param name="flatten_distance" value="6.0" />
+    </node>
+  </group>
 </launch>

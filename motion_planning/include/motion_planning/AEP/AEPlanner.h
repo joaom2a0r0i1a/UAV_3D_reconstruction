@@ -150,11 +150,6 @@ private:
     int num_yaw_samples;
     double g_zero;
 
-    // Log files
-    int num_nodes_count;
-    std::ofstream outfile_uniform;
-    std::ofstream outfile_informed;
-
     // RRT* Parameters
     int N_min_nodes;
     bool goto_global_planning;
@@ -180,10 +175,14 @@ private:
 
     std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
 
+    std::vector<mrs_msgs::Reference> waypoints_;
+    int waypoint_index_ = 0;
+
     // Local Planner variables
     std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
     std::shared_ptr<rrt_star::Node> previous_node;
     std::shared_ptr<rrt_star::Node> next_best_node;
+    eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
 
