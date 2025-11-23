@@ -175,6 +175,9 @@ private:
     // Bounds on the size of the map.
     mrs_msgs::Reference current_waypoint_;
 
+    std::vector<mrs_msgs::Reference> waypoints_;
+    int waypoint_index_ = 0;
+
     // Local Planner variables
     std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
     std::shared_ptr<rrt_star::Node> previous_root;

@@ -562,77 +562,36 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
-            mrs_msgs::GetPathSrv srv_get_path;
-
-            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
-            srv_get_path.request.path.header.stamp = ros::Time::now();
-            srv_get_path.request.path.fly_now = false;
-            srv_get_path.request.path.use_heading = true;
-
             mrs_msgs::Reference reference;
 
-            // Add parent node so UAV goes to last incomplete node
-            if (next_best_node->parent) {
-                reference.position.x = next_best_node->parent->point[0];
-                reference.position.y = next_best_node->parent->point[1];
-                reference.position.z = next_best_node->parent->point[2];
-                reference.heading = next_best_node->parent->point[3];
-                srv_get_path.request.path.points.push_back(reference);
-            }
+            mrs_msgs::ReferenceStamped initial_reference;
+            initial_reference.header.frame_id = ns + "/" + frame_id;
+            initial_reference.header.stamp = ros::Time::now();
 
-            // Add Node
-            reference.position.x = next_best_node->point[0];
-            reference.position.y = next_best_node->point[1];
-            reference.position.z = next_best_node->point[2];
-            reference.heading = next_best_node->point[3];
-            pub_reference.publish(reference);
-            srv_get_path.request.path.points.push_back(reference);
+            initial_reference.reference.position.x = next_best_node->point[0];
+            initial_reference.reference.position.y = next_best_node->point[1];
+            initial_reference.reference.position.z = next_best_node->point[2];
+            initial_reference.reference.heading = next_best_node->point[3];
+            pub_reference.publish(initial_reference.reference);
+            pub_initial_reference.publish(initial_reference);
 
             multiagent_collision_check::Segment segment;
             segment.uav_id = uav_id;
-            for (const auto& point : srv_get_path.request.path.points) {
-                segment.uav_path.push_back(point.position);
+
+            if (next_best_node && next_best_node->parent) {
+                mrs_msgs::Reference prev_ref;
+                prev_ref.position.x = next_best_node->parent->point[0];
+                prev_ref.position.y = next_best_node->parent->point[1];
+                prev_ref.position.z = next_best_node->parent->point[2];
+                prev_ref.heading = next_best_node->parent->point[3];
+                segment.uav_path.push_back(prev_ref.position);
             }
+
+            segment.uav_path.push_back(initial_reference.reference.position);    
+                    
             ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
                 << " with path points=" << segment.uav_path.size());
             pub_evade.publish(segment);
-
-
-            bool success = sc_trajectory_generation.call(srv_get_path);
-
-            if (!success) {
-                ROS_ERROR("[NBVMultiPlanner]: service call for trajectory failed");
-                //changeState(STATE_STOPPED);
-                changeState(STATE_MOVING);
-                return;
-            } else {
-                if (!srv_get_path.response.success) {
-                    ROS_ERROR("[NBVMultiPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                    //changeState(STATE_STOPPED);
-                    changeState(STATE_MOVING);
-                    return;
-                }
-            }
-
-            mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
-            srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
-            srv_trajectory_reference.request.trajectory.fly_now = true;
-
-            bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
-
-            if (!success_trajectory) {
-                ROS_ERROR("[NBVMultiPlanner]: service call for trajectory reference failed");
-                //changeState(STATE_STOPPED);
-                changeState(STATE_MOVING);
-                return;
-            } else {
-                if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[NBVMultiPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    //changeState(STATE_STOPPED);
-                    changeState(STATE_MOVING);
-                    return;
-                }
-            }
 
             best_branch.clear();
             ros::Duration(1).sleep();
@@ -651,9 +610,6 @@ void NBVMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 double dist = distance(current_waypoint_, current_pose);
                 double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
                 ROS_INFO("[NBVMultiPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.4*step_size && yaw_difference <= 0.2*M_PI) {
-                    changeState(STATE_PLANNING);
-                }
             } else {
                 ROS_INFO("[NBVMultiPlanner]: waiting for command");
                 changeState(STATE_PLANNING);

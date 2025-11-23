@@ -799,77 +799,40 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
-            mrs_msgs::GetPathSrv srv_get_path;
-
-            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
-            srv_get_path.request.path.header.stamp = ros::Time::now();
-            srv_get_path.request.path.fly_now = false;
-            srv_get_path.request.path.use_heading = true;
-
             mrs_msgs::Reference reference;
 
-            while (next_best_node && next_best_node->parent) {
-                reference.position.x = next_best_node->point[0];
-                reference.position.y = next_best_node->point[1];
-                reference.position.z = next_best_node->point[2];
-                reference.heading = next_best_node->point[3];
-                srv_get_path.request.path.points.push_back(reference);
+            waypoints_.clear();
+            waypoint_index_ = 0;
+
+            while (next_best_node) {
+                mrs_msgs::Reference ref;
+                ref.position.x = next_best_node->point[0];
+                ref.position.y = next_best_node->point[1];
+                ref.position.z = next_best_node->point[2];
+                ref.heading    = next_best_node->point[3];
+
+                waypoints_.push_back(ref);
                 next_best_node = next_best_node->parent;
             }
 
-            reference.position.x = next_best_node->point[0];
-            reference.position.y = next_best_node->point[1];
-            reference.position.z = next_best_node->point[2];
-            reference.heading = next_best_node->point[3];
-            srv_get_path.request.path.points.push_back(reference);
+            std::reverse(waypoints_.begin(), waypoints_.end());
 
-            std::reverse(srv_get_path.request.path.points.begin(), srv_get_path.request.path.points.end());
-            
             multiagent_collision_check::Segment segment;
             segment.uav_id = uav_id;
-            for (const auto& point : srv_get_path.request.path.points) {
-                pub_reference.publish(point);
-                segment.uav_path.push_back(point.position);
+            for (const auto& wp : waypoints_) {
+                segment.uav_path.push_back(wp.position);
             }
             ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
                 << " with path points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
-            bool success = sc_trajectory_generation.call(srv_get_path);
-
-            if (!success) {
-                ROS_ERROR("[AEPMultiPlanner]: service call for trajectory failed");
-                //changeState(STATE_STOPPED);
-                changeState(STATE_MOVING);
-                return;
-            } else {
-                if (!srv_get_path.response.success) {
-                    ROS_ERROR("[AEPMultiPlanner]: service call for trajectory failed: '%s'", srv_get_path.response.message.c_str());
-                    //changeState(STATE_STOPPED);
-                    changeState(STATE_MOVING);
-                    return;
-                }
-            }
-
-            mrs_msgs::TrajectoryReferenceSrv srv_trajectory_reference;
-            srv_trajectory_reference.request.trajectory = srv_get_path.response.trajectory;
-            srv_trajectory_reference.request.trajectory.fly_now = true;
-
-            bool success_trajectory = sc_trajectory_reference.call(srv_trajectory_reference);
-
-            if (!success_trajectory) {
-                ROS_ERROR("[AEPMultiPlanner]: service call for trajectory reference failed");
-                //changeState(STATE_STOPPED);
-                changeState(STATE_MOVING);
-                return;
-            } else {
-                if (!srv_trajectory_reference.response.success) {
-                    ROS_ERROR("[AEPMultiPlanner]: service call for trajectory reference failed: '%s'", srv_trajectory_reference.response.message.c_str());
-                    //changeState(STATE_STOPPED);
-                    changeState(STATE_MOVING);
-                    return;
-                }
-            }
+            mrs_msgs::ReferenceStamped initial_reference;
+            initial_reference.header.frame_id = ns + "/" + frame_id;
+            initial_reference.header.stamp = ros::Time::now();
+            
+            initial_reference.reference = waypoints_[0];
+            pub_reference.publish(initial_reference.reference);
+            pub_initial_reference.publish(initial_reference);     
 
             ros::Duration(1).sleep();
 
@@ -884,11 +847,34 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
                 geometry_msgs::Pose current_pose = uav_state_here->pose;
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
-                double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_.heading - current_yaw), cos(current_waypoint_.heading - current_yaw)));
-                ROS_INFO("[AEPMultiPlanner]: Distance to waypoint: %.2f", dist);
-                if (dist <= 0.4*step_size && yaw_difference <= 0.2*M_PI) {
-                    changeState(STATE_PLANNING);
+                const mrs_msgs::Reference& wp = waypoints_[waypoint_index_];
+
+                double dist = distance(wp, current_pose);
+                double yaw_difference = fabs(atan2(sin(wp.heading - current_yaw), cos(wp.heading - current_yaw)));
+                ROS_INFO("[AEPMultiPlanner]: WP %d/%zu: dist=%.2f, yaw=%.2f",
+                        waypoint_index_+1,
+                        waypoints_.size(),
+                        dist, yaw_difference);
+
+                if (dist < 0.8 && yaw_difference < 0.4) {
+                    waypoint_index_++;
+
+                    if (waypoint_index_ >= waypoints_.size()) {
+                        ROS_INFO("[AEPMultiPlanner]: Going to final waypoint, waiting for tracker to finish.");
+                        break;
+                    }
+
+                    mrs_msgs::ReferenceStamped next_ref;
+                    next_ref.header.frame_id = ns + "/" + frame_id;
+                    next_ref.header.stamp = ros::Time::now();
+                    next_ref.reference = waypoints_[waypoint_index_];
+
+                    pub_reference.publish(next_ref.reference);
+                    pub_initial_reference.publish(next_ref);
+
+                    current_waypoint_ = next_ref.reference;
+
+                    ROS_INFO("[AEPMultiPlanner]: Publishing next waypoint");
                 }
             } else {
                 ROS_INFO("[AEPMultiPlanner]: waiting for command");

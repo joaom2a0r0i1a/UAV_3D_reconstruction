@@ -768,13 +768,6 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
-            mrs_msgs::GetPathSrv srv_get_path;
-
-            srv_get_path.request.path.header.frame_id = ns + "/" + frame_id;
-            srv_get_path.request.path.header.stamp = ros::Time::now();
-            srv_get_path.request.path.fly_now = false;
-            srv_get_path.request.path.use_heading = true;
-
             mrs_msgs::Reference reference;
 
             if (next_best_node && next_best_node->parent) {
