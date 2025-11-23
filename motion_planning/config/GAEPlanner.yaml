@@ -6,23 +6,14 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
-# Big Maze
-bounded_box:
-  min_x: -20.0 # [m]
-  max_x: 20.0 # [m]
-  min_y: -20.0 # [m]
-  max_y: 20.0 # [m]
-  min_z: 0.3 # [m]
-  max_z: 1.8 # [m]
-
 # School
-#bounded_box:
-#  min_x: -25.0 # [m]
-#  max_x: 25.0 # [m]
-#  min_y: -20.0 # [m]
-#  max_y: 15.0 # [m]
-#  min_z: 1.0 # [m]
-#  max_z: 20.0 # [m]
+bounded_box:
+  min_x: -25.0 # [m]
+  max_x: 25.0 # [m]
+  min_y: -20.0 # [m]
+  max_y: 15.0 # [m]
+  min_z: 1.0 # [m]
+  max_z: 20.0 # [m]
 
 # Police Station
 #bounded_box:
@@ -42,26 +33,17 @@ bounded_box:
   #min_z: 0.2 # [m]
   #max_z: 2.5 # [m]
 
-# House
-#bounded_box:
-  #min_x: -15.0 # [m]
-  #max_x: 15.0 # [m]
-  #min_y: -10.0 # [m]
-  #max_y: 15.0 # [m]
-  #min_z: 1.0 # [m]
-  #max_z: 15.0 # [m]
-
 local_planning:
-  N_max: 200
-  N_termination: 400
-  N_yaw_samples: 10
-  radius: 2.0 # [m]
-  step_size: 1.5 # [m]
-  tolerance: 1.0 # [m]
-  g_zero: 5.0
+  N_max: 50
+  N_termination: 300
+  N_yaw_samples: 15
+  radius: 3.0 # [m]
+  step_size: 2.0 # [m]
+  tolerance: 1.5 # [m]
+  g_zero: 50.0 # [%]
 
 global_planning:
-  N_min_nodes: 500
+  N_min_nodes: 300
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"
@@ -72,8 +54,7 @@ camera:
   max_distance: 5 # [m]
 
 path:
-  uav_radius: 1.0 # [m]
-  uavs_min_distance: 0.4 # [m]
+  uav_radius: 1.5 # [m]
   lambda: 0.5 # (tunning factor)
   global_lambda: 0.05 # (tunning factor)
 

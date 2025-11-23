@@ -74,7 +74,7 @@ public:
     void getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node);
 
     void cacheNode(std::shared_ptr<rrt_star::Node> Node);
-    double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
+    double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
     
@@ -164,22 +164,24 @@ private:
 
     // Planner Parameters
     double uav_radius;
+    double uavs_min_distance;
     double lambda;
     double global_lambda;
 
     // Multi Drone Collision Avoidance
     std::vector<int> agentsId_;
-    std::vector<std::vector<Eigen::Vector3d>*> segments_;
+    std::vector<std::vector<Eigen::Vector4d>*> segments_;
 
     // Bounds Parameters
-    // Bounds on the size of the map.
-    mrs_msgs::Reference current_waypoint_;
+    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
+    Eigen::Vector4d next_start;
 
     // Local Planner variables
     std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
     std::shared_ptr<rrt_star::Node> previous_root;
     std::shared_ptr<rrt_star::Node> next_best_node;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    std::vector<eth_mav_msgs::EigenTrajectoryPoint> previous_trajectory;
 
     // Global Planner variables
     std::shared_ptr<rrt_star::Node> best_global_node;

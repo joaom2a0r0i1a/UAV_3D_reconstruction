@@ -252,6 +252,10 @@ class EvalPlotting(object):
         fig, axes = plt.subplots(2, 2)
         #series_dir = ["nbv", "aep", "knbv", "kaep"]
         series_dir = ["RH-NBVP", "AEP", "KRH-NBVP (ours)", "KAEP (ours)"]
+        #series_dir = ["AEP", "AEP Prior"]
+        #series_dir = ["AEP", "AEP Prior", "KAEP", "KAEP Prior"]
+        #series_dir = ["AEP_school_cost", "AEP_school_gain", "AEP_school_score"]
+        #series_dir = ["KRH-NBVP (ours)", "KRH-NBVP (ours) prior", "KAEP (ours)", "KAEP (ours) prior"]
         #series_dir = ["JS - RH-NBVP", "JS - AEP", "JS - Kinodynamic RH-NBVP (ours)", "JS - Kinodynamic AEP (ours)"]
         #series_dir = ["SS - RH-NBVP", "SS - AEP", "SS - Kinodynamic RH-NBVP (ours)", "SS - Kinodynamic AEP (ours)"]
         #series_dir = ["RH-NBVP/JS", "RH-NBVP/SS", "AEP/JS", "AEP/SS", "Kinodynamic RH-NBVP (ours)/JS", "Kinodynamic RH-NBVP (ours)/SS", "Kinodynamic AEP (ours)/JS", "Kinodynamic AEP (ours)/SS"]

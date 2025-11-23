@@ -1,10 +1,10 @@
 #include <ros/ros.h>
-#include "motion_planning/AEP/AEPlanner.h"
+#include "motion_planning/GAEP/GAEPlanner.h"
 #include <gflags/gflags.h>
 #include <gperftools/profiler.h>
 
 int main(int argc, char** argv) {
-    ros::init(argc, argv, "AEPlanner");
+    ros::init(argc, argv, "GAEPlanner");
     
     google::InitGoogleLogging(argv[0]);
     google::ParseCommandLineFlags(&argc, &argv, false);
@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
 
     ros::NodeHandle nh;
     ros::NodeHandle nh_private("~");
-    AEPlanner AEPlanner(nh, nh_private);
+    GAEPlanner GAEPlanner(nh, nh_private);
 
     ros::spin();
 

@@ -15,7 +15,8 @@ windows:
   - gazebo:
       layout: tiled
       panes:
-        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school_full gui:=false
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=grass_plane_school_full gui:=false
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_name:=big_maze_full gui:=false
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 2 3 --$UAV_TYPE --pos-file `rospack find multi_motion_planning`/tmux/three_drones/config/initial_pos.yaml --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 2 3 --$UAV_TYPE --pos-file `rospack find multi_motion_planning`/tmux/three_drones/config/initial_pos.yaml --enable-ground-truth --enable-realsense-front-pitched"
         #- export UAV_NAME=uav1; waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME

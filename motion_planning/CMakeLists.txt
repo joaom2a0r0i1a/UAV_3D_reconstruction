@@ -44,6 +44,8 @@ set(LIBRARIES
   KinoNBVPlanner
   AEPlanner
   KinoAEPlanner
+  ImprovedKAEPlanner
+  GAEPlanner
   )
 
   # Define Catkin package
@@ -85,31 +87,49 @@ add_library(KinoAEPlanner
   src/KinoAEP/KinoAEPlanner.cpp
   )
 
+  # Add library targets
+add_library(ImprovedKAEPlanner 
+  src/ImprovedKAEP/ImprovedKAEPlanner.cpp
+  )
+
+  # Add library targets
+add_library(GAEPlanner 
+  src/GAEP/GAEPlanner.cpp
+  ) 
+
 
  # Add dependencies for library targets
 add_dependencies(NBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoNBVPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(AEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoAEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(ImprovedKAEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(GAEPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
 target_link_libraries(NBVPlanner ${catkin_LIBRARIES})
 target_link_libraries(KinoNBVPlanner ${catkin_LIBRARIES})
 target_link_libraries(AEPlanner ${catkin_LIBRARIES})
 target_link_libraries(KinoAEPlanner ${catkin_LIBRARIES})
+target_link_libraries(ImprovedKAEPlanner ${catkin_LIBRARIES})
+target_link_libraries(GAEPlanner ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
 add_executable(NBV src/NBV/NBVplanner_node.cpp)
 add_executable(KinoNBV src/KinoNBV/KinoNBVplanner_node.cpp)
 add_executable(AEP src/AEP/AEPlanner_node.cpp)
 add_executable(KinoAEP src/KinoAEP/KinoAEPlanner_node.cpp)
+add_executable(ImprovedKAEP src/ImprovedKAEP/ImprovedKAEPlanner_node.cpp)
 add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
+add_executable(GAEP src/GAEP/GAEPlanner_node.cpp)
 
  # Link executable against required libraries
 target_link_libraries(NBV ${catkin_LIBRARIES} NBVPlanner)
 target_link_libraries(KinoNBV ${catkin_LIBRARIES} KinoNBVPlanner)
-target_link_libraries(AEP ${catkin_LIBRARIES} AEPlanner)
-target_link_libraries(KinoAEP ${catkin_LIBRARIES} KinoAEPlanner)
+target_link_libraries(AEP ${catkin_LIBRARIES} AEPlanner profiler tcmalloc)
+target_link_libraries(KinoAEP ${catkin_LIBRARIES} KinoAEPlanner profiler tcmalloc)
+target_link_libraries(ImprovedKAEP ${catkin_LIBRARIES} ImprovedKAEPlanner)
+target_link_libraries(GAEP ${catkin_LIBRARIES} GAEPlanner)
 target_link_libraries(eval_voxblox_node ${catkin_LIBRARIES})
 
  ## --------------------------------------------------------------

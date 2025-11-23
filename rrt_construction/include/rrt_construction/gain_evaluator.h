@@ -7,7 +7,9 @@
 #include <voxblox/utils/camera_model.h>
 
 #include <rrt_construction/rrt_star_kd.h>
+#include <rrt_construction/geo_rrt_kd.h>
 #include <rrt_construction/kino_rrt_star_kd.h>
+#include <rrt_construction/improved_krrt_kd.h>
 
 #include <cmath>
 #include <chrono>
@@ -31,6 +33,10 @@ class GainEvaluator {
   void setCameraExtrinsics(const voxblox::Transformation& T_C_B);
 
   bool isPointInView(const voxblox::Point& point, bool first_node) const;
+
+  std::pair<double, double> rayFrustumIntersectionSegment(const voxblox::Point& ray_origin, const voxblox::Point& ray_dir, double min_range, double max_range) const;
+
+  std::vector<std::pair<double, double>> rayMultiFrustumIntersectionSegment(const voxblox::Point& ray_origin, const voxblox::Point& ray_dir, double min_range, double max_range) const;
 
   bool isFrontierVoxel(const Eigen::Vector3d& voxel);
 
@@ -87,7 +93,17 @@ class GainEvaluator {
   // optimization.
   std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
 
+  std::tuple<double, double, double> computeGainOptimizedGEO(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
+
   std::pair<double, double> computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus = 1);
+
+  std::pair<double, double> computeGainOptimizedwithPrior(const eth_mav_msgs::EigenTrajectoryPoint& previous_pose, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+
+  std::pair<double, double> computeGainOptimizedwithMultiplePriors(const std::vector<eth_mav_msgs::EigenTrajectoryPoint>& previous_poses, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+
+  std::tuple<double, double, double> computeGainOptimizedwithMultiplePriorsMax(const std::vector<eth_mav_msgs::EigenTrajectoryPoint>& previous_poses, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+
+  double computeGainOptimizedwithMultiplePriorsFixed(const std::vector<eth_mav_msgs::EigenTrajectoryPoint>& previous_poses, const eth_mav_msgs::EigenTrajectoryPoint& pose);
   
   // Use sparse raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
   // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (uniform yaw optimization).
@@ -99,31 +115,27 @@ class GainEvaluator {
 
   // Initialization for visualization of unknown voxels.
   void visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);
-  
-  // Use raycasting to calculate number of unknown voxels and discard occluded voxels, Bircher-style 
-  // implementation.
-  double computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus = 1);
-
-  // Use raycasting to calculate number of unknown voxels and discard occluded voxels, Bircher-style 
-  // implementation with uniform gain optimization.
-  void computeGainFromsampledYaw(const std::shared_ptr<rrt_star::Node>& node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point);
 
   // Calculate cost and score
   void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
 
   void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
 
-  void computeCost(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory);
+  void computeCost(std::shared_ptr<geo_rrt::Node>& new_node);
+
+  void computeScore(std::shared_ptr<geo_rrt::Node>& new_node, double lambda);
   
   void computeCostTwo(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory);
 
-  void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
-
   void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2);
 
-  void computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda);
-
   void computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2);
+
+  void computeCostTwo(std::shared_ptr<improved_krrt::Node>& new_node);
+
+  void computeScore(std::shared_ptr<improved_krrt::Node>& new_node, double lambda1, double lambda2);
+
+  void computeSingleScore(std::shared_ptr<improved_krrt::Node>& new_node, double lambda1, double lambda2);
 
   voxblox::CameraModel& getCameraModel();
   const voxblox::CameraModel& getCameraModel() const;
@@ -133,10 +145,12 @@ class GainEvaluator {
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
   voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
   voxblox::EsdfMap::Ptr esdf_map_;
+
   voxblox::CameraModel prev_cam_model_;
   voxblox::CameraModel cam_model_;
 
   voxblox::AlignedVector<voxblox::Plane> bounding_planes_;
+  std::vector<voxblox::AlignedVector<voxblox::Plane>> frustums;
 
   // Get map Bounds
   float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;

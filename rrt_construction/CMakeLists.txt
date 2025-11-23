@@ -62,7 +62,9 @@ include_directories(
 add_library(tree_construction 
   src/kd_tree.cpp
   src/kino_rrt_star_kd.cpp
+  src/improved_krrt_kd.cpp
   src/rrt_star_kd.cpp
+  src/geo_rrt_kd.cpp
   src/gain_evaluator.cpp
   )
 

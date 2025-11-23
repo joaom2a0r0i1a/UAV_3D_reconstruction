@@ -1,5 +1,5 @@
-#ifndef KINO_AEP_MULTIPLANNER_H
-#define KINO_AEP_MULTIPLANNER_H
+#ifndef IMPROVED_KAEP_PLANNER_H
+#define IMPROVED_KAEP_PLANNER_H
 
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
@@ -11,6 +11,7 @@
 #include <mrs_msgs/TrackerCommand.h>
 #include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
+//#include <mrs_msgs/ReferenceList.h>
 #include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
 #include <mrs_msgs/Vec1.h>
@@ -26,6 +27,7 @@
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
+#include <voxblox_ros/tsdf_server.h>
 #include <voxblox/utils/planning_utils.h>
 
 #include <cache_nodes/Node.h>
@@ -37,12 +39,12 @@
 #include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
-#include <multiagent_collision_check/Segment.h>
-#include <multiagent_collision_check/multiagent_collision_checker.h>
-#include <rrt_construction/kino_rrt_star_kd.h>
-#include <rrt_construction/rrt_star_kd.h>
+#include <rrt_construction/improved_krrt_kd.h>
 #include <rrt_construction/kd_tree.h>
 #include <rrt_construction/gain_evaluator.h>
+
+#include <fstream>
+#include <chrono>
 
 typedef enum
 {
@@ -58,42 +60,42 @@ const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING"
 
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
-class KinoAEPMultiPlanner {
+class ImprovedKAEPlanner {
 public:
-    KinoAEPMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
+    ImprovedKAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const;
+    bool isNodeCollisionFree(const std::shared_ptr<improved_krrt::Node>& Node) const;
+    int clipTrajectoryUntilFirstCollision(const std::vector<std::shared_ptr<improved_krrt::Node>>& NodeList) const;
+    bool isInsideBoundingBox(const std::shared_ptr<improved_krrt::Node>& Node) const;
     void GetTransformation();
 
-    void KinoAEP();
+    void KAEP();
     void localPlanner();
-    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
+    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<improved_krrt::Node>& best_global_trajectory);
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
-    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& trajectory);
-    void getBestGlobalTrajectory(const std::vector<std::shared_ptr<kino_rrt_star::Trajectory>>& global_goals, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
+    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<improved_krrt::Node>& state);
+    void getBestGlobalTrajectory(const std::vector<std::shared_ptr<improved_krrt::Node>>& global_goals, std::shared_ptr<improved_krrt::Node>& best_global_state);
 
-    void cacheNode(std::shared_ptr<kino_rrt_star::Trajectory> trajectory);
+    void cacheNode(std::shared_ptr<improved_krrt::Node> Node);
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
     
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-    //bool callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
-    void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
     
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
-    void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
-    void visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position);
+    void visualize_trajectory(const std::vector<std::shared_ptr<improved_krrt::Node>> Nodes, const std::string& ns);
+    void visualize_best_trajectory(const std::shared_ptr<improved_krrt::Node> Node, const std::string& ns);
+    void visualize_frustum(std::shared_ptr<improved_krrt::Node> position);
+    void visualize_unknown_voxels(std::shared_ptr<improved_krrt::Node> position);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -120,8 +122,6 @@ private:
     // Transformations
     geometry_msgs::TransformStamped T_C_B_message;
     voxblox::Transformation T_C_B;
-    geometry_msgs::TransformStamped T_B_C_message;
-    voxblox::Transformation T_B_C;
 
     // Parameters
     std::string frame_id;
@@ -129,7 +129,6 @@ private:
     std::string camera_frame_id;
     std::string ns;
     double best_score_;
-    int uav_id;
 
     // Bounded Box
     float min_x;
@@ -150,7 +149,8 @@ private:
     int N_max;
     int N_termination;
     double radius;
-    double step_size;
+    double mintimeStep;
+    double timeStep;
     double tolerance;
     int num_yaw_samples;
     double g_zero;
@@ -163,9 +163,6 @@ private:
     // Timer Parameters
     double timer_main_rate;
 
-    // Backtrack
-    bool backtrack = false;
-
     // Camera Parameters
     double horizontal_fov;
     double vertical_fov;
@@ -176,7 +173,6 @@ private:
 
     // Planner Parameters
     double uav_radius;
-    double uavs_min_distance;
     double lambda;
     double lambda2;
     double global_lambda;
@@ -184,24 +180,19 @@ private:
     int max_accel_iterations;
     bool reset_velocity;
 
-    // Multi Drone Collision Avoidance
-    std::vector<int> agentsId_;
-    std::vector<std::vector<Eigen::Vector4d>*> segments_;
-
-    // Bounds Parameters
-    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
-    Eigen::Vector4d next_start;
+    // Backtrack
+    bool backtrack = false;
 
     // Local Planner variables
-    //std::vector<std::shared_ptr<rrt_star::Node>> tree;
-    std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
-    std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
-    std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
+    std::vector<std::shared_ptr<improved_krrt::Node>> best_branch;
+    std::shared_ptr<improved_krrt::Node> previous_trajectory;
+    std::shared_ptr<improved_krrt::Node> next_best_trajectory;
+    eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
-    std::vector<eth_mav_msgs::EigenTrajectoryPoint> previous_trajectory_points;
+    Eigen::Vector4d next_start;
 
     // Global Planner variables
-    std::shared_ptr<kino_rrt_star::Trajectory> best_global_trajectory;
+    std::shared_ptr<improved_krrt::Node> best_global_trajectory;
     std::vector<Eigen::Vector3d> GlobalFrontiers;
 
     // UAV variables
@@ -212,6 +203,7 @@ private:
     Eigen::Vector3d velocity;
     mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
+    std::unique_ptr<mrs_msgs::Reference> current_waypoint_;
 
     // State variables
     std::atomic<State_t> state_;
@@ -225,13 +217,12 @@ private:
     int iteration_;
 
     // Instances
-    kino_rrt_star KinoRRTStar;
+    improved_krrt ImprovedKRRT;
     kd_tree goals_tree;
 
     // Subscribers
     mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics> sub_control_manager_diag;
     mrs_lib::SubscribeHandler<mrs_msgs::UavState> sub_uav_state;
-    mrs_lib::SubscribeHandler<multiagent_collision_check::Segment> sub_evade;
 
     // Publishers
     ros::Publisher pub_markers;
@@ -241,7 +232,6 @@ private:
     ros::Publisher pub_initial_reference;
     ros::Publisher pub_frustum;
     ros::Publisher pub_voxels;
-    ros::Publisher pub_evade;
 
     // Service servers
     ros::ServiceServer ss_start;
@@ -255,4 +245,4 @@ private:
     ros::Timer timer_main;
 };
 
-#endif // AEP_MULTIPLANNER_H
+#endif // IMPROVED_KAEP_PLANNER_H

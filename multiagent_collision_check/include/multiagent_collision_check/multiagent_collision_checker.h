@@ -26,6 +26,10 @@ bool isInCollision(const Eigen::Vector4d& start, const Eigen::Vector4d& end,
                    const double safety_radius,
                    const std::vector<std::vector<Eigen::Vector3d>*>& agent_paths);
 
+bool isInCollision(const Eigen::Vector4d& start, const Eigen::Vector4d& end,
+                   const double safety_radius,
+                   const std::vector<std::vector<Eigen::Vector4d>*>& agent_paths);
+
 bool isInCollision(const Eigen::Vector4d& state, const double safety_radius,
                    const std::vector<std::vector<Eigen::Vector3d>*>& agent_paths);
 

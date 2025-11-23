@@ -107,19 +107,19 @@ def compute_and_plot_bar_graph(directory):
     directory_name = []
     
     for filename in os.listdir(directory):
-        if filename.startswith('raycast'):
+        if filename.startswith('sparse'):
             directory_aux = os.path.join(directory, filename)
             directory_name.append(filename)
             overall_avg, std_dev = compute_overall_stats(directory_aux)
             total_overall_avg.append(overall_avg)
             total_std_dev.append(std_dev)
 
-    print(f"New Time is: {total_overall_avg[0]/total_overall_avg[1]:.2f} times faster.")
+    #print(f"New Time is: {total_overall_avg[0]/total_overall_avg[1]:.2f} times faster.")
 
-    print(f"Average {total_overall_avg[0]:.5f}.")
-    print(f"Deviation {total_std_dev[0]:.5f}.")
-    print(f"Average {total_overall_avg[1]:.5f}.")
-    print(f"Deviation {total_std_dev[1]:.5f}.")
+    #print(f"Average {total_overall_avg[0]:.5f}.")
+    #print(f"Deviation {total_std_dev[0]:.5f}.")
+    #print(f"Average {total_overall_avg[1]:.5f}.")
+    #print(f"Deviation {total_std_dev[1]:.5f}.")
     #print(f"Average {total_overall_avg[1]:.2f} +/- {total_std_dev[1]:.2f}.")
 
     plt.figure(figsize=(8, 6))
@@ -136,11 +136,15 @@ def compute_and_plot_bar_graph(directory):
 
 
 # Example usage:
-directory = '/home/joaomendes/motion_workspace/src/data'
-compute_and_plot_bar_graph(directory)
-#overall_avg, std_dev = compute_overall_stats(directory)
-#print(f"Overall Average: {overall_avg}")
-#print(f"Standard Deviation: {std_dev}")
+directory = '/home/joaomendes/motion_workspace/src/data/raycast_informed_sample_720'
+#compute_and_plot_bar_graph(directory)
+overall_avg, std_dev = compute_overall_stats(directory)
+print(f"Overall Average: {overall_avg}")
+print(f"Standard Deviation: {std_dev}")
+#print(f"New Time for 720 samples is: {0.31729699136884/0.1514263604485808:.2f} times faster.")
+#print(f"New Time for 360 samples is: {0.15243858312244918/0.07537304464061241:.2f} times faster.")
+#print(f"New Time for 120 samples is: {0.043776608587942085/0.023143126348579922:.2f} times faster.")
+#print(f"New Time for 15 samples is: {0.007685097792135355/0.0050304693315082:.2f} times faster.")
 
 #csv_file_path = '/home/joaomendes/motion_workspace/src/data/raycast/computation_time_gain_20240911_210449.csv'
 #csv_file_path2 = '/home/joaomendes/motion_workspace/src/data/raycast_optimized/computation_time_gain_20240911_212512.csv'

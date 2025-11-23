@@ -100,6 +100,28 @@ target_link_libraries(cached
 #########
 
 # Create library from class implementation
+add_library(geo_cached_lib
+  src/geo_cached.cpp
+)
+
+add_dependencies(geo_cached_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+
+target_link_libraries(geo_cached_lib
+  ${catkin_LIBRARIES}
+)
+
+# Add executable for cached_node.cpp
+add_executable(geo_cached src/geo_cached_node.cpp)
+
+# Link executable against required libraries
+target_link_libraries(geo_cached
+  geo_cached_lib
+  ${catkin_LIBRARIES}
+)
+
+#########
+
+# Create library from class implementation
 add_library(cached_multi_lib
   src/cached_multi.cpp
 )

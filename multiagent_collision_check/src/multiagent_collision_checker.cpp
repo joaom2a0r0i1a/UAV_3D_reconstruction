@@ -38,6 +38,30 @@ bool multiagent::isInCollision(const Eigen::Vector4d& start, const Eigen::Vector
   return false;
 }
 
+bool multiagent::isInCollision(const Eigen::Vector4d& start, const Eigen::Vector4d& end,
+                               const double safety_radius,
+                               const std::vector<std::vector<Eigen::Vector4d>*>& agent_paths)
+{
+  for (typename std::vector<std::vector<Eigen::Vector4d>*>::const_iterator it = agent_paths.begin();
+       it != agent_paths.end(); it++) {
+    for (int it_segment = 1; it_segment < (*it)->size(); it_segment++) {
+      if (safety_radius > closestDistanceBetweenLines(
+                              Eigen::Vector3d(start.x(), start.y(), start.z()),
+                              Eigen::Vector3d(end.x(), end.y(), end.z()),
+                              Eigen::Vector3d((**it)[it_segment - 1].x(),
+                                              (**it)[it_segment - 1].y(),
+                                              (**it)[it_segment - 1].z()),
+                              Eigen::Vector3d((**it)[it_segment].x(),
+                                              (**it)[it_segment].y(),
+                                              (**it)[it_segment].z()))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+
 bool multiagent::isInCollision(const Eigen::Vector4d& state, const double safety_radius,
                                const std::vector<std::vector<Eigen::Vector3d>*>& agent_paths)
 {

@@ -5,6 +5,7 @@ gain_evaluation:
   max_y: 7.0 # [m]
   min_z: 0.0 # [m]
   max_z: 14.5 # [m]
+ # max_z: 2.3 # [m]
 
 camera_intrinsics:
   h_fov: 1.51844 # [rad]
