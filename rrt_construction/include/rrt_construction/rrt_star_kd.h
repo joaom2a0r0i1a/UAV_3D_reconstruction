@@ -21,6 +21,8 @@ public:
         double gain;
         double score;
 
+        std::vector<float> depth_buffer;
+
         Node(const Eigen::Vector4d& p);
     };
 

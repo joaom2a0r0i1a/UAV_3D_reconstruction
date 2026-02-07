@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.15.0)
 project(rrt_construction)
 
+enable_language(CUDA)
+
 # Enable parallel build
 set(CMAKE_BUILD_PARALLEL_LEVEL 8)
 
+# CUDA
+set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+# C++
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -12,7 +19,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 ## --------------------------------------------------------------
 
 #add_compile_options("-g")
-add_compile_options("-O3")
+#add_compile_options("-O3")
 #add_compile_options("-O0")
 
 set(CATKIN_DEPENDENCIES
@@ -64,6 +71,7 @@ add_library(tree_construction
   src/kino_rrt_star_kd.cpp
   src/rrt_star_kd.cpp
   src/gain_evaluator.cpp
+  src/aep_evaluator.cu
   )
 
  # Add dependencies for library targets
@@ -72,11 +80,9 @@ add_dependencies(tree_construction ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_
  # Link libraries against required Catkin libraries
 target_link_libraries(tree_construction ${catkin_LIBRARIES})
 
- # Add executable for NBVplanner_node.cpp
-#add_executable(NBV src/NBV/NBVplanner_node.cpp)
-
- # Link executable against required libraries
-#target_link_libraries(NBV ${catkin_LIBRARIES} NBVPlanner)
+# The GPU Tester (No extra linking needed!)
+add_executable(gpu_tester src/test_gpu_runner.cpp)
+target_link_libraries(gpu_tester tree_construction ${catkin_LIBRARIES})
 
  ## --------------------------------------------------------------
  ## |                           Install                          |

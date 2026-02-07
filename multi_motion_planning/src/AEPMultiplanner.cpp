@@ -202,7 +202,7 @@ void AEPMultiPlanner::localPlanner() {
     }
     trajectory_point.position_W = root->point.head(3);
     trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+    std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point);
     root->gain = result.first;
     root->point[3] = result.second;
 
@@ -263,7 +263,7 @@ void AEPMultiPlanner::localPlanner() {
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -325,7 +325,7 @@ void AEPMultiPlanner::localPlanner() {
 
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainAEP(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
@@ -485,7 +485,7 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point_global);
 
         node->gain = result.first;
@@ -493,7 +493,7 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
 
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
-        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         ROS_INFO("[AEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
@@ -1081,7 +1081,7 @@ void AEPMultiPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> p
     trajectory_point_visualize.setFromYaw(position->point[3]);
 
     voxblox::Pointcloud voxel_points;
-    segment_evaluator.visualizeGainAEP(trajectory_point_visualize, voxel_points);
+    segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
     
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {

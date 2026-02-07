@@ -3,7 +3,7 @@
   <arg name="target_directory" default="/home/joaomendes/motion_workspace/src/data" />
   <arg name="gt_file_path" default="/mnt/c/Users/joaof/Documents/data/gt_school_processed.ply"/>
   <arg name="experiment_config" default="School.yaml"/>
-  <arg name="method" default="recent"/>
+  <arg name="method" default="all"/>
 
   <!-- what to evaluate -->
   <arg name="multi_series" default="false"/>

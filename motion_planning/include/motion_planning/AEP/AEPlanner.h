@@ -71,6 +71,8 @@ public:
     void GetTransformation();
 
     void AEP();
+    void localPlannerGPUBenchmark();
+    void localPlannerGPU();
     void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node);
 
@@ -125,6 +127,11 @@ private:
     geometry_msgs::TransformStamped T_B_C_message;
     voxblox::Transformation T_B_C;
 
+    geometry_msgs::TransformStamped T_C_W_message;
+    voxblox::Transformation T_C_W;
+    geometry_msgs::TransformStamped T_W_C_message;
+    voxblox::Transformation T_W_C;
+
     // Parameters
     std::string frame_id;
     std::string body_frame_id;
@@ -169,6 +176,11 @@ private:
     double uav_radius;
     double lambda;
     double global_lambda;
+
+    // GPU Optimization - Flatten Map
+    Eigen::Vector3d map_origin_;
+    Eigen::Vector3i map_dim_;
+    std::vector<uint8_t> flat_map_;
 
     // Backtrack
     bool backtrack = false;
@@ -224,6 +236,7 @@ private:
     ros::Publisher pub_initial_reference;
     ros::Publisher pub_frustum;
     ros::Publisher pub_voxels;
+    ros::Publisher pub_gpu_debug;
 
     // Service servers
     ros::ServiceServer ss_start;

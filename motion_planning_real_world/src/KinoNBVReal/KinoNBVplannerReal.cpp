@@ -224,7 +224,7 @@ void KinoNBVPlanner::KinoNBV() {
             trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
             trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
 
-            double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point, initial_offset);
+            double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point, initial_offset);
             new_trajectory_best->gain = result_best;
 
             segment_evaluator.computeCostTwo(new_trajectory_best);
@@ -302,7 +302,7 @@ void KinoNBVPlanner::KinoNBV() {
             eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
             trajectory_point_gain.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
             trajectory_point_gain.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
-            double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain, initial_offset);
+            double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain, initial_offset);
             new_trajectory->gain = result;
 
             segment_evaluator.computeCostTwo(new_trajectory);
@@ -752,7 +752,7 @@ void KinoNBVPlanner::visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Nod
     trajectory_point_visualize.setFromYaw(position->point[3]);
 
     voxblox::Pointcloud voxel_points;
-    segment_evaluator.visualizeGainAEP(trajectory_point_visualize, voxel_points);
+    segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
     
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {

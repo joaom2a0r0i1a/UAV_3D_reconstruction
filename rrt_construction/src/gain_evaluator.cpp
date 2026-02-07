@@ -4,6 +4,65 @@
 
 #include "rrt_construction/gain_evaluator.h"
 
+extern "C" void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size);
+extern "C" void wrapper_cuda_free(void* dev_ptr);
+extern "C" void wrapper_cuda_memcpy(void* dev_ptr, const void* host_ptr, size_t size);
+
+// External CUDA function declaration
+extern "C" void launch_aep_kernel_single(
+    uint8_t* d_map,
+    int dx, int dy, int dz, 
+    float ox, float oy, float oz,
+    float pos_x, float pos_y, float pos_z,
+    float* h_result_gain, float* h_result_yaw,
+    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
+);
+
+extern "C" void launch_aep_kernel(
+    const uint8_t* h_map, 
+    int dx, int dy, int dz, 
+    float ox, float oy, float oz,
+    float* h_pos_x, float* h_pos_y, float* h_pos_z,
+    float* h_results_gain,
+    float* h_results_yaw,
+    int num_candidates,
+    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
+);
+
+extern "C" void launch_aep_kernel_batch(
+    uint8_t* d_map,
+    int dx, int dy, int dz, 
+    float ox, float oy, float oz,
+    float* h_pos_x, float* h_pos_y, float* h_pos_z,
+    float* h_results_gain,
+    float* h_results_yaw,
+    int num_candidates,
+    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
+);
+
+extern "C" void launch_aep_kernel_batch_depth(
+    uint8_t* d_map,
+    int dx, int dy, int dz, 
+    float ox, float oy, float oz,
+    float* h_pos_x, float* h_pos_y, float* h_pos_z,
+    float* h_results_gain,
+    float* h_results_yaw,
+    float* h_results_depths,
+    int num_candidates,
+    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
+);
+
+extern "C" void launch_marginal_gain_kernel(
+    uint8_t* d_map,
+    int dx, int dy, int dz,
+    float ox, float oy, float oz,
+    float h_cand_x, float h_cand_y, float h_cand_z,
+    float h_parent_x, float h_parent_y, float h_parent_z,
+    float h_parent_yaw, float* h_parent_R, float* h_parent_depth,
+    float* h_result_gain, float* h_result_yaw, float* h_result_depths,
+    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
+);
+
 GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("gain_evaluation/min_x", min_x_, -17.0f);
   nh_private.param("gain_evaluation/max_x", max_x_, 17.0f);
@@ -25,83 +84,34 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
 
   // initialize neighbor offsets
   auto vs = dr_ * p_checking_distance_;
-  if (!p_accurate_frontiers_) {
-    c_neighbor_voxels_[0] = Eigen::Vector3d(vs, 0, 0);
-    c_neighbor_voxels_[1] = Eigen::Vector3d(-vs, 0, 0);
-    c_neighbor_voxels_[2] = Eigen::Vector3d(0, vs, 0);
-    c_neighbor_voxels_[3] = Eigen::Vector3d(0, -vs, 0);
-    c_neighbor_voxels_[4] = Eigen::Vector3d(0, 0, vs);
-    c_neighbor_voxels_[5] = Eigen::Vector3d(0, 0, -vs);
-  } else {
-    c_neighbor_voxels_[0] = Eigen::Vector3d(vs, 0, 0);
-    c_neighbor_voxels_[1] = Eigen::Vector3d(vs, vs, 0);
-    c_neighbor_voxels_[2] = Eigen::Vector3d(vs, -vs, 0);
-    c_neighbor_voxels_[3] = Eigen::Vector3d(vs, 0, vs);
-    c_neighbor_voxels_[4] = Eigen::Vector3d(vs, vs, vs);
-    c_neighbor_voxels_[5] = Eigen::Vector3d(vs, -vs, vs);
-    c_neighbor_voxels_[6] = Eigen::Vector3d(vs, 0, -vs);
-    c_neighbor_voxels_[7] = Eigen::Vector3d(vs, vs, -vs);
-    c_neighbor_voxels_[8] = Eigen::Vector3d(vs, -vs, -vs);
-    c_neighbor_voxels_[9] = Eigen::Vector3d(0, vs, 0);
-    c_neighbor_voxels_[10] = Eigen::Vector3d(0, -vs, 0);
-    c_neighbor_voxels_[11] = Eigen::Vector3d(0, 0, vs);
-    c_neighbor_voxels_[12] = Eigen::Vector3d(0, vs, vs);
-    c_neighbor_voxels_[13] = Eigen::Vector3d(0, -vs, vs);
-    c_neighbor_voxels_[14] = Eigen::Vector3d(0, 0, -vs);
-    c_neighbor_voxels_[15] = Eigen::Vector3d(0, vs, -vs);
-    c_neighbor_voxels_[16] = Eigen::Vector3d(0, -vs, -vs);
-    c_neighbor_voxels_[17] = Eigen::Vector3d(-vs, 0, 0);
-    c_neighbor_voxels_[18] = Eigen::Vector3d(-vs, vs, 0);
-    c_neighbor_voxels_[19] = Eigen::Vector3d(-vs, -vs, 0);
-    c_neighbor_voxels_[20] = Eigen::Vector3d(-vs, 0, vs);
-    c_neighbor_voxels_[21] = Eigen::Vector3d(-vs, vs, vs);
-    c_neighbor_voxels_[22] = Eigen::Vector3d(-vs, -vs, vs);
-    c_neighbor_voxels_[23] = Eigen::Vector3d(-vs, 0, -vs);
-    c_neighbor_voxels_[24] = Eigen::Vector3d(-vs, vs, -vs);
-    c_neighbor_voxels_[25] = Eigen::Vector3d(-vs, -vs, -vs);
+
+  int idx = 0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++){
+      for (int z = -1; z <= 1; z++) {
+        if (x == 0 && y == 0 && z == 0) {
+          continue;
+        }
+
+        if (!p_accurate_frontiers_ && std::abs(x) * std::abs(y) + std::abs(z) > 1) {
+          continue;
+        }
+
+        c_neighbor_voxels_[idx] = Eigen::Vector3d(x, y, z) * vs;
+        idx++;
+      }
+    }
   }
-
-  /*// IST Lamp
-  min_x_ = 2.0;
-  max_x_ = 7.0;
-  min_y_ = -2.0;
-  max_y_ = 2.0;
-  min_z_ = 0.0;
-  max_z_ = 6.0;*/
-
-  /*// Basketball
-  min_x_ = -4.0;
-  max_x_ = 4.0;
-  min_y_ = -4.0;
-  max_y_ = 4.0;
-  min_z_ = 0.0;
-  max_z_ = 5.0;*/
-
-  /*// School
-  min_x_ = -17;
-  max_x_ = 17;
-  min_y_ = -12;
-  max_y_ = 7.0;
-  min_z_ = 0.0;
-  max_z_ = 14.5;*/
-
-  /*// Maze
-  min_x_ = -10.0;
-  max_x_ = 10.0;
-  min_y_ = -9.0;
-  max_y_ = 9.0;
-  min_z_ = 0.0;
-  max_z_ = 2.5;*/
-
-  /*// Police Station
-  min_x_ = -7;
-  max_x_ = 7;
-  min_y_ = -8.5;
-  max_y_ = 8.5;
-  min_z_ = 0.0;
-  max_z_ = 9.0;*/
-
 }
+
+GainEvaluator::~GainEvaluator() {
+    if (d_map_) {
+        wrapper_cuda_free(d_map_);
+        d_map_ = nullptr;
+    }
+}
+
+/* SETUP FUNCTIONS */
 
 double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y){
   double aspect_ratio = resolution_x/resolution_y;
@@ -196,33 +206,6 @@ VoxelStatus GainEvaluator::getVoxelStatus(const Eigen::Vector3d& position) const
   return VoxelStatus::kOccupied;
 }
 
-VoxelStatus GainEvaluator::getVisibility(const Eigen::Vector3d& view_point, const Eigen::Vector3d& voxel_to_test,
-    bool stop_at_unknown_voxel) const {
-  // This involves doing a raycast from view point to voxel to test.
-  // Let's get the global voxel coordinates of both.
-  const voxblox::Point start_scaled =
-      view_point.cast<voxblox::FloatingPoint>() * voxel_size_inv_;
-  const voxblox::Point end_scaled =
-      voxel_to_test.cast<voxblox::FloatingPoint>() * voxel_size_inv_;
-
-  voxblox::LongIndexVector global_voxel_indices;
-  voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-  // Iterate over the ray.
-  for (const voxblox::GlobalIndex& global_index : global_voxel_indices) {
-    voxblox::TsdfVoxel* voxel =
-        tsdf_layer_->getVoxelPtrByGlobalIndex(global_index);
-    if (voxel == nullptr || voxel->weight < 1e-6) {
-      if (stop_at_unknown_voxel) {
-        return VoxelStatus::kUnknown;
-      }
-    } else if (voxel->distance <= 0.0) {
-      return VoxelStatus::kOccupied;
-    }
-  }
-  return VoxelStatus::kFree;
-}
-
 void GainEvaluator::visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& pose, std::vector<geometry_msgs::Point>& points) {
   cam_model_.setBodyPose(voxblox::Transformation(
       pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
@@ -239,7 +222,806 @@ void GainEvaluator::visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& 
   }
 }
 
-double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
+void GainEvaluator::visualizeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels) {
+  CHECK_NOTNULL(tsdf_layer_);
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  cam_model_.setBodyPose(voxblox::Transformation(
+      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+
+  // Get the center of the camera to raycast to.
+  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
+  voxblox::Point camera_center = camera_pose.getPosition();
+  double yaw_rad = pose.getYaw();
+  double yaw = yaw_rad * 180 / M_PI;
+
+  double gain = 0.0;
+
+  // This function computes the gain
+  double fov_y = fov_y_rad_ / M_PI * 180.0f;
+  double fov_p = fov_p_rad_ / M_PI * 180.0f;
+
+  double dphi = 10, dtheta = 10;
+  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
+  double r;
+  int phi, theta;
+  double phi_rad, theta_rad;
+
+  //voxblox::Point vec;
+  Eigen::Vector3d vec;
+  double min_x = static_cast<double>(min_x_);
+  double min_y = static_cast<double>(min_y_);
+  double min_z = static_cast<double>(min_z_);
+  double max_x = static_cast<double>(max_x_);
+  double max_y = static_cast<double>(max_y_);
+  double max_z = static_cast<double>(max_z_);
+
+  int id = 0;
+  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
+    theta_rad = M_PI * theta / 180.0f;
+    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
+      phi_rad = M_PI * phi / 180.0f;
+
+      bool occupied_ray = false;
+      double g = 0;
+      voxblox::Pointcloud voxels_ray;
+      for (r = 0; r < r_max_; r += dr_) {
+        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
+        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
+        vec[2] = camera_center.z() + r * cos(phi_rad);
+
+        if (vec[0] < min_x || vec[0] > max_x || 
+        vec[1] < min_y || vec[1] > max_y || 
+        vec[2] < min_z || vec[2] > max_z) {
+          continue;
+        }
+
+        VoxelStatus node = getVoxelStatus(vec);
+
+        if (node == kOccupied) {
+          occupied_ray = true;
+          break;
+        } else if (node == kFree) {
+          continue;
+        } else if (node == kUnknown) {
+          /*if (isFrontierVoxel(vec)) {
+            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+          } else {
+            continue;
+          }*/
+          Eigen::Vector3d Voxel;
+          getVoxelCenter(&Voxel, vec);
+          
+          voxblox::Point VoxelCenter;
+          VoxelCenter[0] = Voxel[0];
+          VoxelCenter[1] = Voxel[1];
+          VoxelCenter[2] = Voxel[2];
+          voxels_ray.push_back(VoxelCenter);
+        }
+      }
+      voxels.insert(voxels.end(), voxels_ray.begin(), voxels_ray.end());      
+      gain += g;
+    }
+  }
+}
+
+/* GPU-BASED SETUP FUNCTIONS */
+
+std::vector<uint8_t> GainEvaluator::flattenMap(Eigen::Vector3d& origin_out, Eigen::Vector3i& dim_out) {
+    // Setup Bounds
+    double width_x = max_x_ - min_x_;
+    double width_y = max_y_ - min_y_;
+    double width_z = max_z_ - min_z_;
+
+    int dx = std::ceil(width_x * voxel_size_inv_);
+    int dy = std::ceil(width_y * voxel_size_inv_);
+    int dz = std::ceil(width_z * voxel_size_inv_);
+
+    // Safety check
+    if(dx <= 0 || dy <= 0 || dz <= 0) {
+        ROS_WARN("Map bounds invalid or zero! Check min/max params.");
+        return std::vector<uint8_t>(); 
+    }
+
+    // Save outputs for GPU
+    origin_out = Eigen::Vector3d(min_x_, min_y_, min_z_);
+    dim_out = Eigen::Vector3i(dx, dy, dz);
+
+    // Allocate Grid (Default to UNKNOWN = 2)
+    std::vector<uint8_t> grid(dx * dy * dz, 2); 
+
+    // Allocate Status (Serial)
+    voxblox::BlockIndexList blocks;
+    tsdf_layer_->getAllAllocatedBlocks(&blocks);
+
+    for (const auto& index : blocks) {
+        const auto& block = tsdf_layer_->getBlockByIndex(index);
+        
+        // If the entire block is outside our area of interest, skip it.
+        voxblox::Point block_origin = block.origin();
+        float b_size = block.block_size();
+        
+        if (block_origin.x() > max_x_ || block_origin.x() + b_size < min_x_ ||
+            block_origin.y() > max_y_ || block_origin.y() + b_size < min_y_ ||
+            block_origin.z() > max_z_ || block_origin.z() + b_size < min_z_) {
+            continue;
+        }
+
+        // Iterate voxels
+        for (size_t i = 0; i < block.num_voxels(); ++i) {
+            const auto& voxel = block.getVoxelByLinearIndex(i);
+            
+            // Skip if unobserved (weight is low)
+            if (voxel.weight < 1e-6) continue;
+
+            // Get World Position
+            voxblox::Point p = block.computeCoordinatesFromLinearIndex(i);
+            
+            // World -> Grid Index
+            int gx = std::floor((p.x() - min_x_) * voxel_size_inv_);
+            int gy = std::floor((p.y() - min_y_) * voxel_size_inv_);
+            int gz = std::floor((p.z() - min_z_) * voxel_size_inv_);
+
+            // Boundary Check (Strict)
+            if (gx >= 0 && gx < dx && gy >= 0 && gy < dy && gz >= 0 && gz < dz) {
+                // Flat Index: Z * (Area) + Y * (Width) + X
+                int flat_idx = gz * (dx * dy) + gy * dx + gx;
+
+                if (voxel.distance <= voxel_size_) { 
+                    grid[flat_idx] = 1; // Occupied
+                } else {
+                    grid[flat_idx] = 0; // Free
+                }
+            }
+        }
+    }
+
+    return grid;
+}
+
+void GainEvaluator::cacheMapOnGPU(const std::vector<uint8_t>& flat_map, const Eigen::Vector3d& origin, const Eigen::Vector3i& dim) {
+    size_t new_size = flat_map.size() * sizeof(uint8_t);
+    if (new_size == 0) return;
+
+    // Only re-allocate if we need more space or map changed size
+    if (d_map_ == nullptr || new_size > cached_map_byte_size_) {
+        if (d_map_) {
+          wrapper_cuda_free(d_map_);
+        }
+        wrapper_cuda_malloc(&d_map_, new_size);
+        cached_map_byte_size_ = new_size;
+    }
+
+    // This is the "Expensive" 5ms operation
+    wrapper_cuda_memcpy(d_map_, flat_map.data(), new_size);
+
+    // Store metadata for the kernel to use later
+    cached_origin_ = origin;
+    cached_dim_ = dim;
+}
+
+sensor_msgs::PointCloud2 GainEvaluator::visualizeGpuMap(const std::vector<uint8_t>& map, const Eigen::Vector3d& origin, const Eigen::Vector3i& dim) {
+    // 1. Create PCL Cloud
+    pcl::PointCloud<pcl::PointXYZRGB> cloud;
+    
+    // 2. Iterate (Reversing the flattening logic)
+    // CPU Flattener was: z * (dx * dy) + y * dx + x
+    int total_voxels = dim.x() * dim.y() * dim.z();
+    
+    if (map.size() != total_voxels) {
+        ROS_ERROR_THROTTLE(1.0, "GPU Map Size Mismatch! Expected %d, Got %lu", total_voxels, map.size());
+        return sensor_msgs::PointCloud2();
+    }
+
+    for (int z = 0; z < dim.z(); ++z) {
+        for (int y = 0; y < dim.y(); ++y) {
+            for (int x = 0; x < dim.x(); ++x) {
+                
+                // Reconstruct Index
+                int idx = z * (dim.x() * dim.y()) + y * dim.x() + x;
+                uint8_t val = map[idx];
+
+                // Only visualize OCCUPIED voxels (Value 1)
+                // If you want to see UNKNOWN, check for val == 2
+                if (val != 1) continue; 
+
+                pcl::PointXYZRGB p;
+                // Calculate center of the voxel (Origin + Index*Res + HalfRes)
+                p.x = origin.x() + (x * dr_) + (dr_ * 0.5); // dr_ is your voxel_size member
+                p.y = origin.y() + (y * dr_) + (dr_ * 0.5);
+                p.z = origin.z() + (z * dr_) + (dr_ * 0.5);
+
+                // Color: BRIGHT RED for Occupied
+                p.r = 255; p.g = 0; p.b = 0;
+                cloud.push_back(p);
+            }
+        }
+    }
+
+    // 3. Convert to ROS Message
+    sensor_msgs::PointCloud2 msg;
+    if (!cloud.empty()) {
+        pcl::toROSMsg(cloud, msg);
+        msg.header.frame_id = "uav1/world_origin"; // Fixed frame
+        msg.header.stamp = ros::Time::now();
+    }
+
+    return msg;
+}
+
+/* GPU-BASED GAIN COMPUTATION FUNCTIONS */
+
+std::pair<double, double> GainEvaluator::computeGainGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z) {
+    // 0. Safety Check
+    if (d_map_ == nullptr) {
+        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
+        return {0.0, 0.0};
+    }
+  
+    // 1. Number of Candidates
+    int num_candidates = pos_x.size();
+    if (num_candidates == 0) return {0.0, 0.0};
+
+    // 2. Data Marshalling (Double -> Float)
+    // The GPU prefers floats. We convert the vectors here.
+    std::vector<float> x_f(num_candidates);
+    std::vector<float> y_f(num_candidates);
+    std::vector<float> z_f(num_candidates);
+
+    for(int i=0; i<num_candidates; ++i) {
+        x_f[i] = static_cast<float>(pos_x[i]);
+        y_f[i] = static_cast<float>(pos_y[i]);
+        z_f[i] = static_cast<float>(pos_z[i]);
+    }
+
+    // 3. Prepare Output Buffers
+    std::vector<float> results_gain(num_candidates);
+    std::vector<float> results_yaw(num_candidates);
+
+    // 4. LAUNCH THE KERNEL DIRECTLY
+    launch_aep_kernel_batch(
+        d_map_, 
+        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
+        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
+        x_f.data(), y_f.data(), z_f.data(),
+        results_gain.data(),
+        results_yaw.data(),
+        num_candidates,
+        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
+    );
+
+    // 5. Return Result
+    // For now, we assume the user passed 1 candidate and wants 1 result.
+    return { (double)results_gain[0], (double)results_yaw[0] };
+}
+
+std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z) {
+    // 0. Safety Check
+    if (d_map_ == nullptr) {
+        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
+        return {};
+    }
+  
+    int num_candidates = pos_x.size();
+    if (num_candidates == 0) return {};
+
+    // 1. Marshall Inputs (Double -> Float)
+    std::vector<float> x_f(num_candidates);
+    std::vector<float> y_f(num_candidates);
+    std::vector<float> z_f(num_candidates);
+
+    for(int i=0; i<num_candidates; ++i) {
+        x_f[i] = static_cast<float>(pos_x[i]);
+        y_f[i] = static_cast<float>(pos_y[i]);
+        z_f[i] = static_cast<float>(pos_z[i]);
+    }
+
+    // 2. Output Buffers
+    std::vector<float> results_gain(num_candidates);
+    std::vector<float> results_yaw(num_candidates);
+
+    // 3. Launch Kernel
+    launch_aep_kernel_batch(
+        d_map_,
+        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
+        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
+        x_f.data(), y_f.data(), z_f.data(),
+        results_gain.data(), 
+        results_yaw.data(),
+        num_candidates,
+        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
+    );
+
+    /*const float DTHETA_RAD = 2.0f * M_PI / 180.0f;
+    const float DPHI_RAD   = 2.0f * M_PI / 180.0f;
+
+    int win_w = (int)((float)fov_y_rad_ / DTHETA_RAD);
+    if (win_w < 1) win_w = 1;
+
+    int win_h = (int)((float)fov_p_rad_ / DPHI_RAD);
+    if (win_h < 1) win_h = 1;
+
+    int total_floats = num_candidates * win_w * win_h;
+    std::vector<float> results_depths(total_floats);
+
+    launch_aep_kernel_batch_depth(
+        d_map_,
+        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
+        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
+        x_f.data(), y_f.data(), z_f.data(),
+        results_gain.data(), 
+        results_yaw.data(),
+        results_depths.data(),
+        num_candidates,
+        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
+    );*/
+
+    // 4. Return Results
+    std::vector<std::pair<double, double>> results;
+    results.reserve(num_candidates);
+    for(int i=0; i<num_candidates; ++i) {
+        results.push_back({ (double)results_gain[i], (double)results_yaw[i] });
+    }
+    return results;
+}
+
+std::pair<double, double> GainEvaluator::computeSingleGainGPU(const double pos_x, const double pos_y, const double pos_z) {
+    // 0. Safety Check
+    if (d_map_ == nullptr) {
+        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
+        return {0.0, 0.0};
+    }
+
+    // 1. Launch The Kernel Wrapper
+    // Note: We use the member variables we cached earlier for the parent state
+    float results_gain = 0.0f;
+    float results_yaw = 0.0f;
+
+    launch_aep_kernel_single(
+      d_map_,
+      cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
+      (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
+      (float)pos_x, (float)pos_y, (float)pos_z,
+      &results_gain, &results_yaw,
+      (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
+    );
+
+    // 2. Return Result
+    // For now, we assume the user passed 1 candidate and wants 1 result.
+    return { (double)results_gain, (double)results_yaw };
+}
+
+std::pair<double, double> GainEvaluator::computeMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
+    // 0. Safety Check
+    if (d_map_ == nullptr) {
+        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
+        return {0.0, 0.0};
+    }
+
+    float dtheta_rad = 2.0f * M_PI / 180.0f;
+    float dphi_rad   = 2.0f * M_PI / 180.0f;
+
+    int window_width  = std::max(1, (int)(fov_y_rad_ / dtheta_rad));
+    int window_height = std::max(1, (int)(fov_p_rad_ / dphi_rad));
+    
+    // Resize the vector to fit the result
+    size_t required_size = window_width * window_height;
+    if (result_depths.size() != required_size) {
+        result_depths.resize(required_size);
+    }
+    // 1. Prepare Output Buffers
+    float results_gain = 0.0f;
+    float results_yaw = 0.0f;
+
+    // 2. Launch The Kernel Wrapper
+    // Note: We use the member variables we cached earlier for the parent state
+    launch_marginal_gain_kernel(
+        d_map_,
+        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
+        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
+        (float)pos_x, (float)pos_y, (float)pos_z,
+        (float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z(),
+        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data(),
+        &results_gain, &results_yaw, result_depths.data(),
+        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
+    );
+
+    // 3. Return Result
+    // For now, we assume the user passed 1 candidate and wants 1 result.
+    return { (double)results_gain, (double)results_yaw };
+}
+
+std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+  // 1. Setup Constants
+  float voxel_size = voxel_size_;
+  float gain_range = r_max_;
+
+  float dtheta_deg = 2.0f;
+  float dphi_deg   = 2.0f;
+  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
+  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+
+  float fov_p_rad = fov_p_rad_;
+  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
+  float phi_center = (M_PI / 2.0f) + camera_pitch;
+  float phi_start  = phi_center - (fov_p_rad / 2.0f);
+  float phi_end    = phi_center + (fov_p_rad / 2.0f);
+
+  int theta_bins = 360 / dtheta_deg;
+  std::vector<float> yaw_gains(theta_bins, 0.0f);
+
+  // 2. WOO DDA Raycasting Loop
+  for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
+    float theta = -M_PI + (t_idx * dtheta_rad);
+
+    for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+      float sin_phi = sin(phi);
+      float dir_x = cos(theta) * sin_phi;
+      float dir_y = sin(theta) * sin_phi;
+      float dir_z = cos(phi);
+
+      float start_x = pose.position_W.x();
+      float start_y = pose.position_W.y();
+      float start_z = pose.position_W.z();
+
+      float gx = (start_x - cached_origin_.x()) / voxel_size_;
+      float gy = (start_y - cached_origin_.y()) / voxel_size_;
+      float gz = (start_z - cached_origin_.z()) / voxel_size_;
+
+      int ix = std::floor(gx);
+      int iy = std::floor(gy);
+      int iz = std::floor(gz);
+
+      int stepX = (dir_x > 0) ? 1 : ((dir_x < 0)) ? -1 : 0;
+      int stepY = (dir_y > 0) ? 1 : ((dir_y < 0)) ? -1 : 0;
+      int stepZ = (dir_z > 0) ? 1 : ((dir_z < 0)) ? -1 : 0;
+
+      float tDeltaX = (dir_x != 0.0f) ? std::abs(1.0f / dir_x) : 1e30f;
+      float tDeltaY = (dir_y != 0.0f) ? std::abs(1.0f / dir_y) : 1e30f;
+      float tDeltaZ = (dir_z != 0.0f) ? std::abs(1.0f / dir_z) : 1e30f;
+
+      float tMaxX, tMaxY, tMaxZ;
+
+      if (stepX > 0) {
+        tMaxX = (ix + 1.0f - gx) * tDeltaX;
+      } else {
+        tMaxX = (gx - ix) * tDeltaX;
+      }
+
+      if (stepY > 0) {
+        tMaxY = (iy + 1.0f - gy) * tDeltaY;
+      } else {
+        tMaxY = (gy - iy) * tDeltaY;
+      }
+
+      if (stepZ > 0) {
+        tMaxZ = (iz + 1.0f - gz) * tDeltaZ;
+      } else {
+        tMaxZ = (gz - iz) * tDeltaZ;
+      }
+
+      float ray_gain = 0.0f;
+      float t = 0.0f;
+      float max_t = gain_range / voxel_size_;
+
+      while (t < max_t) {
+        if (ix >= 0 && ix < cached_dim_.x() &&
+          iy >= 0 && iy < cached_dim_.y() &&
+          iz >= 0 && iz < cached_dim_.z()) {
+
+          int idx = iz * cached_dim_.x() * cached_dim_.y() + iy * cached_dim_.x() + ix;
+          uint8_t val = flat_map[idx];
+
+          if (val == 1) {
+            break;
+          } else if (val == 2) {
+            float t_exit = std::min({tMaxX, tMaxY, tMaxZ});
+            float dt = t_exit - t;
+            float dr = dt * voxel_size_;
+
+            float r = t * voxel_size_;
+            float term1 = 2.0f * r * r * dr;
+            float term2 = (dr * dr * dr) / 6.0f;
+            ray_gain += (term1 + term2) * dtheta_rad * sin_phi * sin(dphi_rad * 0.5f);
+          }
+        }
+
+        if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+          ix += stepX;
+          t = tMaxX;
+          tMaxX += tDeltaX;
+        } else if (tMaxY < tMaxZ) {
+          iy += stepY;
+          t = tMaxY;
+          tMaxY += tDeltaY;
+        } else {
+          iz += stepZ;
+          t = tMaxZ;
+          tMaxZ += tDeltaZ;
+        }
+      }
+
+      if (ray_gain > 0) {
+        yaw_gains[t_idx] += ray_gain;
+      }
+    }
+  }
+
+  // 4. Sliding Window Optimization (Yaw Selection)
+  float max_gain = 0.0f;
+  int best_idx = 0;
+
+  // How many 10-degree bins fit in the FOV?
+  int sectors = (int)(fov_y_rad_ / dtheta_rad);
+  if (sectors < 1) sectors = 1;
+
+  for (int i = 0; i < theta_bins; ++i) {
+      float current_window = 0.0f;
+      for (int k = 0; k < sectors; ++k) {
+          int idx = (i + k) % theta_bins;
+          current_window += yaw_gains[idx];
+      }
+
+      if (current_window > max_gain) {
+          max_gain = current_window;
+          best_idx = i;
+      }
+  }
+
+  // Calculate Best Yaw Angle
+  float start_angle = -M_PI + (best_idx * dtheta_rad);
+  float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
+
+  // Normalize -PI to PI
+  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+
+  return std::make_pair((double)max_gain, (double)center_angle);
+}
+
+std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+  // 1. Setup Constants
+  float voxel_size = voxel_size_;
+  float gain_range = r_max_;
+
+  float dtheta_deg = 2.0f;
+  float dphi_deg   = 2.0f;
+  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
+  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+
+  float fov_p_rad = fov_p_rad_;
+  float camera_pitch = camera_pitch_ * M_PI / 180.0f;    
+  float phi_center = (M_PI / 2.0f) + camera_pitch;
+  float phi_start  = phi_center - (fov_p_rad / 2.0f);
+  float phi_end    = phi_center + (fov_p_rad / 2.0f);
+
+  int theta_bins = 360 / dtheta_deg;
+  std::vector<float> yaw_gains(theta_bins, 0.0f);
+
+  // 3D DDA Raycasting
+  for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
+    float theta = -M_PI + (t_idx * dtheta_rad);
+
+    // Iterate Phi (Elevation)
+    for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+      // Direction Vectors
+      float sin_phi = sin(phi);
+      float dir_x = cos(theta) * sin_phi;
+      float dir_y = sin(theta) * sin_phi;
+      float dir_z = cos(phi);
+
+      float p1x = pose.position_W.x();
+      float p1y = pose.position_W.y();
+      float p1z = pose.position_W.z();
+
+      float p2x = p1x + gain_range * dir_x;
+      float p2y = p1y + gain_range * dir_y;
+      float p2z = p1z + gain_range * dir_z;
+
+      float dx = p2x - p1x;
+      float dy = p2y - p1y;
+      float dz = p2z - p1z;
+
+      float step = 0;
+      if (std::abs(dx) >= std::abs(dy) && std::abs(dx) >= std::abs(dz)) {
+          step = std::abs(dx) * voxel_size_inv_;
+      } else if (std::abs(dy) >= std::abs(dx) && std::abs(dy) >= std::abs(dz)) {
+          step = std::abs(dy) * voxel_size_inv_;
+      } else {
+          step = std::abs(dz) * voxel_size_inv_;
+      }
+
+      dx /= step;
+      dy /= step;
+      dz /= step;
+
+      float x = p1x;
+      float y = p1y;
+      float z = p1z;
+      
+      int i = 0;
+      float ray_gain = 0.0f;
+      float dist_per_step = gain_range / step;
+      float current_dist = 0.0f;
+
+      while (i <= step) {
+        int gx = std::floor((x - cached_origin_.x()) / voxel_size);
+        int gy = std::floor((y - cached_origin_.y()) / voxel_size);
+        int gz = std::floor((z - cached_origin_.z()) / voxel_size);
+
+        if (gx >= 0 && gx < cached_dim_.x() &&
+            gy >= 0 && gy < cached_dim_.y() &&
+            gz >= 0 && gz < cached_dim_.z()) {
+          int flat_idx = gz * (cached_dim_.x() * cached_dim_.y()) + gy * cached_dim_.x() + gx;
+          uint8_t val = flat_map[flat_idx];
+
+          if (val == 1) {
+            break;
+          } else if (val == 2) {
+            float r = current_dist;
+            float term1 = 2.0f * r * r * voxel_size;
+            float term2 = (voxel_size * voxel_size * voxel_size) / 6.0f;
+            float vol = term1 + term2;
+            ray_gain += vol * dtheta_rad * sin_phi * sin(dphi_rad / 2.0f);
+          }
+        }
+
+        x = x + dx;
+        y = y + dy;
+        z = z + dz;
+        current_dist += dist_per_step;
+        i = i + 1;
+      }
+
+      if (ray_gain > 0) {
+        yaw_gains[t_idx] += ray_gain;
+      }
+    }
+  }
+
+  float max_gain = 0.0f;
+  int best_idx = 0;
+
+  // How many 10-degree bins fit in the FOV?
+  int sectors = (int)(fov_y_rad_ / dtheta_rad);
+  if (sectors < 1) sectors = 1;
+
+  for (int i = 0; i < theta_bins; ++i) {
+      float current_window = 0.0f;
+      for (int k = 0; k < sectors; ++k) {
+          int idx = (i + k) % theta_bins;
+          current_window += yaw_gains[idx];
+      }
+
+      if (current_window > max_gain) {
+          max_gain = current_window;
+          best_idx = i;
+      }
+  }
+
+  // Calculate Best Yaw Angle
+  float start_angle = -M_PI + (best_idx * dtheta_rad);
+  float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
+
+  // Normalize -PI to PI
+  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+
+  return std::make_pair((double)max_gain, (double)center_angle);
+}
+
+std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+  float voxel_size = voxel_size_;
+  float gain_range = r_max_;
+
+  float dtheta_deg = 2.0f;
+  float dphi_deg   = 2.0f;
+  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
+  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+
+  float fov_p_rad = fov_p_rad_;
+  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
+  float phi_center = (M_PI / 2.0f) + camera_pitch;
+  float phi_start  = phi_center - (fov_p_rad / 2.0f);
+  float phi_end    = phi_center + (fov_p_rad / 2.0f);
+
+  int theta_bins = 360 / dtheta_deg;
+  std::vector<float> yaw_gains(theta_bins, 0.0f);
+
+    // Original Raycasting Loop 
+  for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
+    float theta = -M_PI + (t_idx * dtheta_rad);
+    for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+      // Direction Vectors
+      float sin_phi = sin(phi);
+      float dir_x = cos(theta) * sin_phi;
+      float dir_y = sin(theta) * sin_phi;
+      float dir_z = cos(phi);
+
+      float ray_gain = 0.0f;
+
+      // Iterate Ray
+      for (float r = 0.2f; r < gain_range; r += voxel_size) {
+        // Calculate Point
+        float px = pose.position_W.x() + r * dir_x;
+        float py = pose.position_W.y() + r * dir_y;
+        float pz = pose.position_W.z() + r * dir_z;
+
+        /*// A. STRICT BOUNDARY CHECK (Matches GPU strict fix)
+        if (px < min_x_ || px > max_x_ ||
+            py < min_y_ || py > max_y_ ||
+            pz < min_z_ || pz > max_z_) {
+            continue; // Skip out of bounds
+        }*/
+
+        // B. CALCULATE INDEX
+        int gx = std::floor((px - cached_origin_.x()) / voxel_size);
+        int gy = std::floor((py - cached_origin_.y()) / voxel_size);
+        int gz = std::floor((pz - cached_origin_.z()) / voxel_size);
+
+        // C. SAFETY CHECK (Should correspond to flat_map size)
+        if (gx < 0 || gx >= cached_dim_.x() ||
+            gy < 0 || gy >= cached_dim_.y() ||
+            gz < 0 || gz >= cached_dim_.z()) {
+          continue;
+        }
+
+        // D. CHECK VALUE
+        int flat_idx = gz * (cached_dim_.x() * cached_dim_.y()) + gy * cached_dim_.x() + gx;
+        uint8_t val = flat_map[flat_idx];
+
+        if (val == 1) { // Occupied
+          break;
+        }
+        else if (val == 2) { // Unknown
+          // Gain Math (Exact replica of GPU)
+          float term1 = 2.0f * r * r * voxel_size;
+          float term2 = (voxel_size * voxel_size * voxel_size) / 6.0f;
+          float vol = term1 + term2;
+
+          ray_gain += vol * dtheta_rad * sin_phi * sin(dphi_rad / 2.0f);
+        }
+      }
+
+      // Accumulate to the current Yaw Bin
+      if (ray_gain > 0) {
+          yaw_gains[t_idx] += ray_gain;
+      }
+    }
+  }
+
+  float max_gain = 0.0f;
+  int best_idx = 0;
+
+  // How many 10-degree bins fit in the FOV?
+  int sectors = (int)(fov_y_rad_ / dtheta_rad);
+  if (sectors < 1) sectors = 1;
+
+  for (int i = 0; i < theta_bins; ++i) {
+      float current_window = 0.0f;
+      for (int k = 0; k < sectors; ++k) {
+          int idx = (i + k) % theta_bins;
+          current_window += yaw_gains[idx];
+      }
+
+      if (current_window > max_gain) {
+          max_gain = current_window;
+          best_idx = i;
+      }
+  }
+
+  // Calculate Best Yaw Angle
+  float start_angle = -M_PI + (best_idx * dtheta_rad);
+  float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
+
+  // Normalize -PI to PI
+  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+
+  return std::make_pair((double)max_gain, (double)center_angle);
+}
+
+/* GAIN COMPUTATION FUNCTIONS */
+
+double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
   CHECK_NOTNULL(tsdf_layer_);
 
   //auto start = std::chrono::high_resolution_clock::now();
@@ -318,7 +1100,86 @@ double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajec
   return gain;
 }
 
-std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
+double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset) {
+  CHECK_NOTNULL(tsdf_layer_);
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  cam_model_.setBodyPose(voxblox::Transformation(
+      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+
+  // Get the center of the camera to raycast to.
+  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
+  voxblox::Point camera_center = camera_pose.getPosition();
+
+  double yaw_rad = pose.getYaw();
+  double yaw = yaw_rad * 180 / M_PI;
+
+  double gain = 0.0;
+
+  // This function computes the gain
+  double fov_y = fov_y_rad_ / M_PI * 180.0f;
+  double fov_p = fov_p_rad_ / M_PI * 180.0f;
+
+  double dphi_rad = dr_ / r_max_;
+  double dtheta_rad = dr_ / r_max_;
+  double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
+  double r;
+  double phi, theta;
+  double phi_rad, theta_rad;
+
+  //voxblox::Point vec;
+  Eigen::Vector3d vec;
+  double min_x = static_cast<double>(min_x_);
+  double min_y = static_cast<double>(min_y_);
+  double min_z = static_cast<double>(min_z_);
+  double max_x = static_cast<double>(max_x_);
+  double max_y = static_cast<double>(max_y_);
+  double max_z = static_cast<double>(max_z_);
+
+  int id = 0;
+  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
+    theta_rad = M_PI * theta / 180.0f;
+    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
+      phi_rad = M_PI * phi / 180.0f;
+
+      double g = 0;
+      bool occupied_ray = false;
+      for (r = 0; r < r_max_; r += dr_) {
+        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
+        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
+        vec[2] = camera_center.z() + r * cos(phi_rad);
+
+        if (vec[0] < min_x + offset[0] || vec[0] > max_x + offset[0] || 
+        vec[1] < min_y + offset[1] || vec[1] > max_y + offset[1] || 
+        vec[2] < min_z + offset[2] || vec[2] > max_z + offset[2]) {
+          continue;
+        }
+
+        VoxelStatus node = getVoxelStatus(vec);
+
+        if (node == kOccupied) {
+          occupied_ray = true;
+          break;
+        } else if (node == kFree) {
+          continue;
+        } else if (node == kUnknown) {
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+        }
+      }
+      gain += g;
+    }
+  }
+
+  //auto end = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> elapsed = end - start;
+  //ROS_INFO("[AEPlanner]: RayCasting took: %f seconds.", elapsed.count());
+  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
+
+  return gain;
+}
+
+std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
   CHECK_NOTNULL(tsdf_layer_);
 
   //auto start = std::chrono::high_resolution_clock::now();
@@ -429,7 +1290,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msg
   return std::make_pair(gain, yaw);
 }
 
-std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
+std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
   CHECK_NOTNULL(tsdf_layer_);
 
   //auto start = std::chrono::high_resolution_clock::now();
@@ -481,6 +1342,158 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const et
         if (vec[0] < min_x || vec[0] > max_x || 
         vec[1] < min_y || vec[1] > max_y || 
         vec[2] < min_z || vec[2] > max_z) {
+          continue;
+        }
+
+        VoxelStatus node = getVoxelStatus(vec);
+
+        if (node == kOccupied) {
+          occupied_ray = true;
+          break;
+        } else if (node == kFree) {
+          continue;
+        } else if (node == kUnknown) {
+          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+        }
+      }
+
+      gain += g;
+      gain_per_yaw[theta] += g;
+    }
+  }
+
+  //auto intermediate = std::chrono::high_resolution_clock::now();
+
+  double best_gain = 0;
+  double best_yaw = 0;
+
+  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
+
+  std::vector<double> yaws;
+  std::vector<double> gains;
+  double min_yaw_step = 2 * M_PI / min_yaw_samples;
+  double yaw_step = 1; // degree
+  int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  for (int k = 0; k < min_yaw_samples; ++k) {
+    double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
+    double gain_optimized = 0;
+    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
+      int theta = yaw_optimized + fov;
+      if (theta < -180)
+        theta += 360;
+      if (theta > 180)
+        theta -= 360;
+      gain_optimized += gain_per_yaw[theta];
+    }
+
+    yaws.push_back(yaw_optimized);
+    gains.push_back(gain_optimized);
+
+    if (gain_optimized > best_gain) {
+      best_gain = gain_optimized;
+      best_yaw = yaw_optimized;
+    }
+  }
+
+  // Create a vector to store the filtered yaws
+  std::vector<double> filteredYaws;
+
+  for (int i = 0; i < min_yaw_samples; ++i) {
+    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
+    int next = (i + 1) % min_yaw_samples;
+
+    if ((gains[i] + gains[next] > best_gain)) {
+      filteredYaws.push_back(yaws[i]);
+    }
+  }
+
+  for (int j = 0; j < filteredYaws.size(); ++j) {
+    for (int l = 0; l < aditional_angles; ++l) {
+      double yaw_optimized = filteredYaws[j] + yaw_step * (l + 1);
+      double gain_optimized = 0;
+      for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
+        int theta = yaw_optimized + fov;
+        if (theta < -180)
+          theta += 360;
+        if (theta > 180)
+          theta -= 360;
+        gain_optimized += gain_per_yaw[theta];
+      }
+
+      if (gain_optimized > best_gain) {
+        best_gain = gain_optimized;
+        best_yaw = yaw_optimized;
+      }
+    }
+  }
+
+  gain = best_gain;
+  double yaw = M_PI * best_yaw / 180.f;
+
+  //auto end = std::chrono::high_resolution_clock::now();
+  //std::chrono::duration<double> elapsed = end - start;
+  //std::chrono::duration<double> intermediate_elapsed = intermediate - start;
+  //std::cout << "First Part AEPGain took " << intermediate_elapsed.count() << " seconds." << std::endl;
+  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
+
+  return std::make_pair(gain, yaw);
+}
+
+std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset) {
+  CHECK_NOTNULL(tsdf_layer_);
+
+  //auto start = std::chrono::high_resolution_clock::now();
+
+  cam_model_.setBodyPose(voxblox::Transformation(
+      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+
+  // Get the center of the camera to raycast to.
+  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
+  voxblox::Point camera_center = camera_pose.getPosition();
+
+  double gain = 0.0;
+
+  // This function computes the gain
+  double fov_y = fov_y_rad_ / M_PI * 180.0f;
+  double fov_p = fov_p_rad_ / M_PI * 180.0f;
+
+  double dphi_rad = dr_ / r_max_;
+  double dtheta_rad = dr_ / r_max_;
+  double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
+  double r;
+  double phi, theta;
+  double phi_rad, theta_rad;
+
+  std::map<int, double> gain_per_yaw;
+
+  //voxblox::Point vec;
+  Eigen::Vector3d vec;
+  double min_x = static_cast<double>(min_x_);
+  double min_y = static_cast<double>(min_y_);
+  double min_z = static_cast<double>(min_z_);
+  double max_x = static_cast<double>(max_x_);
+  double max_y = static_cast<double>(max_y_);
+  double max_z = static_cast<double>(max_z_);
+
+  int id = 0;
+  for (theta = -180; theta < 180; theta += dtheta) {
+    theta_rad = M_PI * theta / 180.0f;
+    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
+      phi_rad = M_PI * phi / 180.0f;
+
+      double g = 0;
+      bool occupied_ray = false;
+      for (r = 0; r < r_max_; r += dr_) {
+        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
+        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
+        vec[2] = camera_center.z() + r * cos(phi_rad);
+
+        if (vec[0] < min_x + offset[0] || vec[0] > max_x + offset[0] || 
+        vec[1] < min_y + offset[1] || vec[1] > max_y + offset[1] || 
+        vec[2] < min_z + offset[2] || vec[2] > max_z + offset[2]) {
           continue;
         }
 
@@ -663,959 +1676,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
   return std::make_pair(best_gain, best_yaw);
 }
 
-double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& previous_pose, const eth_mav_msgs::EigenTrajectoryPoint& pose, bool first_node, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  // Set the camera pose to the previous one to get the previous Frustum
-  prev_cam_model_.setBodyPose(voxblox::Transformation(
-      previous_pose.orientation_W_B.cast<float>(), previous_pose.position_W.cast<float>()));
-
-  bounding_planes_ = prev_cam_model_.getBoundingPlanes();
-
-  // Now set camera model to the current pose
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double yaw_rad = pose.getYaw();
-  double yaw = yaw_rad * 180 / M_PI;
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  voxblox::Point vec_voxblox;
-  Eigen::Vector3d vec;
-  
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0.0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-        
-        vec_voxblox = vec.cast<float>();
-
-        if (isPointInView(vec_voxblox, first_node)) {
-          continue;
-        }
-
-        /*if (isInsideAABB(vec, aabb_min, aabb_max, first_node)) {
-          break;
-        }*/
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          /*if (isFrontierVoxel(vec)) {
-            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2) / (voxel_size_ * voxel_size_ * voxel_size_);
-          }*/
-        }
-      }
-
-      gain += g;
-    }
-  }
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
-
-  return gain;
-}
-
-double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double yaw_rad = pose.getYaw();
-  double yaw = yaw_rad * 180 / M_PI;
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0.0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          /*if (isFrontierVoxel(vec)) {
-            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2) / (voxel_size_ * voxel_size_ * voxel_size_);
-          }*/
-        }
-      }
-
-      gain += g;
-    }
-  }
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
-
-  return gain;
-}
-
-double GainEvaluator::computeGainFixedAngleAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double yaw_rad = pose.getYaw();
-  double yaw = yaw_rad * 180 / M_PI;
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0.0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x + offset[0] || vec[0] > max_x + offset[0] || 
-        vec[1] < min_y + offset[1] || vec[1] > max_y + offset[1] || 
-        vec[2] < min_z + offset[2] || vec[2] > max_z + offset[2]) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }
-      }
-      gain += g;
-    }
-  }
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
-
-  return gain;
-}
-
-std::pair<double, double> GainEvaluator::computeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  std::map<int, double> gain_per_yaw;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = -180; theta < 180; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }
-      }
-      gain += g;
-      gain_per_yaw[theta] += g;
-    }
-  }
-
-  //auto intermediate = std::chrono::high_resolution_clock::now();
-
-  int best_yaw = 0;
-  double best_yaw_score = 0;
-  for (int yaw = -180; yaw < 180; yaw++)
-  {
-    double yaw_score = 0;
-    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++)
-    {
-      int theta = yaw + fov;
-      if (theta < -180)
-        theta += 360;
-      if (theta > 180)
-        theta -= 360;
-      yaw_score += gain_per_yaw[theta];
-    }
-
-    if (best_yaw_score < yaw_score)
-    {
-      best_yaw_score = yaw_score;
-      best_yaw = yaw;
-    }
-  }
-
-  double h_max = fov_y / M_PI * 180;
-  double v_max = fov_p / M_PI * 180;
-
-  gain = best_yaw_score;
-
-  double yaw = M_PI * best_yaw / 180.f;
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::chrono::duration<double> intermediate_elapsed = intermediate - start;
-  //std::cout << "First Part AEPGain took " << intermediate_elapsed.count() << " seconds." << std::endl;
-  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
-
-  return std::make_pair(gain, yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  std::map<int, double> gain_per_yaw;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = -180; theta < 180; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          /*if (isFrontierVoxel(vec)) {
-            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2) / (voxel_size_ * voxel_size_ * voxel_size_);
-          }*/
-        }
-      }
-      gain += g;
-      gain_per_yaw[theta] += g;
-    }
-  }
-
-  //auto intermediate = std::chrono::high_resolution_clock::now();
-
-  double best_gain = 0;
-  double best_yaw = 0;
-
-  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
-
-  std::vector<double> yaws;
-  std::vector<double> gains;
-  double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 1; // degree
-  int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
-
-  for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
-    double gain_optimized = 0;
-    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-      int theta = yaw_optimized + fov;
-      if (theta < -180)
-        theta += 360;
-      if (theta > 180)
-        theta -= 360;
-      gain_optimized += gain_per_yaw[theta];
-    }
-
-    yaws.push_back(yaw_optimized);
-    gains.push_back(gain_optimized);
-
-    if (gain_optimized > best_gain) {
-      best_gain = gain_optimized;
-      best_yaw = yaw_optimized;
-    }
-  }
-
-  // Create a vector to store the filtered yaws
-  std::vector<double> filteredYaws;
-
-  for (int i = 0; i < min_yaw_samples; ++i) {
-    int next = (i + 1) % min_yaw_samples;
-
-    if ((gains[i] + gains[next] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }
-  }
-
-  for (int j = 0; j < filteredYaws.size(); ++j) {
-    for (int l = 0; l < aditional_angles; ++l) {
-      double yaw_optimized = filteredYaws[j] + yaw_step * (l + 1);
-      double gain_optimized = 0;
-      for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-        int theta = yaw_optimized + fov;
-        if (theta < -180)
-          theta += 360;
-        if (theta > 180)
-          theta -= 360;
-        gain_optimized += gain_per_yaw[theta];
-      }
-
-      if (gain_optimized > best_gain) {
-        best_gain = gain_optimized;
-        best_yaw = yaw_optimized;
-      }
-    }
-  }
-
-  gain = best_gain;
-  double yaw = M_PI * best_yaw / 180.f;
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::chrono::duration<double> intermediate_elapsed = intermediate - start;
-  //std::cout << "First Part AEPGain took " << intermediate_elapsed.count() << " seconds." << std::endl;
-  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
-
-  return std::make_pair(gain, yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainOptimizedAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset, int modulus) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  std::map<int, double> gain_per_yaw;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = -180; theta < 180; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f ;
-
-      double g = 0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x + offset[0] || vec[0] > max_x + offset[0] || 
-        vec[1] < min_y + offset[1] || vec[1] > max_y + offset[1] || 
-        vec[2] < min_z + offset[2] || vec[2] > max_z + offset[2]) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }
-      }
-      gain += g;
-      gain_per_yaw[theta] += g;
-    }
-  }
-
-  //auto intermediate = std::chrono::high_resolution_clock::now();
-
-  double best_gain = 0;
-  double best_yaw = 0;
-
-  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
-
-  std::vector<double> yaws;
-  std::vector<double> gains;
-  double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 1; // degree
-  int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
-
-  for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
-    double gain_optimized = 0;
-    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-      int theta = yaw_optimized + fov;
-      if (theta < -180)
-        theta += 360;
-      if (theta > 180)
-        theta -= 360;
-      gain_optimized += gain_per_yaw[theta];
-    }
-
-    yaws.push_back(yaw_optimized);
-    gains.push_back(gain_optimized);
-
-    if (gain_optimized > best_gain) {
-      best_gain = gain_optimized;
-      best_yaw = yaw_optimized;
-    }
-  }
-
-  // Create a vector to store the filtered yaws
-  std::vector<double> filteredYaws;
-
-  for (int i = 0; i < min_yaw_samples; ++i) {
-    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
-    int next = (i + 1) % min_yaw_samples;
-
-    if ((gains[i] + gains[next] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }
-  }
-
-  for (int j = 0; j < filteredYaws.size(); ++j) {
-    for (int l = 0; l < aditional_angles; ++l) {
-      double yaw_optimized = filteredYaws[j] + yaw_step * (l + 1);
-      double gain_optimized = 0;
-      for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-        int theta = yaw_optimized + fov;
-        if (theta < -180)
-          theta += 360;
-        if (theta > 180)
-          theta -= 360;
-        gain_optimized += gain_per_yaw[theta];
-      }
-
-      if (gain_optimized > best_gain) {
-        best_gain = gain_optimized;
-        best_yaw = yaw_optimized;
-      }
-    }
-  }
-
-  gain = best_gain;
-  double yaw = M_PI * best_yaw / 180.f;
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-  //std::chrono::duration<double> intermediate_elapsed = intermediate - start;
-  //std::cout << "First Part AEPGain took " << intermediate_elapsed.count() << " seconds." << std::endl;
-  //std::cout << "AEPGain took " << elapsed.count() << " seconds." << std::endl;
-
-  return std::make_pair(gain, yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainFromSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position) {
-  double best_gain = 0;
-  double best_yaw = 0;
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  for (int k = 0; k < yaw_samples_; ++k) {
-    double yaw = k * 2 * M_PI / yaw_samples_;
-    //position.position_W = node->point.head(3);
-    position.setFromYaw(yaw);
-    double gain = computeGainFixedAngleAEP(position);
-    if (gain > best_gain) {
-      best_gain = gain;
-      best_yaw = yaw;
-    }
-  }
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-
-  return std::make_pair(best_gain, best_yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainFromOptimizedSampledYawAEP(eth_mav_msgs::EigenTrajectoryPoint& position) {
-  double best_gain = 0;
-  double best_yaw = 0;
-
-  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
-
-  std::vector<double> yaws;
-  std::vector<double> gains;
-  double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 2 * M_PI / yaw_samples_;
-  int aditional_angles = (yaw_samples_ - min_yaw_samples) / min_yaw_samples;
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw = k * min_yaw_step;
-    position.setFromYaw(yaw);
-    double gain = computeGainFixedAngleAEP(position);
-
-    yaws.push_back(yaw);
-    gains.push_back(gain);
-
-    if (gain > best_gain) {
-      best_gain = gain;
-      best_yaw = yaw;
-    }
-  }
-
-  // Create a vector to store the filtered yaws
-  std::vector<double> filteredYaws;
-
-  for (int i = 0; i < min_yaw_samples; ++i) {
-    int next = (i + 1) % min_yaw_samples;
-
-    if ((gains[i] + gains[next] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }
-  }
-
-  for (int j = 0; j < filteredYaws.size(); ++j) {
-    for (int l = 0; l < aditional_angles; ++l) {
-      double yaw = filteredYaws[j] + yaw_step * (l + 1);
-      position.setFromYaw(yaw);
-      double gain = computeGainFixedAngleAEP(position);
-
-      if (gain > best_gain) {
-        best_gain = gain;
-        best_yaw = yaw;
-      }
-    }
-  }
-
-  //auto end = std::chrono::high_resolution_clock::now();
-  //std::chrono::duration<double> elapsed = end - start;
-
-  return std::make_pair(best_gain, best_yaw);
-}
-
-void GainEvaluator::visualizeGainAEP(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  //auto start = std::chrono::high_resolution_clock::now();
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-  double yaw_rad = pose.getYaw();
-  double yaw = yaw_rad * 180 / M_PI;
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi = 10, dtheta = 10;
-  double dphi_rad = M_PI * dphi / 180.0f, dtheta_rad = M_PI * dtheta / 180.0f;
-  double r;
-  int phi, theta;
-  double phi_rad, theta_rad;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      bool occupied_ray = false;
-      double g = 0;
-      voxblox::Pointcloud voxels_ray;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          /*if (isFrontierVoxel(vec)) {
-            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else {
-            continue;
-          }*/
-          Eigen::Vector3d Voxel;
-          getVoxelCenter(&Voxel, vec);
-          
-          voxblox::Point VoxelCenter;
-          VoxelCenter[0] = Voxel[0];
-          VoxelCenter[1] = Voxel[1];
-          VoxelCenter[2] = Voxel[2];
-          voxels_ray.push_back(VoxelCenter);
-        }
-      }
-      voxels.insert(voxels.end(), voxels_ray.begin(), voxels_ray.end());      
-      gain += g;
-    }
-  }
-}
-
-double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, int modulus) {
-  //auto start = std::chrono::high_resolution_clock::now();
-  //eth_trajectory_generation::timing::Timer timer_gain("gain_evaluator");
-
-  cam_model_.setBodyPose(voxblox::Transformation(pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
-
-  // Get the boundaries of the current view.
-  Eigen::Vector3f aabb_min, aabb_max;
-  cam_model_.getAabb(&aabb_min, &aabb_max);
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double num_unknown = 0.0;
-  double num_occluded = 0.0;
-  double num_free = 0.0;
-  double num_occupied = 0.0;
-
-  // Since some complete blocks may be unallocated, just do the dumbest possible
-  // thing: iterate over all voxels in the AABB and check if they belong (which
-  // should be quite cheap), then look them up.
-  
-  //double gain = 0.0;
-  int checked_voxels = 0;
-  int voxel_index = 0;
-  Eigen::Vector3f pos = aabb_min.cast<float>();
-
-  const float min_x = std::max(aabb_min.x(), min_x_);
-  const float max_x = std::min(aabb_max.x(), max_x_);
-  const float min_y = std::max(aabb_min.y(), min_y_);
-  const float max_y = std::min(aabb_max.y(), max_y_);
-  const float min_z = std::max(aabb_min.z(), min_z_);
-  const float max_z = std::min(aabb_max.z(), max_z_);
-
-  for (pos.x() = min_x; pos.x() < max_x; pos.x() += voxel_size_) {
-    for (pos.y() = min_y; pos.y() < max_y; pos.y() += voxel_size_) {
-      for (pos.z() = min_z; pos.z() < max_z; pos.z() += voxel_size_) {
-        if (!cam_model_.isPointInView(pos)) {
-          continue;
-        }
-        if (voxel_index % modulus != 0) {
-          voxel_index++;
-          continue;
-        }
-        voxel_index++;
-        checked_voxels++;
-
-        // Get the block + voxel index of this voxel by projecting it into
-        // the voxel grid and then computing from the global index.
-        // This is a truncating cast.
-        voxblox::GlobalIndex global_voxel_idx = (voxel_size_inv_ * pos).cast<voxblox::LongIndexElement>();
-        voxblox::BlockIndex block_index = voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_inv_);
-        voxblox::VoxelIndex voxel_index = voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_);
-
-        // Check if this voxel is occluded.
-        const voxblox::Point start_scaled = camera_center * voxel_size_inv_;
-        const voxblox::Point end_scaled = pos * voxel_size_inv_;
-
-        voxblox::AlignedVector<voxblox::GlobalIndex> global_voxel_indices;
-        voxblox::castRay(start_scaled, end_scaled, &global_voxel_indices);
-
-        // Iterate over all the voxels in the index in order.
-        // Put them in the checked queue, and classify them. We're starting from
-        // the camera center to the current pose, so this defines how we handle
-        // occlusions. Don't raycast the last voxel, since it's the actual
-        // voxel we're checking (ok if it's occupied, still not an occlusion).
-        bool ray_occluded = false;
-        for (int i = 0; i < global_voxel_indices.size() - 1; i++) {
-          const voxblox::GlobalIndex& global_voxel_idx = global_voxel_indices[i];
-          voxblox::BlockIndex block_index_ray = voxblox::getBlockIndexFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_inv_);
-          voxblox::VoxelIndex voxel_index_ray = voxblox::getLocalFromGlobalVoxelIndex(global_voxel_idx, voxels_per_side_);
-
-          // Otherwise look up this voxel and add it to checked.
-          const voxblox::Block<voxblox::TsdfVoxel>::Ptr block_ptr = tsdf_layer_->getBlockPtrByIndex(block_index_ray);
-          if (block_ptr) {
-            // If this block exists, get the voxel.
-            const voxblox::TsdfVoxel& voxel = block_ptr->getVoxelByVoxelIndex(voxel_index_ray);
-            if (voxel.weight > 1e-6 && voxel.distance <= 0.0) {
-              // This is an occupied voxel! Mark all the stuff behind it as occluded.
-              ray_occluded = true;
-              break;
-            }
-          }
-        }
-        if (ray_occluded) {
-          num_occluded++;
-        } else {
-          double distance = 0.0;
-          Eigen::Vector3d position = pos.cast<double>();
-          if (esdf_map_->getDistanceAtPosition(position, &distance)) {
-            if (distance < voxel_size_) {
-              continue;
-            }
-          } else {
-            num_unknown++;
-          }
-        }
-      }
-    }
-  }
-  //timer_gain.Stop();
-
-  return num_unknown;
-}
-
-void GainEvaluator::computeGainFromsampledYaw(const std::shared_ptr<rrt_star::Node>& node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
-    double best_gain = 0;
-    double gain;
-    double best_yaw;
-    for (int k = 0; k < yaw_samples; ++k) {
-        double yaw = k * 2 * M_PI / yaw_samples;
-        trajectory_point.position_W = node->point.head(3);
-        trajectory_point.setFromYaw(yaw);
-        gain = computeGain(trajectory_point);
-        if (gain > best_gain) {
-            best_gain = gain;
-            best_yaw = yaw;
-        }
-    }
-    node->gain = best_gain;
-    node->point[3] = best_yaw;
-}
+/* COST AND SCORE FUNCTIONS */
 
 void GainEvaluator::computeCost(std::shared_ptr<rrt_star::Node>& new_node) {
     new_node->cost = new_node->parent->cost + (new_node->point.head(3) - new_node->parent->point.head(3)).norm();
@@ -1625,30 +1686,20 @@ void GainEvaluator::computeScore(std::shared_ptr<rrt_star::Node>& new_node, doub
     new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
 }
 
-void GainEvaluator::computeCost(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory) {
-    new_trajectory->cost = new_trajectory->parent->cost + new_trajectory->cost;
-}
-
 void GainEvaluator::computeCostTwo(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory) {
     new_trajectory->cost1 = new_trajectory->parent->cost1 + new_trajectory->cost1;
     new_trajectory->cost2 = new_trajectory->parent->cost2 + new_trajectory->cost2;
-}
-
-void GainEvaluator::computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda) {
-    new_trajectory->score = new_trajectory->parent->score + new_trajectory->gain * exp(-lambda * new_trajectory->cost);
 }
 
 void GainEvaluator::computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2) {
     new_trajectory->score = new_trajectory->parent->score + new_trajectory->gain * exp(-lambda1 * new_trajectory->cost1 - lambda2 * new_trajectory->cost2);
 }
 
-void GainEvaluator::computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda) {
-    new_trajectory->score = new_trajectory->gain * exp(-lambda * new_trajectory->cost);
-}
-
 void GainEvaluator::computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2) {
     new_trajectory->score = new_trajectory->gain * exp(-lambda1 * new_trajectory->cost1 - lambda2 * new_trajectory->cost2);
 }
+
+/* GET VOXBLOX CAMERA MODEL */
 
 voxblox::CameraModel& GainEvaluator::getCameraModel() { return cam_model_; }
 

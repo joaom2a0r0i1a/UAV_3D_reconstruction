@@ -226,7 +226,7 @@ void NBVMultiPlanner::NBV() {
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
 
-            double result_best = segment_evaluator.computeGainFixedAngleAEP(trajectory_point);
+            double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point);
             new_node_best->gain = result_best;
 
             segment_evaluator.computeCost(new_node_best);
@@ -293,7 +293,7 @@ void NBVMultiPlanner::NBV() {
         trajectory_point_gain.position_W = new_node->point.head(3);
         trajectory_point_gain.setFromYaw(new_node->point[3]);
         //ROS_INFO("[NBVMultiPlanner]: Best gain RayCast: %f", new_node->gain);
-        double result = segment_evaluator.computeGainFixedAngleAEP(trajectory_point_gain);
+        double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain);
         new_node->gain = result;
 
         segment_evaluator.computeCost(new_node);
@@ -814,7 +814,7 @@ void NBVMultiPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> p
     trajectory_point_visualize.setFromYaw(position->point[3]);
 
     voxblox::Pointcloud voxel_points;
-    segment_evaluator.visualizeGainAEP(trajectory_point_visualize, voxel_points);
+    segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
     
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {

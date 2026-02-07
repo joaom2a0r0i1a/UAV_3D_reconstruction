@@ -6,6 +6,46 @@ gain_evaluation:
   min_z: 0.0 # [m]
   max_z: 14.5 # [m]
 
+# IST Lamp
+#  min_x: 2.0
+#  max_x: 7.0
+#  min_y: -2.0
+#  max_y: 2.0
+#  min_z: 0.0
+#  max_z: 6.0
+
+# Basketball
+#  min_x: -4.0
+#  max_x: 4.0
+#  min_y: -4.0
+#  max_y: 4.0
+#  min_z: 0.0
+#  max_z: 5.0
+
+# School
+#  min_x: -17
+#  max_x: 17
+#  min_y: -12
+#  max_y: 7.0
+#  min_z: 0.0
+#  max_z: 14.5
+
+# Maze
+#  min_x: -10.0
+#  max_x: 10.0
+#  min_y: -9.0
+#  max_y: 9.0
+#  min_z: 0.0
+#  max_z: 2.5
+
+# Police Station
+#  min_x: -7
+#  max_x: 7
+#  min_y: -8.5
+#  max_y: 8.5
+#  min_z: 0.0
+#  max_z: 9.0
+
 camera_intrinsics:
   h_fov: 1.51844 # [rad]
   v_fov: 1.01229 # [rad]

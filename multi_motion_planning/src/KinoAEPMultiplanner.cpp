@@ -295,7 +295,7 @@ void KinoAEPMultiPlanner::localPlanner() {
 
             trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
             trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
-            std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+            std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
             new_trajectory_best->gain = result_best.first;
             
             if (result_best.second > M_PI) {
@@ -394,7 +394,7 @@ void KinoAEPMultiPlanner::localPlanner() {
 
             trajectory_point.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
             trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
             new_trajectory->gain = result.first;
             
             // Convert from [0, 2*PI[ to [-PI, PI[ 
@@ -611,7 +611,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
         eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
         trajectory_point_global.position_W = trajectory->TrajectoryPoints.back()->point.head(3);
         trajectory_point_global.setFromYaw(trajectory->TrajectoryPoints.back()->point[3]);
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         trajectory->gain = result.first;
 
         // Convert from [0, 2*PI[ to [-PI, PI[ 
@@ -627,7 +627,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
 
         trajectory_point_global.position_W = nearest_goal;
         trajectory_point_global.setFromYaw(0.0);
-        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         ROS_INFO("[KinoAEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;
@@ -1175,7 +1175,7 @@ void KinoAEPMultiPlanner::visualize_unknown_voxels(std::shared_ptr<kino_rrt_star
     trajectory_point_visualize.setFromYaw(position->point[3]);
 
     voxblox::Pointcloud voxel_points;
-    segment_evaluator.visualizeGainAEP(trajectory_point_visualize, voxel_points);
+    segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
     
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {

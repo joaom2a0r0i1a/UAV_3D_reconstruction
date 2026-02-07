@@ -85,6 +85,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     pub_frustum = nh_private_.advertise<visualization_msgs::Marker>("frustum_out", 10);
     pub_voxels = nh_private_.advertise<visualization_msgs::MarkerArray>("unknown_voxels_out", 10);
     pub_initial_reference = nh_private_.advertise<mrs_msgs::ReferenceStamped>("initial_reference_out", 5);
+    pub_gpu_debug = nh_private_.advertise<sensor_msgs::PointCloud2>("gpu_debug_map", 1, true);
 
     /* Subscribers */
     mrs_lib::SubscribeHandlerOptions shopts;
@@ -177,6 +178,607 @@ void AEPlanner::AEP() {
     }
 }
 
+void AEPlanner::localPlannerGPUBenchmark() {
+    best_score_ = 0;
+    std::shared_ptr<rrt_star::Node> best_node = nullptr;
+
+    // BENCHMARKING ACCUMULATORS
+    double total_time_gpu_calc = 0.0;
+    double total_time_cpu_calc = 0.0;
+    int total_nodes_evaluated = 0;
+
+    int j = 1; // Total nodes processed
+
+    ROS_INFO("[AEPlanner]: Start Expanding Local");
+
+    // -------------------------------------------------------
+    // 1. SETUP ROOT
+    // -------------------------------------------------------
+    std::shared_ptr<rrt_star::Node> root;
+    if (current_waypoint_) {
+        root = std::make_shared<rrt_star::Node>(next_start);
+    } else if (best_branch.size() > 1) {
+        root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
+    } else {
+        root = std::make_shared<rrt_star::Node>(pose);
+    }
+
+    RRTStar.clearKDTree();
+    RRTStar.addKDTreeNode(root);
+    clearMarkers();
+
+    // -------------------------------------------------------
+    // 2. MAP MANAGEMENT
+    // -------------------------------------------------------
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
+    
+    sensor_msgs::PointCloud2 debug_msg = segment_evaluator.visualizeGpuMap(flat_map_, map_origin_, map_dim_);
+    pub_gpu_debug.publish(debug_msg);
+
+    // -------------------------------------------------------
+    // 3. PHASE A: RE-EVALUATE PREVIOUS BEST BRANCH (BATCHED)
+    // -------------------------------------------------------
+    if (best_branch.size() > 1) {
+        std::vector<std::shared_ptr<rrt_star::Node>> branch_candidates;
+        std::vector<double> bx, by, bz;
+
+        bool isFirstIteration = true;
+        for (size_t i = 1; i < best_branch.size(); ++i) {
+            if (isFirstIteration) { isFirstIteration = false; continue; }
+
+            const Eigen::Vector4d& node_position = best_branch[i]->point;
+            
+            std::shared_ptr<rrt_star::Node> nearest_node_best;
+            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
+            
+            std::shared_ptr<rrt_star::Node> new_node_best;
+            new_node_best = std::make_shared<rrt_star::Node>(node_position);
+            new_node_best->parent = nearest_node_best;
+
+            segment_evaluator.computeCost(new_node_best);
+            RRTStar.addKDTreeNode(new_node_best);
+
+            branch_candidates.push_back(new_node_best);
+            bx.push_back(node_position.x());
+            by.push_back(node_position.y());
+            bz.push_back(node_position.z());
+        }
+
+        if (!branch_candidates.empty()) {
+            // --- BENCHMARK START ---
+            auto t1 = std::chrono::high_resolution_clock::now();
+            auto results = segment_evaluator.computeGainBatchGPU(bx, by, bz);
+            auto t2 = std::chrono::high_resolution_clock::now();
+            total_time_gpu_calc += std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+            auto t3 = std::chrono::high_resolution_clock::now();
+            for (size_t k = 0; k < branch_candidates.size(); ++k) {
+                eth_mav_msgs::EigenTrajectoryPoint dummy_pose;
+                dummy_pose.position_W = Eigen::Vector3d(bx[k], by[k], bz[k]);
+                segment_evaluator.computeGainCPU_FlatMap(flat_map_, dummy_pose);
+            }
+            auto t4 = std::chrono::high_resolution_clock::now();
+            total_time_cpu_calc += std::chrono::duration<double, std::milli>(t4 - t3).count();
+            
+            total_nodes_evaluated += branch_candidates.size();
+            // --- BENCHMARK END ---
+
+            for (size_t k = 0; k < branch_candidates.size(); ++k) {
+                auto node = branch_candidates[k];
+                node->gain = results[k].first;
+                node->point[3] = results[k].second; 
+                segment_evaluator.computeScore(node, lambda);
+
+                if (node->score > best_score_) {
+                    best_score_ = node->score;
+                    best_node = node;
+                }
+                visualize_edge(node, ns);
+                visualize_node(node->point, ns);
+            }
+            j += branch_candidates.size();
+        }
+    }
+
+    best_branch.clear();
+
+    // -------------------------------------------------------
+    // 4. PHASE B: RRT EXPANSION LOOP (BATCHED)
+    // -------------------------------------------------------
+    const int BATCH_SIZE = 100; 
+    collision_id_counter_ = 0;
+
+    while (j < N_max || best_score_ <= g_zero) {
+
+        int nodes_needed = (j < N_max) ? (N_max - j) : (N_termination - j);
+        int current_batch_cap = std::min(BATCH_SIZE, nodes_needed);
+        if (current_batch_cap <= 0) break;
+
+        if (collision_id_counter_ > 10000 * j) {
+            if (previous_node) {
+                ROS_INFO("[AEPlanner]: Backtracking...");
+                next_best_node = previous_node;
+                best_branch.clear();
+                return;
+            } else {
+                rotate();
+                collision_id_counter_ = 0;
+            }
+        }
+
+        std::vector<std::shared_ptr<rrt_star::Node>> batch_nodes;
+        std::vector<double> batch_x, batch_y, batch_z;
+        batch_nodes.reserve(current_batch_cap);
+
+        for (int k = 0; k < current_batch_cap && j <= N_termination; ++k) {
+            Eigen::Vector3d rand_point;
+            RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
+            rand_point += root->point.head(3);
+
+            std::shared_ptr<rrt_star::Node> nearest_node;
+            RRTStar.findNearestKD(rand_point, nearest_node);
+
+            std::shared_ptr<rrt_star::Node> new_node;
+            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
+
+            if (new_node->point[0] > max_x || new_node->point[0] < min_x || 
+                new_node->point[1] < min_y || new_node->point[1] > max_y || 
+                new_node->point[2] < min_z || new_node->point[2] > max_z) {
+                k--; continue;
+            }
+
+            std::vector<std::shared_ptr<rrt_star::Node>> segment = {new_node};
+            if (!isPathCollisionFree(segment)) {
+                collision_id_counter_++;
+                k--; continue;
+            }
+
+            segment_evaluator.computeCost(new_node); 
+            new_node->gain = 0.0;
+            new_node->score = 0.0;
+            
+            RRTStar.addKDTreeNode(new_node);
+
+            batch_nodes.push_back(new_node);
+            batch_x.push_back(new_node->point.x());
+            batch_y.push_back(new_node->point.y());
+            batch_z.push_back(new_node->point.z());
+            j++;
+        }
+
+        if (batch_nodes.empty()) continue;
+
+        // --- BENCHMARK START ---
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto batch_results = segment_evaluator.computeGainBatchGPU(batch_x, batch_y, batch_z);
+        auto t2 = std::chrono::high_resolution_clock::now();
+        total_time_gpu_calc += std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+        auto t3 = std::chrono::high_resolution_clock::now();
+        for (size_t k = 0; k < batch_nodes.size(); ++k) {
+             eth_mav_msgs::EigenTrajectoryPoint dummy_pose;
+             dummy_pose.position_W = Eigen::Vector3d(batch_x[k], batch_y[k], batch_z[k]);
+             segment_evaluator.computeGainCPU_FlatMap(flat_map_, dummy_pose);
+        }
+        auto t4 = std::chrono::high_resolution_clock::now();
+        total_time_cpu_calc += std::chrono::duration<double, std::milli>(t4 - t3).count();
+        
+        total_nodes_evaluated += batch_nodes.size();
+        // --- BENCHMARK END ---
+
+        for (size_t i = 0; i < batch_nodes.size(); ++i) {
+            auto node = batch_nodes[i];
+            node->gain = batch_results[i].first;
+            node->point[3] = batch_results[i].second;
+
+            segment_evaluator.computeScore(node, lambda);
+
+            if (node->score > best_score_) {
+                best_score_ = node->score;
+                best_node = node;
+            }
+
+            visualize_edge(node, ns);
+            visualize_node(node->point, ns);
+
+            if (node->gain > g_zero) {
+                cacheNode(node);
+            }
+
+            if (j >= N_max && best_score_ > g_zero) break;
+        }
+
+        if (j > N_termination) {
+             ROS_INFO("[AEPlanner]: Going to Global Planning");
+             RRTStar.clearKDTree();
+             best_branch.clear();
+             clearMarkers();
+             goto_global_planning = true;
+             return;
+        }
+    }
+
+    // -------------------------------------------------------
+    // 5. SAVE BENCHMARK DATA (CSV LOGGING)
+    // -------------------------------------------------------
+    if (total_nodes_evaluated > 0) {
+        // Calculate metrics
+        double safe_gpu_time = (total_time_gpu_calc > 0) ? total_time_gpu_calc : 0.001;
+        double speedup = total_time_cpu_calc / safe_gpu_time;
+        double avg_cpu = total_time_cpu_calc / total_nodes_evaluated;
+        double avg_gpu = total_time_gpu_calc / total_nodes_evaluated;
+
+        // 1. Console Output (Immediate Feedback)
+        ROS_INFO_THROTTLE(1.0, 
+            "\n=== GPU BENCHMARK LOGGED ===\n"
+            "Nodes: %d | CPU: %.2f ms | GPU: %.2f ms | Speedup: %.2fx",
+            total_nodes_evaluated, total_time_cpu_calc, total_time_gpu_calc, speedup
+        );
+
+        // 2. File Output (Persistent Data)
+        // Adjust path as needed, e.g., "/home/user/ros_ws/src/..."
+        std::string log_path = "/home/joaomendes/motion_workspace/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone/aeplanner_benchmark_2.csv"; 
+        std::ofstream log_file;
+        
+        // Open in Append Mode
+        log_file.open(log_path, std::ios_base::app); 
+
+        if (log_file.is_open()) {
+            // Optional: Write header if file is empty
+            log_file.seekp(0, std::ios::end);
+            if (log_file.tellp() == 0) {
+                log_file << "Timestamp_Sec,Total_Nodes,Total_CPU_Time_ms,Total_GPU_Time_ms,Avg_CPU_ms,Avg_GPU_ms,Speedup_Factor\n";
+            }
+
+            // Get current time for the log entry
+            double timestamp = ros::Time::now().toSec();
+
+            log_file << std::fixed << std::setprecision(4)
+                     << timestamp << ","
+                     << total_nodes_evaluated << ","
+                     << total_time_cpu_calc << ","
+                     << total_time_gpu_calc << ","
+                     << avg_cpu << ","
+                     << avg_gpu << ","
+                     << speedup << "\n";
+            
+            log_file.close();
+        } else {
+            ROS_WARN("[AEPlanner]: Failed to open benchmark log file at %s", log_path.c_str());
+        }
+    }
+
+    // -------------------------------------------------------
+    // 6. FINALIZE
+    // -------------------------------------------------------
+    if (best_node) {
+        next_best_node = best_node;
+        RRTStar.backtrackPathAEP(best_node, best_branch);
+        visualize_path(best_node, ns);
+    }
+
+    next_best_node = best_branch[1];
+}
+
+void AEPlanner::localPlannerGPU() {
+    best_score_ = 0;
+    std::shared_ptr<rrt_star::Node> best_node = nullptr;
+
+    // BENCHMARKING ACCUMULATORS
+    double total_time_gpu_calc = 0.0;
+    double total_time_cpu_calc = 0.0;
+    int total_nodes_evaluated = 0;
+
+    int j = 1; // Total nodes processed
+
+    ROS_INFO("[AEPlanner]: Start Expanding Local");
+
+    // -------------------------------------------------------
+    // 1. SETUP ROOT
+    // -------------------------------------------------------
+    std::shared_ptr<rrt_star::Node> root;
+    if (current_waypoint_) {
+        root = std::make_shared<rrt_star::Node>(next_start);
+    } else if (best_branch.size() > 1) {
+        root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
+    } else {
+        root = std::make_shared<rrt_star::Node>(pose);
+    }
+
+    RRTStar.clearKDTree();
+    RRTStar.addKDTreeNode(root);
+    clearMarkers();
+
+    // -------------------------------------------------------
+    // 2. MAP MANAGEMENT (DAY 4 OPTIMIZATION)
+    // -------------------------------------------------------
+    // We flatten and upload ONCE. The GPU wrapper keeps it persistent.
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
+    
+    // Visualize for Debug
+    sensor_msgs::PointCloud2 debug_msg = segment_evaluator.visualizeGpuMap(flat_map_, map_origin_, map_dim_);
+    pub_gpu_debug.publish(debug_msg);
+
+    // -------------------------------------------------------
+    // 3. PHASE A: RE-EVALUATE PREVIOUS BEST BRANCH (BATCHED)
+    // -------------------------------------------------------
+    if (best_branch.size() > 1) {
+        std::vector<std::shared_ptr<rrt_star::Node>> branch_candidates;
+        std::vector<double> bx, by, bz;
+
+        // A.1 Collect Candidates (CPU Geometry)
+        bool isFirstIteration = true;
+        for (size_t i = 1; i < best_branch.size(); ++i) {
+            if (isFirstIteration) { isFirstIteration = false; continue; }
+
+            const Eigen::Vector4d& node_position = best_branch[i]->point;
+            
+            std::shared_ptr<rrt_star::Node> nearest_node_best;
+            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
+            
+            std::shared_ptr<rrt_star::Node> new_node_best;
+            new_node_best = std::make_shared<rrt_star::Node>(node_position);
+            new_node_best->parent = nearest_node_best;
+
+            segment_evaluator.computeCost(new_node_best);
+            RRTStar.addKDTreeNode(new_node_best);
+
+            branch_candidates.push_back(new_node_best);
+            bx.push_back(node_position.x());
+            by.push_back(node_position.y());
+            bz.push_back(node_position.z());
+        }
+
+        // A.2 Compute Gain (GPU Batch) - Lightning Fast
+        if (!branch_candidates.empty()) {
+            // --- BENCHMARK START ---
+            
+            // 1. Measure GPU Batch Time
+            auto t1 = std::chrono::high_resolution_clock::now();
+            auto results = segment_evaluator.computeGainBatchGPU(bx, by, bz);
+            auto t2 = std::chrono::high_resolution_clock::now();
+            total_time_gpu_calc += std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+            // 2. Measure CPU Time (Simulation for Comparison)
+            auto t3 = std::chrono::high_resolution_clock::now();
+            for (size_t k = 0; k < branch_candidates.size(); ++k) {
+                eth_mav_msgs::EigenTrajectoryPoint dummy_pose;
+                dummy_pose.position_W = Eigen::Vector3d(bx[k], by[k], bz[k]);
+                // CPU calculation on the same flat map for fairness
+                segment_evaluator.computeGainCPU_FlatMap(flat_map_, dummy_pose);
+            }
+            auto t4 = std::chrono::high_resolution_clock::now();
+            total_time_cpu_calc += std::chrono::duration<double, std::milli>(t4 - t3).count();
+            
+            total_nodes_evaluated += branch_candidates.size();
+            // --- BENCHMARK END ---
+
+            //auto results = segment_evaluator.computeGainBatchGPU(flat_map_, map_origin_, map_dim_, bx, by, bz);
+
+            // A.3 Update & Add to Tree
+            for (size_t k = 0; k < branch_candidates.size(); ++k) {
+                auto node = branch_candidates[k];
+                node->gain = results[k].first;
+                node->point[3] = results[k].second; // Best Yaw
+
+                //segment_evaluator.computeCost(node);
+                segment_evaluator.computeScore(node, lambda);
+
+                if (node->score > best_score_) {
+                    best_score_ = node->score;
+                    best_node = node;
+                }
+
+                //RRTStar.addKDTreeNode(node);
+                visualize_edge(node, ns);
+                visualize_node(node->point, ns);
+            }
+            j += branch_candidates.size();
+        }
+    }
+
+    best_branch.clear();
+
+    // -------------------------------------------------------
+    // 4. PHASE B: RRT EXPANSION LOOP (BATCHED)
+    // -------------------------------------------------------
+    // We define a Batch Size (e.g., 32 or 64). 
+    // We accumulate valid geometry candidates, then ask GPU for gains.
+    const int BATCH_SIZE = 100; 
+    collision_id_counter_ = 0;
+
+    while (j < N_max || best_score_ <= g_zero) {
+
+        // --- 1. Precise Batch Sizing Logic ---
+        int nodes_needed = 0;
+        if (j < N_max) {
+             // Standard Phase: We MUST reach N_max.
+             nodes_needed = N_max - j;
+        } else {
+             // Overtime Phase: We passed N_max but have no gain. Go up to N_termination.
+             nodes_needed = N_termination - j;
+        }
+        // Clamp: Don't do more than BATCH_SIZE at once
+        int current_batch_cap = std::min(BATCH_SIZE, nodes_needed);
+        // Safety: If we hit the limit, stop.
+        if (current_batch_cap <= 0) break;
+
+        // --- Backtrack Check (Same as before) ---
+        if (collision_id_counter_ > 10000 * j) {
+            if (previous_node) {
+                ROS_INFO("[AEPlanner]: Backtracking...");
+                next_best_node = previous_node;
+                best_branch.clear();
+                return;
+            } else {
+                ROS_INFO("[AEPlanner]: Backtrack Rotation");
+                rotate();
+                collision_id_counter_ = 0;
+            }
+        }
+
+        // --- BATCH COLLECTION ---
+        std::vector<std::shared_ptr<rrt_star::Node>> batch_nodes;
+        std::vector<double> batch_x, batch_y, batch_z;
+        batch_nodes.reserve(current_batch_cap);
+
+        // Try to fill the batch
+        for (int k = 0; k < current_batch_cap && j <= N_termination; ++k) {
+            
+            // 1. Sample
+            Eigen::Vector3d rand_point;
+            RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
+            rand_point += root->point.head(3);
+
+            // 2. Nearest & Steer
+            std::shared_ptr<rrt_star::Node> nearest_node;
+            RRTStar.findNearestKD(rand_point, nearest_node);
+
+            std::shared_ptr<rrt_star::Node> new_node;
+            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
+
+            // 3. Bounds Check
+            if (new_node->point[0] > max_x || new_node->point[0] < min_x || 
+                new_node->point[1] < min_y || new_node->point[1] > max_y || 
+                new_node->point[2] < min_z || new_node->point[2] > max_z) {
+                k--; // Retry this slot
+                continue;
+            }
+
+            // 4. Collision Check (CPU)
+            std::vector<std::shared_ptr<rrt_star::Node>> segment = {new_node};
+            if (!isPathCollisionFree(segment)) {
+                collision_id_counter_++;
+                k--; // Retry this slot
+                continue;
+            }
+
+            segment_evaluator.computeCost(new_node); 
+            new_node->gain = 0.0; // Placeholder
+            new_node->score = 0.0; // Placeholder
+            
+            RRTStar.addKDTreeNode(new_node);
+
+            // 5. Add to Batch (Geometry is valid, Gain is unknown)
+            batch_nodes.push_back(new_node);
+            batch_x.push_back(new_node->point.x());
+            batch_y.push_back(new_node->point.y());
+            batch_z.push_back(new_node->point.z());
+
+            // Increment global counter (we count attempts/samples)
+            j++;
+        }
+
+        // If we couldn't find any valid nodes (e.g. boxed in), skip gpu
+        if (batch_nodes.empty()) continue;
+
+        // --- BENCHMARK START ---
+        
+        // 1. Measure GPU
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto batch_results = segment_evaluator.computeGainBatchGPU(batch_x, batch_y, batch_z);
+        auto t2 = std::chrono::high_resolution_clock::now();
+        total_time_gpu_calc += std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+        // 2. Measure CPU (Benchmark Only)
+        auto t3 = std::chrono::high_resolution_clock::now();
+        for (size_t k = 0; k < batch_nodes.size(); ++k) {
+             eth_mav_msgs::EigenTrajectoryPoint dummy_pose;
+             dummy_pose.position_W = Eigen::Vector3d(batch_x[k], batch_y[k], batch_z[k]);
+             segment_evaluator.computeGainCPU_FlatMap(flat_map_, dummy_pose);
+        }
+        auto t4 = std::chrono::high_resolution_clock::now();
+        total_time_cpu_calc += std::chrono::duration<double, std::milli>(t4 - t3).count();
+        
+        total_nodes_evaluated += batch_nodes.size();
+        // --- BENCHMARK END ---
+
+        // --- GPU BATCH COMPUTE ---
+        // This is the Magic Line. 64 nodes processed in ~0.2ms total.
+        //auto batch_results = segment_evaluator.computeGainBatchGPU(flat_map_, map_origin_, map_dim_, batch_x, batch_y, batch_z);
+
+        // --- PROCESS RESULTS ---
+        for (size_t i = 0; i < batch_nodes.size(); ++i) {
+            auto node = batch_nodes[i];
+            
+            node->gain = batch_results[i].first;
+            node->point[3] = batch_results[i].second; // Yaw from GPU
+
+            //segment_evaluator.computeCost(node);
+            segment_evaluator.computeScore(node, lambda);
+
+            ROS_INFO("[AEPlanner]: Best Gain Optimized: %f", node->score);
+
+            // Update Best
+            if (node->score > best_score_) {
+                best_score_ = node->score;
+                best_node = node;
+            }
+
+            // Add to Tree
+            //RRTStar.addKDTreeNode(node);
+            visualize_edge(node, ns);
+            visualize_node(node->point, ns);
+
+            // Cache for Global
+            if (node->gain > g_zero) {
+                cacheNode(node);
+            }
+
+            // Strict Termination Logic:
+            // Stop if we satisfied N_max AND found something useful
+            if (j >= N_max && best_score_ > g_zero) {
+                break;
+            }
+        }
+
+        // Termination Check
+        if (j > N_termination) {
+             ROS_INFO("[AEPlanner]: Going to Global Planning");
+             RRTStar.clearKDTree();
+             best_branch.clear();
+             clearMarkers();
+             goto_global_planning = true;
+             return;
+        }
+    }
+
+    // -------------------------------------------------------
+    // PRINT BENCHMARK REPORT
+    // -------------------------------------------------------
+    if (total_nodes_evaluated > 0) {
+        double speedup = total_time_cpu_calc / (total_time_gpu_calc > 0 ? total_time_gpu_calc : 0.001);
+        ROS_INFO_THROTTLE(1.0, 
+            "\n=== GPU vs CPU EFFICIENCY REPORT (Same Nodes) ===\n"
+            "Nodes Evaluated : %d\n"
+            "Total CPU Time  : %8.3f ms\n"
+            "Total GPU Time  : %8.3f ms\n"
+            "Avg CPU / Node  : %8.4f ms\n"
+            "Avg GPU / Node  : %8.4f ms\n"
+            "SPEEDUP FACTOR  : %8.2f x\n"
+            "=================================================",
+            total_nodes_evaluated, 
+            total_time_cpu_calc, total_time_gpu_calc,
+            total_time_cpu_calc / total_nodes_evaluated,
+            total_time_gpu_calc / total_nodes_evaluated,
+            speedup
+        );
+    }
+
+    // -------------------------------------------------------
+    // 5. FINALIZE
+    // -------------------------------------------------------
+    if (best_node) {
+        next_best_node = best_node;
+        RRTStar.backtrackPathAEP(best_node, best_branch);
+        visualize_path(best_node, ns);
+    }
+
+    next_best_node = best_branch[1];
+}
+
 void AEPlanner::localPlanner() {
     best_score_ = 0;
     std::shared_ptr<rrt_star::Node> best_node = nullptr;
@@ -192,9 +794,119 @@ void AEPlanner::localPlanner() {
         root = std::make_shared<rrt_star::Node>(pose);
     }
 
+    root->depth_buffer.clear();
+
     RRTStar.clearKDTree();
     RRTStar.addKDTreeNode(root);
     clearMarkers();
+
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
+
+    //Eigen::Matrix3f R_CB = T_C_B.getRotation().toImplementation().toRotationMatrix().cast<float>();
+
+    // Helper: Get Parent Camera State (Rotation + Position)
+    /*auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw) -> std::pair<std::vector<float>, Eigen::Vector3d> {
+        // 1. Get Static Extrinsics (Cached)
+        Eigen::Matrix3f R_CB = T_C_B.getRotation().toImplementation().toRotationMatrix().cast<float>();
+        Eigen::Vector3f t_CB = T_C_B.getPosition(); // Translation Body->Cam
+
+        // 2. Construct R_WB (Body-to-World)
+        Eigen::AngleAxisf yaw_rot(yaw, Eigen::Vector3f::UnitZ());
+        Eigen::Matrix3f R_WB = yaw_rot.toRotationMatrix(); 
+
+        // 3. Compute Camera World Position
+        // Pos_cam = Pos_body + R_WB * t_CB
+        Eigen::Vector3f cam_pos_world = body_pos.cast<float>() + (R_WB * t_CB);
+
+        // 4. Compute R_CW (World-to-Camera Rotation)
+        Eigen::Matrix3f R_CW = R_CB * R_WB.transpose();
+
+        // 5. Flatten R
+        std::vector<float> vec_R(9);
+        Eigen::Map<Eigen::Matrix<float, 3, 3, Eigen::RowMajor>>(vec_R.data()) = R_CW;
+
+        return {vec_R, cam_pos_world.cast<double>()};
+    };*/
+
+    auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw) -> std::pair<std::vector<float>, Eigen::Vector3d> {
+        // 1. Position
+        Eigen::Vector3d parent_pos = body_pos;
+
+        // 2. Body Rotation (Yaw only, Z-Up frame)
+        // R_body represents the UAV's orientation in World.
+        // Row 0 = Body X (Forward)
+        // Row 1 = Body Y (Left)
+        // Row 2 = Body Z (Up)
+        Eigen::Matrix3d R_body;
+        R_body = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
+
+        // 3. Flatten to Row-Major Vector, but REMAP to Camera Optical Frame
+        // We need to provide the rows of the View Matrix (Camera Basis Vectors in World).
+        // CUDA R0 (Cam Right)   = Body -Y (Right)
+        // CUDA R1 (Cam Down)    = Body -Z (Down)
+        // CUDA R2 (Cam Forward) = Body X  (Forward)
+
+        std::vector<float> R_flat(9);
+
+        // --- CUDA R0: Camera X Axis (Right) ---
+        // Body Y is Left (R_body row 1), so Right is -Y
+        R_flat[0] = -(float)R_body(1,0); 
+        R_flat[1] = -(float)R_body(1,1); 
+        R_flat[2] = -(float)R_body(1,2);
+
+        // --- CUDA R1: Camera Y Axis (Down) ---
+        // Body Z is Up (R_body row 2), so Down is -Z
+        R_flat[3] = -(float)R_body(2,0); 
+        R_flat[4] = -(float)R_body(2,1); 
+        R_flat[5] = -(float)R_body(2,2);
+
+        // --- CUDA R2: Camera Z Axis (Forward) ---
+        // Body X is Forward (R_body row 0)
+        R_flat[6] = (float)R_body(0,0); 
+        R_flat[7] = (float)R_body(0,1); 
+        R_flat[8] = (float)R_body(0,2);
+
+        return {R_flat, parent_pos};
+    };
+
+    sensor_msgs::PointCloud2 debug_msg = segment_evaluator.visualizeGpuMap(flat_map_, map_origin_, map_dim_);
+    ROS_WARN("GPU Debug Map Published! Check Rviz topic /gpu_debug_map");
+    pub_gpu_debug.publish(debug_msg);
+
+    /*eth_mav_msgs::EigenTrajectoryPoint pose_trajectory;
+    pose_trajectory.position_W = root->point.head(3);
+    pose_trajectory.setFromYaw(root->point[3]);
+
+    // 1. Run CPU (Reference)
+    auto start_cpu = std::chrono::high_resolution_clock::now();
+    std::pair<double, double> res_cpu = segment_evaluator.computeGainRaycasting(pose_trajectory);
+    auto end_cpu = std::chrono::high_resolution_clock::now();
+
+    auto start_cpu_flat = std::chrono::high_resolution_clock::now();
+    std::pair<double, double> res_cpu_flat = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose_trajectory);
+    auto end_cpu_flat = std::chrono::high_resolution_clock::now();
+
+    // 3. Run GPU (Challenger)
+    auto start_gpu = std::chrono::high_resolution_clock::now();
+    std::pair<double, double> res_gpu = segment_evaluator.computeGainGPU({root->point.x()}, {root->point.y()}, {root->point.z()});
+    auto end_gpu = std::chrono::high_resolution_clock::now();
+
+    // 4. Results
+    double cpu_ms = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
+    double cpu_flat_ms = std::chrono::duration<double, std::milli>(end_cpu_flat - start_cpu_flat).count();
+    double gpu_ms = std::chrono::duration<double, std::milli>(end_gpu - start_gpu).count();
+
+    ROS_INFO_THROTTLE(0.5, 
+        "\n--- GAIN CHECK ---\n"
+        "CPU: Gain=%.2f | Yaw=%.2f | Time=%.3f ms\n"
+        "CPU FLAT: Gain=%.2f | Yaw=%.2f | Time=%.3f ms\n"
+        "GPU: Gain=%.2f | Yaw=%.2f | Time=%.3f ms\n"
+        "------------------",
+        res_cpu.first, res_cpu.second, cpu_ms,
+        res_cpu_flat.first, res_cpu_flat.second, cpu_flat_ms,
+        res_gpu.first, res_gpu.second, gpu_ms
+    );*/
 
     visualize_node(root->point, ns);
     bool isFirstIteration = true;
@@ -232,10 +944,19 @@ void AEPlanner::localPlanner() {
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
-            trajectory_point.position_W = new_node_best->point.head(3);
+            auto [parent_R, parent_cam_pos] = get_parent_cam_state(
+                new_node_best->parent->point.head(3), 
+                (float)new_node_best->parent->point[3]
+            );
+
+            std::pair<double, double> result = segment_evaluator.computeMarginalGainGPU(
+                new_node_best->point.x(), new_node_best->point.y(), new_node_best->point.z(),
+                parent_cam_pos, new_node_best->parent->point[3], parent_R, new_node_best->parent->depth_buffer, new_node_best->depth_buffer);
+
+            /*trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
 
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);*/
 
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
@@ -248,7 +969,7 @@ void AEPlanner::localPlanner() {
                 best_node = new_node_best;
             }
 
-            ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
+            //ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
             
 
             RRTStar.addKDTreeNode(new_node_best);
@@ -294,10 +1015,60 @@ void AEPlanner::localPlanner() {
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
 
+        auto [parent_R, parent_cam_pos] = get_parent_cam_state(
+            new_node->parent->point.head(3), 
+            (float)new_node->parent->point[3]
+        );
+
+        // --- RUN CPU ---
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
 
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point);
+        auto start_cpu = std::chrono::high_resolution_clock::now();
+        std::pair<double, double> res_cpu = segment_evaluator.computeGainCPU_FlatMap(flat_map_, trajectory_point);
+        auto end_cpu = std::chrono::high_resolution_clock::now();
+
+        // --- RUN GPU (Marginal) ---
+        auto start_gpu_marg = std::chrono::high_resolution_clock::now();
+        std::pair<double, double> res_gpu_marg = segment_evaluator.computeMarginalGainGPU(
+            new_node->point.x(), new_node->point.y(), new_node->point.z(),
+            parent_cam_pos, new_node->parent->point[3], parent_R, new_node->parent->depth_buffer, new_node->depth_buffer);
+        auto end_gpu_marg = std::chrono::high_resolution_clock::now();
+        
+        /*if (new_node->parent) {
+            for (int i = 0; i < new_node->parent->depth_buffer.size(); i++) {
+                ROS_INFO("i = %d, buffer = %f", i, new_node->parent->depth_buffer[i]);
+            }
+        }*/
+
+        // --- C. RUN GPU (Single) ---
+        auto start_gpu_abs = std::chrono::high_resolution_clock::now();
+        std::pair<double, double> res_gpu_abs = segment_evaluator.computeSingleGainGPU(
+            new_node->point.x(), new_node->point.y(), new_node->point.z());
+        auto end_gpu_abs = std::chrono::high_resolution_clock::now();
+
+        // --- D. METRICS & REPORTING ---
+        double ms_cpu      = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
+        double ms_gpu_marg = std::chrono::duration<double, std::milli>(end_gpu_marg - start_gpu_marg).count();
+        double ms_gpu_abs  = std::chrono::duration<double, std::milli>(end_gpu_abs - start_gpu_abs).count();
+
+        ROS_INFO(
+            "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
+            "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
+            "2. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "3. GPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "---------------------------------------",
+            res_cpu.first,      res_cpu.second,      ms_cpu,
+            res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
+            res_gpu_abs.first,  res_gpu_abs.second,  ms_gpu_abs,  (ms_cpu / (ms_gpu_abs + 1e-5))
+        );
+
+        std::pair<double, double> result = res_gpu_marg;
+
+        /*trajectory_point.position_W = new_node->point.head(3);
+        trajectory_point.setFromYaw(new_node->point[3]);
+
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);*/
 
         new_node->gain = result.first;
         new_node->point[3] = result.second;
@@ -313,7 +1084,7 @@ void AEPlanner::localPlanner() {
         //ROS_INFO("[AEPlanner]: Best Gain Optimized: %f", new_node->gain);
         //ROS_INFO("[AEPlanner]: Best Gain: %f", result2.first);
         //ROS_INFO("[AEPlanner]: Best Cost: %f", new_node->cost);
-        ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
+        //ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
 
         RRTStar.addKDTreeNode(new_node);
         visualize_edge(new_node, ns);
@@ -471,7 +1242,7 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         trajectory_point_global.position_W = node->point.head(3);
         trajectory_point_global.setFromYaw(node->point[3]);
 
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedAEP(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
 
         node->gain = result.first;
         node->point[3] = result.second;
@@ -816,7 +1587,7 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
 
                 double dist = distance(wp_ptr, current_pose);
                 double yaw_difference = fabs(atan2(sin(wp.heading - current_yaw), cos(wp.heading - current_yaw)));
-                ROS_INFO("[NBVPlanner]: WP %d/%zu: dist=%.2f, yaw=%.2f",
+                ROS_INFO("[AEPlanner]: WP %d/%zu: dist=%.2f, yaw=%.2f",
                         waypoint_index_+1,
                         waypoints_.size(),
                         dist, yaw_difference);
@@ -839,7 +1610,7 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
 
                     current_waypoint_ = std::make_unique<mrs_msgs::Reference>(next_ref.reference);
 
-                    ROS_INFO("[NBVPlanner]: Publishing next waypoint");
+                    ROS_INFO("[AEPlanner]: Publishing next waypoint");
                 }
             } else {
                 ROS_INFO("[AEPlanner]: waiting for command");
@@ -1033,7 +1804,7 @@ void AEPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> positio
     trajectory_point_visualize.setFromYaw(position->point[3]);
 
     voxblox::Pointcloud voxel_points;
-    segment_evaluator.visualizeGainAEP(trajectory_point_visualize, voxel_points);
+    segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
     
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
