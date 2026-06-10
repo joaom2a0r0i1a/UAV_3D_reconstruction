@@ -1112,107 +1112,235 @@ void AEPlanner::localPlanner() {
 
 
         // --- RUN CPU ---
+        // --- RUN CPU ---
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
 
-        // 0. Prepare Separate Output Buffers to prevent overwriting
-        // We copy the initial state/size from the node to ensure they are allocated correctly.
+        // 0. Prepare Separate Output Buffers
         std::vector<float> depth_buf_v1 = new_node->depth_buffer;
         std::vector<float> depth_buf_v2 = new_node->depth_buffer;
         std::vector<float> depth_buf_v3 = new_node->depth_buffer;
 
-        // --- RUN CPU ---
+        // --- DECLARE RESULTS OUTSIDE THE TRACKING BLOCK ---
+        std::pair<double, double> res_cpu = {0.0, 0.0};
+        std::pair<double, double> res_cpu_hash = {0.0, 0.0};
+        std::pair<double, double> res_gpu_marg = {0.0, 0.0};
+        std::pair<double, double> res_gpu_marg_v2 = {0.0, 0.0};
+        std::pair<double, double> res_gpu_marg_v3 = {0.0, 0.0};
+
+        // --- 0. STATIC TRACKERS ---
+        static int nodes_evaluated = 0;
+        const int NODE_LIMIT = 5000;
+        
+        // Error trackers
+        static double sum_abs_error_v2 = 0.0;
+        static double sum_sq_error_v2 = 0.0;
+        static double sum_raw_bias_v2 = 0.0;
+        static double max_abs_error_v2 = 0.0;
+        static double sum_gt_gain = 0.0;
+        static double sum_abs_error_abs_method = 0.0; // To compare against naive Absolute
+        
+        // Timing trackers
+        static double sum_time_hash = 0.0;
+        static double sum_time_v2 = 0.0;
+
+        // ==========================================================
+        // 1. ALWAYS RUN THE EVALUATIONS
+        // ==========================================================
+
         auto start_cpu = std::chrono::high_resolution_clock::now();
-        std::pair<double, double> res_cpu = segment_evaluator.computeGainCPU_FlatMap(flat_map_, trajectory_point);
+        res_cpu = segment_evaluator.computeGainCPU_FlatMap(flat_map_, trajectory_point);
         auto end_cpu = std::chrono::high_resolution_clock::now();
 
-        // --- RUN CPU HASH ---
         auto start_cpu_hash = std::chrono::high_resolution_clock::now();
         if (new_node->parent && new_node->parent->parent) {
             segment_evaluator.populateParentHistory(flat_map_, new_node->parent);
         }
-        std::pair<double, double> res_cpu_hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, new_node);
+        res_cpu_hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, new_node);
         auto end_cpu_hash = std::chrono::high_resolution_clock::now();
 
-        // --- RUN GPU V1 (Marginal) ---
         auto start_gpu_marg = std::chrono::high_resolution_clock::now();
-        std::pair<double, double> res_gpu_marg = segment_evaluator.computeMarginalGainGPU(
+        res_gpu_marg = segment_evaluator.computeMarginalGainGPU(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
             parent_cam_pos, new_node->parent->point[3], parent_R, 
-            new_node->parent->depth_buffer, 
-            depth_buf_v1); // <--- Use V1 Buffer
+            new_node->parent->depth_buffer, depth_buf_v1); 
         auto end_gpu_marg = std::chrono::high_resolution_clock::now();
 
-
-        // --- RUN GPU V2 ---
         auto start_gpu_marg_v2 = std::chrono::high_resolution_clock::now();
-        std::pair<double, double> res_gpu_marg_v2 = segment_evaluator.computeMarginalGainGPU_v2(
+        res_gpu_marg_v2 = segment_evaluator.computeMarginalGainGPU_v2(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
             parent_cam_pos, new_node->parent->point[3], parent_R, 
-            new_node->parent->depth_buffer, 
-            depth_buf_v2); // <--- Use V2 Buffer
+            new_node->parent->depth_buffer, depth_buf_v2); 
         auto end_gpu_marg_v2 = std::chrono::high_resolution_clock::now();
 
-
-        // --- RUN GPU V3 ---
         auto start_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
-        std::pair<double, double> res_gpu_marg_v3 = segment_evaluator.computeMarginalGainGPU_v3(
+        res_gpu_marg_v3 = segment_evaluator.computeMarginalGainGPU_v3(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
             parent_cam_pos, new_node->parent->point[3], parent_R, 
-            new_node->parent->depth_buffer, 
-            depth_buf_v3); // <--- Use V3 Buffer
+            new_node->parent->depth_buffer, depth_buf_v3); 
         auto end_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
-        
-        /*if (new_node->parent) {
-            for (int i = 0; i < new_node->parent->depth_buffer.size(); i++) {
-                ROS_INFO("i = %d, buffer = %f", i, new_node->parent->depth_buffer[i]);
+
+        // ==========================================================
+        // 1.5 PHYSICAL SANITY CHECK (Marginal Gain <= Absolute Gain)
+        // ==========================================================
+        const double EPSILON = 1e-3; 
+        double absolute_baseline = res_cpu.first;
+
+        // Helper lambda to log anomalies to both ROS and a file
+        auto log_anomaly = [&](const std::string& method_name, double marg_gain) {
+            double overshoot = marg_gain - absolute_baseline;
+            
+            // Print to ROS console
+            ROS_ERROR("CRITICAL ANOMALY: %s marginal gain (%.4f) exceeded Absolute gain (%.4f) by %.4f!", 
+                      method_name.c_str(), marg_gain, absolute_baseline, overshoot);
+            
+            // Append to log file
+            std::string anomaly_file = "saferail_triggers.log";
+            std::ofstream log_file(anomaly_file, std::ios::app);
+            if (log_file.is_open()) {
+                log_file << "Node_ID: " << nodes_evaluated 
+                         << " | Method: " << method_name 
+                         << " | Marg_Gain: " << marg_gain 
+                         << " | Abs_Gain: " << absolute_baseline 
+                         << " | Overshoot: +" << overshoot << "\n";
+                log_file.close();
+            } else {
+                ROS_ERROR("Failed to open %s to record the anomaly.", anomaly_file.c_str());
             }
-        }*/
+        };
 
-        // --- C. RUN GPU (Single) ---
-        /*auto start_gpu_abs = std::chrono::high_resolution_clock::now();
-        std::pair<double, double> res_gpu_abs = segment_evaluator.computeSingleGainGPU(
-            new_node->point.x(), new_node->point.y(), new_node->point.z());
-        auto end_gpu_abs = std::chrono::high_resolution_clock::now();*/
+        // Trigger the check for all methods
+        if (res_cpu_hash.first > absolute_baseline + EPSILON) {
+            log_anomaly("CPU_Hash_Map", res_cpu_hash.first);
+        }
+        if (res_gpu_marg.first > absolute_baseline + EPSILON) {
+            log_anomaly("GPU_Marg_V1", res_gpu_marg.first);
+        }
+        if (res_gpu_marg_v2.first > absolute_baseline + EPSILON) {
+            log_anomaly("GPU_Marg_V2", res_gpu_marg_v2.first);
+        }
+        if (res_gpu_marg_v3.first > absolute_baseline + EPSILON) {
+            log_anomaly("GPU_Marg_V3", res_gpu_marg_v3.first);
+        }
 
-        // --- D. METRICS & REPORTING ---
-        double ms_cpu      = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
-        double ms_cpu_hash = std::chrono::duration<double, std::milli>(end_cpu_hash - start_cpu_hash).count();
-        double ms_gpu_marg = std::chrono::duration<double, std::milli>(end_gpu_marg - start_gpu_marg).count();
-        double ms_gpu_marg_v2 = std::chrono::duration<double, std::milli>(end_gpu_marg_v2 - start_gpu_marg_v2).count();
-        double ms_gpu_marg_v3 = std::chrono::duration<double, std::milli>(end_gpu_marg_v3 - start_gpu_marg_v3).count();
-        //double ms_gpu_abs  = std::chrono::duration<double, std::milli>(end_gpu_abs - start_gpu_abs).count();
+        // ==========================================================
+        // 2. ONLY DO THE LOGGING AND ACCUMULATION UNDER THE LIMIT
+        // ==========================================================
+        if (nodes_evaluated < NODE_LIMIT) {
+            double ms_cpu       = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
+            double ms_cpu_hash  = std::chrono::duration<double, std::milli>(end_cpu_hash - start_cpu_hash).count();
+            double ms_gpu_marg  = std::chrono::duration<double, std::milli>(end_gpu_marg - start_gpu_marg).count();
+            double ms_gpu_marg_v2 = std::chrono::duration<double, std::milli>(end_gpu_marg_v2 - start_gpu_marg_v2).count();
+            double ms_gpu_marg_v3 = std::chrono::duration<double, std::milli>(end_gpu_marg_v3 - start_gpu_marg_v3).count();
 
-        ROS_INFO(
-            "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
-            "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
-            "2. CPU (Hash): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "3. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "4. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "5. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "---------------------------------------",
-            res_cpu.first,      res_cpu.second,      ms_cpu,
-            res_cpu_hash.first, res_cpu_hash.second, ms_cpu_hash, (ms_cpu / (ms_cpu_hash + 1e-5)),
-            res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
-            res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
-            res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5))
-        );
+            ROS_INFO(
+                "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
+                "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
+                "2. CPU (Hash): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "3. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "4. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "5. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "---------------------------------------",
+                res_cpu.first,      res_cpu.second,      ms_cpu,
+                res_cpu_hash.first, res_cpu_hash.second, ms_cpu_hash, (ms_cpu / (ms_cpu_hash + 1e-5)),
+                res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
+                res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
+                res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5))
+            );
 
-        /*ROS_INFO(
-            "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
-            "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
-            "2. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "2. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "2. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "3. GPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-            "---------------------------------------",
-            res_cpu.first,      res_cpu.second,      ms_cpu,
-            res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
-            res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
-            res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5)),
-            res_gpu_abs.first,  res_gpu_abs.second,  ms_gpu_abs,  (ms_cpu / (ms_gpu_abs + 1e-5))
-        );*/
+            // Accumulate Execution Times
+            sum_time_hash += ms_cpu_hash;
+            sum_time_v2 += ms_gpu_marg_v2;
 
+            // Extract Gains
+            double gt_gain = res_cpu_hash.first;
+            double abs_gain = res_cpu.first;
+            double v2_gain = res_gpu_marg_v2.first;
+
+            // Calculate Errors
+            double raw_diff_v2 = v2_gain - gt_gain; 
+            double abs_error_v2 = std::abs(raw_diff_v2);
+            double abs_error_abs = std::abs(abs_gain - gt_gain); 
+
+            // Accumulate Errors
+            sum_abs_error_v2 += abs_error_v2;
+            sum_sq_error_v2 += (abs_error_v2 * abs_error_v2);
+            sum_raw_bias_v2 += raw_diff_v2;
+            sum_gt_gain += gt_gain;
+            sum_abs_error_abs_method += abs_error_abs;
+
+            if (abs_error_v2 > max_abs_error_v2) {
+                max_abs_error_v2 = abs_error_v2;
+            }
+
+            nodes_evaluated++;
+
+            // Trigger the final report and file dump exactly once
+            if (nodes_evaluated == NODE_LIMIT) {
+                // Math Computations
+                double mae_v2 = sum_abs_error_v2 / NODE_LIMIT;
+                double mae_abs = sum_abs_error_abs_method / NODE_LIMIT;
+                double improvement = mae_abs - mae_v2; 
+
+                double rmse_v2 = std::sqrt(sum_sq_error_v2 / NODE_LIMIT);
+                double mean_bias_v2 = sum_raw_bias_v2 / NODE_LIMIT;
+                double mean_gt = sum_gt_gain / NODE_LIMIT;
+                double avg_error_pct = (mae_v2 / (mean_gt + 1e-5)) * 100.0;
+
+                double avg_time_hash = sum_time_hash / NODE_LIMIT;
+                double avg_time_v2 = sum_time_v2 / NODE_LIMIT;
+                double speedup = avg_time_hash / (avg_time_v2 + 1e-5);
+
+                // --- 1. PRINT TO CONSOLE ---
+                ROS_INFO("\n==================================================");
+                ROS_INFO(" FINAL GPU(v2) vs CPU(Hash) ERROR REPORT");
+                ROS_INFO(" Total Nodes Evaluated : %d", NODE_LIMIT);
+                ROS_INFO(" Average Ground Truth  : %.4f voxels", mean_gt);
+                ROS_INFO(" ------------------------------------------------");
+                ROS_INFO(" Error (CPU Absolute)  : %.4f voxels", mae_abs);
+                ROS_INFO(" Error (GPU V2)        : %.4f voxels (%.2f%%)", mae_v2, avg_error_pct);
+                ROS_INFO(" V2 Improvement        : %.4f voxels closer to GT", improvement);
+                ROS_INFO(" ------------------------------------------------");
+                ROS_INFO(" Root Mean Sq (RMSE)   : %.4f voxels", rmse_v2);
+                ROS_INFO(" Max Absolute Error    : %.4f voxels", max_abs_error_v2);
+                ROS_INFO(" Directional Bias      : %+.4f", mean_bias_v2);
+                ROS_INFO(" ------------------------------------------------");
+                ROS_INFO(" Avg Hash Time         : %.4f ms", avg_time_hash);
+                ROS_INFO(" Avg V2 Time           : %.4f ms", avg_time_v2);
+                ROS_INFO(" Computational Speedup : %.2fx", speedup);
+                ROS_INFO("==================================================\n");
+
+                // --- 2. LOG TO CSV FILE ---
+                std::string file_name = "gain_metrics_log.csv";
+                std::ifstream fcheck(file_name);
+                bool write_header = !fcheck.good(); 
+                fcheck.close();
+
+                std::ofstream log_file(file_name, std::ios::app);
+                if (log_file.is_open()) {
+                    if (write_header) {
+                        log_file << "Nodes,Avg_GT_Gain,MAE_Absolute,MAE_V2,Improvement,RMSE_V2,Max_Error_V2,Bias_V2,Avg_Time_Hash_ms,Avg_Time_V2_ms,Speedup\n";
+                    }
+                    log_file << NODE_LIMIT << ","
+                             << mean_gt << ","
+                             << mae_abs << ","
+                             << mae_v2 << ","
+                             << improvement << ","
+                             << rmse_v2 << ","
+                             << max_abs_error_v2 << ","
+                             << mean_bias_v2 << ","
+                             << avg_time_hash << ","
+                             << avg_time_v2 << ","
+                             << speedup << "\n";
+                    log_file.close();
+                    ROS_INFO("Successfully appended results to %s", file_name.c_str());
+                } else {
+                    ROS_ERROR("Failed to open %s for logging.", file_name.c_str());
+                }
+            }
+        }
+
+        // Now res_gpu_marg_v2 is always in scope and has the correct calculated value!
         std::pair<double, double> result = res_gpu_marg_v2;
 
         /*trajectory_point.position_W = new_node->point.head(3);

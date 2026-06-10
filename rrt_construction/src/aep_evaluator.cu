@@ -1124,20 +1124,17 @@ __device__ void compute_multi_segment_skip_distance(
     if (stepY > 0) tMaxY = (floor(v_start) + 1.0f - v_start) * tDeltaY;
     else           tMaxY = (v_start - floor(v_start)) * tDeltaY;
 
-    // --- 8. The State Machine ---
+    // --- 8. The Stable State Machine ---
     float current_t = 0.0f;
-    
-    // Start FALSE. We only record if the voxel evaluates to being in known space.
     bool is_building_skip_interval = false; 
     float current_segment_start_t = 0.0f;
-    //float margin = 0.353553f * params.voxel_size; 
     float margin = 0.35f * params.voxel_size; 
+    bool is_first_step = true;
 
     while (current_t <= 1.0f) {
         
         bool in_known_space = false;
-        bool hit_obstacle = false;
-        float t_exact_hit = current_t;
+        float t_exact = current_t; 
         
         float t_next_boundary = (tMaxX < tMaxY) ? tMaxX : tMaxY;
         float t_exit = fminf(t_next_boundary, 1.0f);
@@ -1154,34 +1151,21 @@ __device__ void compute_multi_segment_skip_distance(
             float parent_z = parent_depth_buffer[pixel_idx];
 
             if (parent_z < 0.0f) {
-                // Completely unseen by parent -> Unknown
                 in_known_space = false;
             } else {
-                if (z_entry > parent_z + margin && z_exit > parent_z + margin) {
-                    // SHADOW: Ray is behind parent's obstacle -> Unknown
-                    in_known_space = false;
-                } 
-                else if (z_entry < parent_z - margin && z_exit < parent_z - margin) {
-                    // CLEARED: Ray is in front of parent's obstacle -> KNOWN!
-                    in_known_space = true;
-                } 
-                else {
-                    // COLLISION: Ray hits the parent's obstacle
-                    // The space up to the wall is known.
-                    in_known_space = true;
-                    hit_obstacle = true;
-                    
-                    // Exact hit point interpolation
-                    float w_target = 1.0f / parent_z;
+                // Stable horizon evaluation anchored at voxel cell exit bound
+                in_known_space = (z_exit <= parent_z + margin);
+
+                // Compute exact sub-pixel geometric intersection factor on state flips
+                if (!is_first_step && (is_building_skip_interval != in_known_space)) {
+                    float w_target = 1.0f / (parent_z + margin);
                     float dw = w_end - w_start;
                     if (fabsf(dw) > 1e-6f) {
-                        t_exact_hit = (w_target - w_start) / dw;
-                        t_exact_hit = fmaxf(current_t, fminf(t_exact_hit, t_exit));
-                    } else {
-                        t_exact_hit = current_t;
+                        t_exact = (w_target - w_start) / dw;
+                        t_exact = fmaxf(current_t, fminf(t_exact, t_exit));
                     }
-
-                    // Set status to -1 if the hit is within camera range
+                    
+                    // Mark terminal visibility status flags if cutting parent geometric plane
                     float px_u = (x + 0.5f - cx) / fx;
                     float px_v = (y + 0.5f - cy) / fy;
                     float cos_theta = rsqrtf(px_u*px_u + px_v*px_v + 1.0f);
@@ -1191,26 +1175,31 @@ __device__ void compute_multi_segment_skip_distance(
                 }
             }
         } else {
-            // Out of bounds -> Parent didn't see this space -> Unknown
             in_known_space = false;
+        }
+
+        // Latch and synchronize baseline tracking states on initial invocation
+        if (is_first_step) {
+            is_building_skip_interval = in_known_space;
+            current_segment_start_t = 0.0f;
+            is_first_step = false;
         }
 
         // --- STATE TRANSITIONS ---
         if (is_building_skip_interval && !in_known_space) {
-            // We exited a known region. Close and save the SKIP interval!
+            // Exited known space -> Save current interval block
             if (*out_count < max_intervals) {
                 float t_meters_start;
                 float t_meters_end;
 
                 if (fabsf(D.z) > 1e-3f) {
                     float w_s = w_start + current_segment_start_t * (w_end - w_start);
-                    float w_e = w_start + (hit_obstacle ? t_exact_hit : current_t) * (w_end - w_start);
-                    
+                    float w_e = w_start + t_exact * (w_end - w_start);
                     t_meters_start = ((1.0f / w_s) - O.z) / D.z;
                     t_meters_end   = ((1.0f / w_e) - O.z) / D.z;
                 } else {
                     t_meters_start = t_visible_start + current_segment_start_t * (t_visible_end - t_visible_start);
-                    t_meters_end   = t_visible_start + (hit_obstacle ? t_exact_hit : current_t) * (t_visible_end - t_visible_start);
+                    t_meters_end   = t_visible_start + t_exact * (t_visible_end - t_visible_start);
                 }
                 
                 if (t_meters_end > t_meters_start + 1e-4f) {
@@ -1221,13 +1210,11 @@ __device__ void compute_multi_segment_skip_distance(
             is_building_skip_interval = false;
         } 
         else if (!is_building_skip_interval && in_known_space) {
-            // We entered a known region. Start tracking a new skip interval!
+            // Entered known space -> Open a fresh track
             is_building_skip_interval = true;
-            current_segment_start_t = current_t;
+            current_segment_start_t = t_exact;
         }
 
-        // Break if we physically hit a wall
-        if (hit_obstacle) break; 
         if (x == x_end && y == y_end) break;
 
         if (tMaxX < tMaxY) {
@@ -1704,25 +1691,34 @@ __global__ void evaluate_marginal_gain_kernel_v2(
         float3 ray_dir = make_float3(dir_x, dir_y, dir_z);
 
         // ---------------------------------------------------------
-        // 2. MARGINAL GAIN CHECK (Skip Logic)
+        // 2. MULTI-SEGMENT MARGINAL GAIN CHECK (Skip Logic)
         // ---------------------------------------------------------
-        // 2.1. Origin relative to Parent
-        float3 skip_interval = compute_skip_distance(p_width, p_height,
-                                                fx, fy, cx, cy, 
-                                                parent_pos, R0, R1, R2,
-                                                parent_depth_buffer,
-                                                cam_pos, ray_dir, params.gain_range);
+        const int MAX_SEGS = 32; 
+        float2 skip_intervals[MAX_SEGS];
+        int skip_count = 0;
+        float status = 1.0f;
 
-        // Convert Skip Interval from Meters to Voxels
-        //float skip_len_m = skip_interval.y - skip_interval.x;
-        float skip_start_vox = (skip_interval.x != -1.0f) ? (skip_interval.x / params.voxel_size) : -1.0f;
-        float skip_end_vox   = (skip_interval.x != -1.0f) ? (skip_interval.y / params.voxel_size) : -1.0f;
-        float status = skip_interval.z;
+        // Call the multi-segment version to fill our skip array
+        compute_multi_segment_skip_distance(
+            p_width, p_height, fx, fy, cx, cy, 
+            parent_pos, R0, R1, R2, parent_depth_buffer,
+            cam_pos, ray_dir, params, 
+            skip_intervals, &skip_count, MAX_SEGS, &status
+        );
+
+        // Convert all retrieved Skip Intervals from Meters to Voxels
+        float2 skip_intervals_vox[MAX_SEGS];
+        for (int i = 0; i < skip_count; ++i) {
+            skip_intervals_vox[i] = make_float2(skip_intervals[i].x / params.voxel_size, 
+                                                skip_intervals[i].y / params.voxel_size);
+        }
+
+        // Sequential index tracker for walking through intervals
+        int current_skip_idx = 0;
 
         float t = 0.0f;
         float max_t = params.gain_range / params.voxel_size;
         float final_depth = params.gain_range;
-        bool has_jumped = false;
 
         // ---------------------------------------------------------
         // 3. RAYCASTING 3D WOO DDA
@@ -1780,44 +1776,20 @@ __global__ void evaluate_marginal_gain_kernel_v2(
                 uint8_t val = map[flat_idx];
 
                 if (val == V_OCCUPIED) {
-                    /*if (skip_start_vox >= 0.0f && t >= skip_start_vox && t < (skip_end_vox - 0.1f)) {
-                        // The Map says HIT, but Buffer said SKIP.
-                        // This proves the buffer/skipping logic is aggressive/wrong.
-                         printf("CRITICAL [Tunneling Hit] Ray %d | Map Hit at depth=%.2f | Buffer said Skip [%.2f, %.2f] | Depth Inside Wall: %.2f voxels\n", 
-                                threadIdx.x, t * params.voxel_size, skip_start_vox * params.voxel_size, skip_end_vox * params.voxel_size, (skip_end_vox - t) * params.voxel_size);
-                    }*/
                     final_depth = t * params.voxel_size;
-                    /*// --- DIAGNOSTIC: 9-POINT GRID ---
-                    // Only print for Candidate 0 to prevent log flooding
-                    if (candidate == 0) {
-                        int W = THETA_BINS;
-                        int H = rows_in_fov;
-                        int r = idx / W; // Current Row
-                        int c = idx % W; // Current Col
-                        
-                        // Check if this ray is one of the 9 key points
-                        bool is_top    = (r == 0);
-                        bool is_mid_r  = (r == H/2);
-                        bool is_bot    = (r == H-1);
-                        
-                        bool is_left   = (c == 0);
-                        bool is_mid_c  = (c == W/2);
-                        bool is_right  = (c == W-1);
-
-                        if ((is_top || is_mid_r || is_bot) && (is_left || is_mid_c || is_right)) {
-                            printf("BASELINE [v2] Ray %4d (R:%2d C:%2d) | Hit: %.4f m | t_idx: %.1f\n", 
-                                   idx, r, c, final_depth, t);
-                        }
-                    }
-                    // --------------------------------*/
                     break;
                 } 
                 else if (val == V_UNKNOWN) {
                     bool parent_sees_free = false;
                     
-                    if (skip_start_vox >= 0.0f) {
-                        // If t is within the interval [start, end), Parent says it's FREE.
-                        if (t >= skip_start_vox && t < skip_end_vox) {
+                    // Advance our skip tracker if 't' has moved past the active interval
+                    while (current_skip_idx < skip_count && t >= skip_intervals_vox[current_skip_idx].y) {
+                        current_skip_idx++;
+                    }
+
+                    // Check if 't' falls within the current tracked skip interval window
+                    if (current_skip_idx < skip_count) {
+                        if (t >= skip_intervals_vox[current_skip_idx].x && t < skip_intervals_vox[current_skip_idx].y) {
                             parent_sees_free = true;
                         }
                     }
@@ -1852,27 +1824,6 @@ __global__ void evaluate_marginal_gain_kernel_v2(
             }
         }
 
-        // ---------------------------------------------------------
-        // 6. DIAGNOSTICS (Optional - Remove for Production)
-        // ---------------------------------------------------------
-        
-        float map_hit_t = final_depth / params.voxel_size;
-        float buf_hit_t = skip_end_vox;
-        bool map_hit_something = (map_hit_t < (max_t - 0.1f));
-        bool buf_hit_something = (status == -1.0f);
-
-        /*if ((map_hit_something || buf_hit_something)) { // Only check 1 ray per candidate
-            if (map_hit_t < (buf_hit_t - 2.5f)) { 
-                printf("CRITICAL [Tunneling] Ray %d | Map Hit: %.1f | Buffer Free To: %.1f | Error: %.1f\n", 
-                    idx, map_hit_t, buf_hit_t, map_hit_t - buf_hit_t);
-            }
-            //else if (map_hit_t > (buf_hit_t + 2.5f) && buf_hit_something) {
-            //    printf("WARNING [Phantom]  Ray %d | Buffer Hit: %.1f | Map Hit: %.1f | Error: +%.1f\n", 
-            //        idx, buf_hit_t, map_hit_t, map_hit_t - buf_hit_t);
-            //}
-        }*/
-        
-
         int global_ray_idx = candidate * rays_per_candidate + idx;
         depth_buffer_all[global_ray_idx] = final_depth;
 
@@ -1891,37 +1842,30 @@ __global__ void evaluate_marginal_gain_kernel_v2(
     if (ray_id == 0) {
         float max_gain = 0.0f;
 
-        // How many 10-degree strips fit in my Horizontal FOV?
         int sectors_in_fov = (int)(params.fov_y_rad / params.dtheta);
         if (sectors_in_fov < 1) {
             sectors_in_fov = 1;
         }
 
-        // Slide the window 0 to 36
         for (int i = 0; i < THETA_BINS; ++i) {
             float current_window_gain = 0.0f;
             
-            // Sum up the strips inside the window
             for (int k = 0; k < sectors_in_fov; ++k) {
-                int idx = (i + k) % THETA_BINS; // Wrap around (35 -> 0)
+                int idx = (i + k) % THETA_BINS; 
                 current_window_gain += s_yaw_gains[idx];
             }
 
-            // Keep track of the winner
             if (current_window_gain > max_gain) {
                 max_gain = current_window_gain;
                 best_start_idx = i;
             }
         }
 
-        // 7. Write Final Result to Global Memory
         results_gain[candidate] = max_gain;
         
-        // Calculate the center angle of the best window
         float start_angle = -CUDART_PI_F + (best_start_idx * params.dtheta);
         float center_angle = start_angle + (params.fov_y_rad * 0.5f);
         
-        // Normalize angle to -PI to PI
         if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
         results_yaw[candidate] = center_angle;
 
@@ -1951,27 +1895,6 @@ __global__ void evaluate_marginal_gain_kernel_v2(
         float y_cam = (v - cy) / fy;
         float z_cam = 1.0f;
 
-        /*// Transform Cam(Forward=Z, Right=X, Down=Y) to Body(Forward=X, Left=Y, Up=Z)
-        // v_body_x = z_cam
-        // v_body_y = -x_cam
-        // v_body_z = -y_cam
-        float b_x = z_cam;
-        float b_y = - x_cam;
-        float b_z = - y_cam;
-
-        // Apply Pitch (Rotation around Body Y-axis)
-        // Standard Rotation: x' = x*cp + z*sp; z' = -x*sp + z*cp
-        // (Note the sign change on sp compared to your old code!)
-        float p_x = b_x * cos_p + b_z * sin_p;
-        float p_y = b_y;
-        float p_z = - b_x * sin_p + b_z * cos_p;
-
-        // Apply Yaw (Rotation around World Z-axis)
-        // Standard Rotation: x'' = x*cy - y*sy; y'' = x*sy + y*cy
-        float dir_x = p_x * cos_y - p_y * sin_y;
-        float dir_y = p_x * sin_y + p_y * cos_y;
-        float dir_z = p_z;*/
-
         float dir_x = (z_cam * cos_p - y_cam * sin_p) * cos_y + x_cam * sin_y;
         float dir_y = (z_cam * cos_p - y_cam * sin_p) * sin_y - x_cam * cos_y;
         float dir_z = - z_cam * sin_p - y_cam * cos_p;
@@ -1985,7 +1908,6 @@ __global__ void evaluate_marginal_gain_kernel_v2(
         float final_depth = params.gain_range;
         float max_t_vox = params.gain_range / params.voxel_size;
 
-        // [Standard DDA Init for this thread's ray]
         float gx = (cam_pos.x - map_origin.x) / params.voxel_size;
         float gy = (cam_pos.y - map_origin.y) / params.voxel_size;
         float gz = (cam_pos.z - map_origin.z) / params.voxel_size;
@@ -1997,8 +1919,7 @@ __global__ void evaluate_marginal_gain_kernel_v2(
         int stepX = (dir_x > 0.0f) ? 1 : ((dir_x < 0.0f) ? -1 : 0);
         int stepY = (dir_y > 0.0f) ? 1 : ((dir_y < 0.0f) ? -1 : 0);
         int stepZ = (dir_z > 0.0f) ? 1 : ((dir_z < 0.0f) ? -1 : 0);
-
-        // tDelta: Distance along ray to cross one voxel in each dimension
+        
         float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
         float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
         float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
@@ -2032,14 +1953,13 @@ __global__ void evaluate_marginal_gain_kernel_v2(
             }
         }
 
-        // 4. Write to Output Buffer
         float dist_sq = x_cam*x_cam + y_cam*y_cam + 1.0f;
         float cos_theta = rsqrtf(dist_sq);
 
         depth_buffer[global_ray_idx] = final_depth * cos_theta;
-        //depth_buffer[global_ray_idx] = final_depth;
     }
 }
+
 
 __global__ void evaluate_marginal_gain_kernel_v3(
     const uint8_t* __restrict__ map,
@@ -2077,7 +1997,6 @@ __global__ void evaluate_marginal_gain_kernel_v3(
         sectors_in_fov = 1;
     }
 
-    // The total number of rays we actually calculate per candidate
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     // ---------------------------------------------------------
@@ -2102,102 +2021,103 @@ __global__ void evaluate_marginal_gain_kernel_v3(
         float3 ray_dir = make_float3(dir_x, dir_y, dir_z);
 
         // ---------------------------------------------------------
-        // 2. MARGINAL GAIN CHECK (Skip Logic)
+        // 2. MULTI-SEGMENT MARGINAL GAIN CHECK (Skip Logic)
         // ---------------------------------------------------------
-        // 2.1. Origin relative to Parent
-        float3 skip_interval = compute_skip_distance(p_width, p_height,
-                                                fx, fy, cx, cy, 
-                                                parent_pos, R0, R1, R2,
-                                                parent_depth_buffer,
-                                                cam_pos, ray_dir, params.gain_range);
+        const int MAX_SEGS = 32; 
+        float2 skip_intervals[MAX_SEGS];
+        int skip_count = 0;
+        float status = 1.0f;
 
-        // Convert Skip Interval from Meters to Voxels
-        //float skip_len_m = skip_interval.y - skip_interval.x;
-        float skip_start_vox = (skip_interval.x != -1.0f) ? (skip_interval.x / params.voxel_size) : -1.0f;
-        float skip_end_vox   = (skip_interval.x != -1.0f) ? (skip_interval.y / params.voxel_size) : -1.0f;
-        float status = skip_interval.z;
+        compute_multi_segment_skip_distance(
+            p_width, p_height, fx, fy, cx, cy, 
+            parent_pos, R0, R1, R2, parent_depth_buffer,
+            cam_pos, ray_dir, params, 
+            skip_intervals, &skip_count, MAX_SEGS, &status
+        );
+
+        // Convert all Skip Intervals from Meters to Voxels
+        float2 skip_intervals_vox[MAX_SEGS];
+        for (int i = 0; i < skip_count; ++i) {
+            skip_intervals_vox[i] = make_float2(skip_intervals[i].x / params.voxel_size, 
+                                                skip_intervals[i].y / params.voxel_size);
+        }
+
+        // Replaces the boolean `has_jumped` with an index tracker
+        int current_skip_idx = 0;
 
         float t = 0.0f;
         float max_t = params.gain_range / params.voxel_size;
         float final_depth = params.gain_range;
-        bool has_jumped = false;
 
         // ---------------------------------------------------------
         // 3. RAYCASTING 3D WOO DDA
         // ---------------------------------------------------------
-
-        // Origin in Voxel Coordinates
         float gx = (cam_pos.x - map_origin.x) / params.voxel_size + (dir_x * t);
         float gy = (cam_pos.y - map_origin.y) / params.voxel_size + (dir_y * t);
         float gz = (cam_pos.z - map_origin.z) / params.voxel_size + (dir_z * t);
 
-        // Integer start indices
-        int ix = floor(gx);
-        int iy = floor(gy);
-        int iz = floor(gz);
+        int ix = floorf(gx);
+        int iy = floorf(gy);
+        int iz = floorf(gz);
 
-        // Step Direction
         int stepX = (dir_x > 0.0f) ? 1 : ((dir_x < 0.0f) ? -1 : 0);
         int stepY = (dir_y > 0.0f) ? 1 : ((dir_y < 0.0f) ? -1 : 0);
         int stepZ = (dir_z > 0.0f) ? 1 : ((dir_z < 0.0f) ? -1 : 0);
 
-        // tDelta: Distance along ray to cross one voxel in each dimension
         float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
         float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
         float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
 
-        // tMax: Distance to the *next* boundary
         float tMaxX, tMaxY, tMaxZ;
 
-        if (stepX > 0) {
-            tMaxX = (ix + 1.0f - gx) * tDeltaX;
-        } else {
-            tMaxX = (gx - ix) * tDeltaX;
-        }
+        if (stepX > 0) tMaxX = (ix + 1.0f - gx) * tDeltaX;
+        else           tMaxX = (gx - ix) * tDeltaX;
 
-        if (stepY > 0) {
-            tMaxY = (iy + 1.0f - gy) * tDeltaY;
-        } else {
-            tMaxY = (gy - iy) * tDeltaY;
-        }
+        if (stepY > 0) tMaxY = (iy + 1.0f - gy) * tDeltaY;
+        else           tMaxY = (gy - iy) * tDeltaY;
 
-        if (stepZ > 0) {
-            tMaxZ = (iz + 1.0f - gz) * tDeltaZ;
-        } else {
-            tMaxZ = (gz - iz) * tDeltaZ;
-        }
+        if (stepZ > 0) tMaxZ = (iz + 1.0f - gz) * tDeltaZ;
+        else           tMaxZ = (gz - iz) * tDeltaZ;
 
         float ray_gain = 0.0f;
 
         while (t < max_t) {
-            if (!has_jumped && skip_start_vox >= 0.0f && t >= skip_start_vox && t < skip_end_vox) {
+            
+            // Advance the skip index if 't' has moved past the current segment
+            while (current_skip_idx < skip_count && t >= skip_intervals_vox[current_skip_idx].y) {
+                current_skip_idx++;
+            }
 
-                // Before jumping, verify we aren't currently in a wall.
-                if (ix >= 0 && ix < map_dim.x && iy >= 0 && iy < map_dim.y && iz >= 0 && iz < map_dim.z) {
-                    int check_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
-                    if (map[check_idx] == V_OCCUPIED) {
-                        final_depth = t * params.voxel_size;
-                        break; // Stop immediately, do not jump.
+            // --- JUMP LOGIC ---
+            if (current_skip_idx < skip_count) {
+                float skip_start_vox = skip_intervals_vox[current_skip_idx].x;
+                float skip_end_vox   = skip_intervals_vox[current_skip_idx].y;
+
+                if (t >= skip_start_vox && t < skip_end_vox) {
+                    
+                    // Before jumping, verify we aren't currently in a wall.
+                    if ((unsigned int)ix < (unsigned int)map_dim.x && 
+                        (unsigned int)iy < (unsigned int)map_dim.y && 
+                        (unsigned int)iz < (unsigned int)map_dim.z) {
+                        int check_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
+                        if (map[check_idx] == V_OCCUPIED) {
+                            final_depth = t * params.voxel_size;
+                            break; // Stop immediately, do not jump.
+                        }
                     }
-                }
 
-                has_jumped = true;
-                float next_t = skip_end_vox;
+                    float next_t = skip_end_vox;
+                    current_skip_idx++; // Move to next skip interval
 
-                // --- RE-INITIALIZE DDA AT NEW 't' ---
-                float next_gx = (cam_pos.x - map_origin.x) / params.voxel_size + (dir_x * next_t);
-                float next_gy = (cam_pos.y - map_origin.y) / params.voxel_size + (dir_y * next_t);
-                float next_gz = (cam_pos.z - map_origin.z) / params.voxel_size + (dir_z * next_t);
-
-                int next_ix = floor(next_gx); 
-                int next_iy = floor(next_gy); 
-                int next_iz = floor(next_gz);
-
-                // Only perform the jump logic if we actually leave the current voxel.
-                if (next_ix != ix || next_iy != iy || next_iz != iz) {
+                    // --- RE-INITIALIZE DDA AT NEW 't' ---
                     t = next_t;
-                    gx = next_gx; gy = next_gy; gz = next_gz;
-                    ix = next_ix; iy = next_iy; iz = next_iz;
+                    gx = (cam_pos.x - map_origin.x) / params.voxel_size + (dir_x * next_t);
+                    gy = (cam_pos.y - map_origin.y) / params.voxel_size + (dir_y * next_t);
+                    gz = (cam_pos.z - map_origin.z) / params.voxel_size + (dir_z * next_t);
+
+                    ix = floorf(gx); 
+                    iy = floorf(gy); 
+                    iz = floorf(gz);
 
                     if (stepX > 0) tMaxX = (ix + 1.0f - gx) * tDeltaX; 
                     else           tMaxX = (gx - ix) * tDeltaX;
@@ -2211,15 +2131,34 @@ __global__ void evaluate_marginal_gain_kernel_v3(
                     else           tMaxZ = (gz - iz) * tDeltaZ;
                     tMaxZ += t;
 
-                    //if (t > (params.gain_range - 0.1f) / params.voxel_size) break;
+                    // Re-verify wall collision immediately after the jump
+                    if ((unsigned int)ix < (unsigned int)map_dim.x && 
+                        (unsigned int)iy < (unsigned int)map_dim.y && 
+                        (unsigned int)iz < (unsigned int)map_dim.z) {
+                        int check_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
+                        if (map[check_idx] == V_OCCUPIED) {
+                            final_depth = t * params.voxel_size;
+                            break; // Stop immediately, do not jump.
+                        }
+                    }
 
-                    continue;                    
+                    // Step to Next Voxel after jump
+                    if (tMaxX < tMaxY && tMaxX < tMaxZ) {
+                        ix += stepX; t = tMaxX; tMaxX += tDeltaX;
+                    } else if (tMaxY < tMaxZ) {
+                        iy += stepY; t = tMaxY; tMaxY += tDeltaY;
+                    } else {
+                        iz += stepZ; t = tMaxZ; tMaxZ += tDeltaZ;
+                    }
+
+                    continue; // Restart loop at new jump position
                 }
             }
-            
-            if (ix >= 0 && ix < map_dim.x &&
-                iy >= 0 && iy < map_dim.y &&
-                iz >= 0 && iz < map_dim.z) {
+
+            // --- STANDARD VOXEL EVALUATION ---
+            if ((unsigned int)ix < (unsigned int)map_dim.x &&
+                (unsigned int)iy < (unsigned int)map_dim.y &&
+                (unsigned int)iz < (unsigned int)map_dim.z) {
                 
                 int flat_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
                 uint8_t val = map[flat_idx];
@@ -2228,7 +2167,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(
                     final_depth = t * params.voxel_size;
                     break;
                 } 
-                else if (val == V_UNKNOWN) {
+                /*else if (val == V_UNKNOWN) {
                     float t_exit = fminf(tMaxX, fminf(tMaxY, tMaxZ));
                     float dt = t_exit - t; 
                     float dr = dt * params.voxel_size;
@@ -2237,6 +2176,28 @@ __global__ void evaluate_marginal_gain_kernel_v3(
                     float term1 = 2.0f * r * r * dr;
                     float term2 = (dr * dr * dr) / 6.0f;
                     ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                }*/
+                else if (val == V_UNKNOWN) {
+                    float t_exit = fminf(tMaxX, fminf(tMaxY, tMaxZ));
+                    
+                    // FIX 1: Prevent integrating past the sensor's maximum range
+                    t_exit = fminf(t_exit, max_t);
+
+                    // FIX 2: Prevent Voxel Bleed into the skip interval
+                    if (current_skip_idx < skip_count && t_exit > skip_intervals_vox[current_skip_idx].x) {
+                        t_exit = fminf(t_exit, skip_intervals_vox[current_skip_idx].x);
+                    }
+
+                    float dt = t_exit - t; 
+                    
+                    // Only accumulate if we actually have a positive slice of volume
+                    if (dt > 0.0f) {
+                        float dr = dt * params.voxel_size;
+                        float r = t * params.voxel_size;
+                        float term1 = 2.0f * r * r * dr;
+                        float term2 = (dr * dr * dr) / 6.0f;
+                        ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                    }
                 }
             }
 
@@ -2268,43 +2229,31 @@ __global__ void evaluate_marginal_gain_kernel_v3(
     __shared__ float s_best_yaw;
 
     // -----------------------------------------------------------
-    //    Sliding Window Optimization (Single Thread per Block)
+    //     Sliding Window Optimization (Single Thread per Block)
     // -----------------------------------------------------------
     int best_start_idx = 0;
     if (ray_id == 0) {
         float max_gain = 0.0f;
 
-        // How many 10-degree strips fit in my Horizontal FOV?
-        int sectors_in_fov = (int)(params.fov_y_rad / params.dtheta);
-        if (sectors_in_fov < 1) {
-            sectors_in_fov = 1;
-        }
-
-        // Slide the window 0 to 36
         for (int i = 0; i < THETA_BINS; ++i) {
             float current_window_gain = 0.0f;
             
-            // Sum up the strips inside the window
             for (int k = 0; k < sectors_in_fov; ++k) {
-                int idx = (i + k) % THETA_BINS; // Wrap around (35 -> 0)
+                int idx = (i + k) % THETA_BINS; 
                 current_window_gain += s_yaw_gains[idx];
             }
 
-            // Keep track of the winner
             if (current_window_gain > max_gain) {
                 max_gain = current_window_gain;
                 best_start_idx = i;
             }
         }
 
-        // 7. Write Final Result to Global Memory
         results_gain[candidate] = max_gain;
         
-        // Calculate the center angle of the best window
         float start_angle = -CUDART_PI_F + (best_start_idx * params.dtheta);
         float center_angle = start_angle + (params.fov_y_rad * 0.5f);
         
-        // Normalize angle to -PI to PI
         if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
         results_yaw[candidate] = center_angle;
 
@@ -2313,6 +2262,9 @@ __global__ void evaluate_marginal_gain_kernel_v3(
 
     __syncthreads();
 
+    // ---------------------------------------------------------
+    // Generate Depth Buffer (Original code kept intact)
+    // ---------------------------------------------------------
     float yaw = s_best_yaw;
     float pitch = params.camera_pitch;
 
@@ -2339,7 +2291,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(
         float dir_z = - z_cam * sin_p - y_cam * cos_p;
 
         float norm = sqrtf(dir_x*dir_x + dir_y*dir_y + dir_z*dir_z);
-        float inv_norm = 1 / norm;
+        float inv_norm = 1.0f / norm;
         dir_x *= inv_norm;
         dir_y *= inv_norm;
         dir_z *= inv_norm;
@@ -2348,20 +2300,18 @@ __global__ void evaluate_marginal_gain_kernel_v3(
         float final_depth = params.gain_range;
         float max_t_vox = params.gain_range / params.voxel_size;
 
-        // [Standard DDA Init for this thread's ray]
         float gx = (cam_pos.x - map_origin.x) / params.voxel_size;
         float gy = (cam_pos.y - map_origin.y) / params.voxel_size;
         float gz = (cam_pos.z - map_origin.z) / params.voxel_size;
 
-        int ix = floor(gx); 
-        int iy = floor(gy); 
-        int iz = floor(gz);
+        int ix = floorf(gx); 
+        int iy = floorf(gy); 
+        int iz = floorf(gz);
 
         int stepX = (dir_x > 0.0f) ? 1 : ((dir_x < 0.0f) ? -1 : 0);
         int stepY = (dir_y > 0.0f) ? 1 : ((dir_y < 0.0f) ? -1 : 0);
         int stepZ = (dir_z > 0.0f) ? 1 : ((dir_z < 0.0f) ? -1 : 0);
 
-        // tDelta: Distance along ray to cross one voxel in each dimension
         float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
         float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
         float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
@@ -2395,12 +2345,10 @@ __global__ void evaluate_marginal_gain_kernel_v3(
             }
         }
 
-        // 4. Write to Output Buffer
         float dist_sq = x_cam*x_cam + y_cam*y_cam + z_cam*z_cam;
         float cos_theta = rsqrtf(dist_sq);
 
         depth_buffer[global_ray_idx] = final_depth * cos_theta;
-        //depth_buffer[global_ray_idx] = final_depth;
     }
 }
 
