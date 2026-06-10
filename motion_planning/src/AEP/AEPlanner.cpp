@@ -796,6 +796,14 @@ void AEPlanner::localPlanner() {
 
     root->depth_buffer.clear();
 
+    int p_width = ceil((2.0f * max_distance * tanf(horizontal_fov * 0.5f)) / 0.2f);
+    int p_height = ceil((2.0f * max_distance * tanf(vertical_fov * 0.5f)) / 0.2f);
+
+    // 2. Resize and Fill with MAX RANGE (Empty Space)
+    // This matches your "Root is empty" concept, but provides valid memory.
+    root->depth_buffer.resize(p_width * p_height, -1.0f);
+    ROS_INFO("Root depth size: %lu", root->depth_buffer.size());
+
     RRTStar.clearKDTree();
     RRTStar.addKDTreeNode(root);
     clearMarkers();
@@ -803,71 +811,86 @@ void AEPlanner::localPlanner() {
     flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
     segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
 
+    float camera_pitch_rad = 10.0f * M_PI / 180.0f;
+
     //Eigen::Matrix3f R_CB = T_C_B.getRotation().toImplementation().toRotationMatrix().cast<float>();
 
     // Helper: Get Parent Camera State (Rotation + Position)
     /*auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw) -> std::pair<std::vector<float>, Eigen::Vector3d> {
-        // 1. Get Static Extrinsics (Cached)
-        Eigen::Matrix3f R_CB = T_C_B.getRotation().toImplementation().toRotationMatrix().cast<float>();
-        Eigen::Vector3f t_CB = T_C_B.getPosition(); // Translation Body->Cam
-
-        // 2. Construct R_WB (Body-to-World)
-        Eigen::AngleAxisf yaw_rot(yaw, Eigen::Vector3f::UnitZ());
-        Eigen::Matrix3f R_WB = yaw_rot.toRotationMatrix(); 
-
-        // 3. Compute Camera World Position
-        // Pos_cam = Pos_body + R_WB * t_CB
-        Eigen::Vector3f cam_pos_world = body_pos.cast<float>() + (R_WB * t_CB);
-
-        // 4. Compute R_CW (World-to-Camera Rotation)
-        Eigen::Matrix3f R_CW = R_CB * R_WB.transpose();
-
-        // 5. Flatten R
-        std::vector<float> vec_R(9);
-        Eigen::Map<Eigen::Matrix<float, 3, 3, Eigen::RowMajor>>(vec_R.data()) = R_CW;
-
-        return {vec_R, cam_pos_world.cast<double>()};
-    };*/
-
-    auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw) -> std::pair<std::vector<float>, Eigen::Vector3d> {
-        // 1. Position
         Eigen::Vector3d parent_pos = body_pos;
 
-        // 2. Body Rotation (Yaw only, Z-Up frame)
-        // R_body represents the UAV's orientation in World.
-        // Row 0 = Body X (Forward)
-        // Row 1 = Body Y (Left)
-        // Row 2 = Body Z (Up)
+        // R_body: Body -> World Rotation
+        // Col 0 = Body X (Front)
+        // Col 1 = Body Y (Left)
+        // Col 2 = Body Z (Up)
         Eigen::Matrix3d R_body;
         R_body = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
 
-        // 3. Flatten to Row-Major Vector, but REMAP to Camera Optical Frame
-        // We need to provide the rows of the View Matrix (Camera Basis Vectors in World).
-        // CUDA R0 (Cam Right)   = Body -Y (Right)
-        // CUDA R1 (Cam Down)    = Body -Z (Down)
-        // CUDA R2 (Cam Forward) = Body X  (Forward)
+        std::vector<float> R_flat(9);
+
+        // Goal: Construct R0, R1, R2 for the Kernel.
+        // The Kernel's "compute_skip_distance" needs World->Camera projection.
+        // This expects R0, R1, R2 to be the ROWS of R_wc.
+        // Since R_wc = (R_cw)^T, the ROWS of R_wc are the COLUMNS of R_cw.
+        
+        // Columns of R_cw (Camera Axes in World Frame):
+        // Col 0 (Cam Right) = Body -Y (Left)
+        // Col 1 (Cam Down)  = Body -Z (Up)
+        // Col 2 (Cam Front) = Body X  (Front)
+
+        // --- CUDA R0: Camera X Axis (Right) = -Body Y (Col 1) ---
+        R_flat[0] = -(float)R_body(0,1); // x component
+        R_flat[1] = -(float)R_body(1,1); // y component
+        R_flat[2] = -(float)R_body(2,1); // z component
+
+        // --- CUDA R1: Camera Y Axis (Down) = -Body Z (Col 2) ---
+        R_flat[3] = -(float)R_body(0,2);
+        R_flat[4] = -(float)R_body(1,2);
+        R_flat[5] = -(float)R_body(2,2);
+
+        // --- CUDA R2: Camera Z Axis (Forward) = Body X (Col 0) ---
+        R_flat[6] = (float)R_body(0,0);
+        R_flat[7] = (float)R_body(1,0);
+        R_flat[8] = (float)R_body(2,0);
+
+        return {R_flat, parent_pos};
+    };*/
+
+    auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw, float pitch_rad) -> std::pair<std::vector<float>, Eigen::Vector3d> {
+    
+        // 1. Precompute Trig (Ensure pitch is RADIANS!)
+        float cos_y = cosf(yaw);
+        float sin_y = sinf(yaw);
+        float cos_p = cosf(pitch_rad); 
+        float sin_p = sinf(pitch_rad);
 
         std::vector<float> R_flat(9);
 
-        // --- CUDA R0: Camera X Axis (Right) ---
-        // Body Y is Left (R_body row 1), so Right is -Y
-        R_flat[0] = -(float)R_body(1,0); 
-        R_flat[1] = -(float)R_body(1,1); 
-        R_flat[2] = -(float)R_body(1,2);
+        // 2. Explicit Basis Construction (Matches GPU Kernel Logic)
+        // We derived these by rotating the Camera Basis vectors 
+        // (Right, Down, Front) using the Body->World chain.
 
-        // --- CUDA R1: Camera Y Axis (Down) ---
-        // Body Z is Up (R_body row 2), so Down is -Z
-        R_flat[3] = -(float)R_body(2,0); 
-        R_flat[4] = -(float)R_body(2,1); 
-        R_flat[5] = -(float)R_body(2,2);
+        // R0: Camera Right Axis (x_cam=1) in World
+        // Kernel Formula: dir_x = sin_y, dir_y = -cos_y, dir_z = 0
+        R_flat[0] = sin_y;
+        R_flat[1] = -cos_y;
+        R_flat[2] = 0.0f;
 
-        // --- CUDA R2: Camera Z Axis (Forward) ---
-        // Body X is Forward (R_body row 0)
-        R_flat[6] = (float)R_body(0,0); 
-        R_flat[7] = (float)R_body(0,1); 
-        R_flat[8] = (float)R_body(0,2);
+        // R1: Camera Down Axis (y_cam=1) in World
+        // Kernel Formula: dir_x = -sin_p*cos_y, dir_y = -sin_p*sin_y, dir_z = -cos_p
+        R_flat[3] = -sin_p * cos_y;
+        R_flat[4] = -sin_p * sin_y;
+        R_flat[5] = -cos_p;
 
-        return {R_flat, parent_pos};
+        // R2: Camera Front Axis (z_cam=1) in World
+        // Kernel Formula: dir_x = cos_p*cos_y, dir_y = cos_p*sin_y, dir_z = -sin_p
+        // Note: If Pitch=0, this is (cos_y, sin_y, 0) -> Points in Yaw dir. Correct.
+        // Note: If Pitch>0 (Look Down), z becomes -sin_p (Negative). Correct.
+        R_flat[6] = cos_p * cos_y;
+        R_flat[7] = cos_p * sin_y;
+        R_flat[8] = -sin_p;
+
+        return {R_flat, body_pos};
     };
 
     sensor_msgs::PointCloud2 debug_msg = segment_evaluator.visualizeGpuMap(flat_map_, map_origin_, map_dim_);
@@ -946,7 +969,7 @@ void AEPlanner::localPlanner() {
 
             auto [parent_R, parent_cam_pos] = get_parent_cam_state(
                 new_node_best->parent->point.head(3), 
-                (float)new_node_best->parent->point[3]
+                (float)new_node_best->parent->point[3], camera_pitch_rad /*pitch*/
             );
 
             std::pair<double, double> result = segment_evaluator.computeMarginalGainGPU(
@@ -1017,23 +1040,128 @@ void AEPlanner::localPlanner() {
 
         auto [parent_R, parent_cam_pos] = get_parent_cam_state(
             new_node->parent->point.head(3), 
-            (float)new_node->parent->point[3]
+            (float)new_node->parent->point[3], camera_pitch_rad
         );
+        
+        // 3. Compute CPU Buffer (using the internal map + passed R)
+        std::vector<float> cpu_buffer = segment_evaluator.computeDepthBufferCPU(
+            new_node->parent->point, // Pass Vector4d directly
+            flat_map_,
+            parent_R
+        );
+
+        // 4. Compare with GPU Buffer
+        const std::vector<float>& gpu_buffer = new_node->parent->depth_buffer;
+
+        if (new_node->parent->depth_buffer.size() > 0 && new_node->parent->depth_buffer[0] >= 0.0f) {
+            if (cpu_buffer.size() == gpu_buffer.size()) {
+                int mismatch_count = 0;
+                float max_error = 0.0f;
+                double total_error = 0.0;
+                const float TOLERANCE = 0.05f; // 10cm tolerance
+
+                // Iterate pixels
+                for (size_t k = 0; k < cpu_buffer.size(); ++k) {
+                    float val_cpu = cpu_buffer[k];
+                    float val_gpu = gpu_buffer[k];
+                    float diff = std::abs(val_cpu - val_gpu);
+
+                    total_error += diff;
+                    if (diff > max_error) max_error = diff;
+
+                    if (diff > TOLERANCE) {
+                        mismatch_count++;
+                        // Print first 5 errors to diagnose specific rays
+                        if (mismatch_count <= 10) {
+                            int w = ceil((2.0f * 5.0f * tanf(1.51844f * 0.5f)) / 0.2f); // Recalc width for (u,v) debug
+                            int u = k % w;
+                            int v = k / w;
+                            ROS_ERROR("[Buffer Fail] Ray %lu (u=%d, v=%d) | GPU: %.2f | CPU: %.2f | Diff: %.2f", 
+                                    k, u, v, val_gpu, val_cpu, diff);
+                        }
+                    }
+                }
+
+                if (mismatch_count > 0) {
+                    ROS_ERROR("CRITICAL: Depth Buffer Mismatch! Failures: %d / %lu (%.1f%%) | Max Error: %.2fm | Avg Error: %.2fm", 
+                            mismatch_count, cpu_buffer.size(), 
+                            (100.0f * mismatch_count / cpu_buffer.size()), 
+                            max_error, (total_error / cpu_buffer.size()));
+
+                    // --- TRANSFORM DEBUGGER ---
+                    // Print the exact math used by CPU so we can verify GPU inputs
+                    ROS_ERROR("--- DEBUGGING TRANSFORMS (CPU INPUTS) ---");
+                    ROS_ERROR("Parent Position: [%.4f, %.4f, %.4f]", 
+                            parent_cam_pos.x(), parent_cam_pos.y(), parent_cam_pos.z());
+                    
+                    ROS_ERROR("Rotation Matrix (Basis Vectors):");
+                    ROS_ERROR("R0 (Right):   [%.4f, %.4f, %.4f]", parent_R[0], parent_R[1], parent_R[2]);
+                    ROS_ERROR("R1 (Down):    [%.4f, %.4f, %.4f]", parent_R[3], parent_R[4], parent_R[5]);
+                    ROS_ERROR("R2 (Forward): [%.4f, %.4f, %.4f]", parent_R[6], parent_R[7], parent_R[8]);
+                    ROS_ERROR("-----------------------------------------");
+
+                } else {
+                    ROS_INFO("SUCCESS: GPU and CPU Depth Buffers MATCH. Size: %lu pixels. (Max Diff: %.2fm)", 
+                            cpu_buffer.size(), max_error);
+                }
+            } else {
+                ROS_ERROR("CRITICAL: Buffer Size Mismatch! CPU: %lu vs GPU: %lu", 
+                        cpu_buffer.size(), gpu_buffer.size());
+            }
+        }
+
 
         // --- RUN CPU ---
         trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
 
+        // 0. Prepare Separate Output Buffers to prevent overwriting
+        // We copy the initial state/size from the node to ensure they are allocated correctly.
+        std::vector<float> depth_buf_v1 = new_node->depth_buffer;
+        std::vector<float> depth_buf_v2 = new_node->depth_buffer;
+        std::vector<float> depth_buf_v3 = new_node->depth_buffer;
+
+        // --- RUN CPU ---
         auto start_cpu = std::chrono::high_resolution_clock::now();
         std::pair<double, double> res_cpu = segment_evaluator.computeGainCPU_FlatMap(flat_map_, trajectory_point);
         auto end_cpu = std::chrono::high_resolution_clock::now();
 
-        // --- RUN GPU (Marginal) ---
+        // --- RUN CPU HASH ---
+        auto start_cpu_hash = std::chrono::high_resolution_clock::now();
+        if (new_node->parent && new_node->parent->parent) {
+            segment_evaluator.populateParentHistory(flat_map_, new_node->parent);
+        }
+        std::pair<double, double> res_cpu_hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, new_node);
+        auto end_cpu_hash = std::chrono::high_resolution_clock::now();
+
+        // --- RUN GPU V1 (Marginal) ---
         auto start_gpu_marg = std::chrono::high_resolution_clock::now();
         std::pair<double, double> res_gpu_marg = segment_evaluator.computeMarginalGainGPU(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
-            parent_cam_pos, new_node->parent->point[3], parent_R, new_node->parent->depth_buffer, new_node->depth_buffer);
+            parent_cam_pos, new_node->parent->point[3], parent_R, 
+            new_node->parent->depth_buffer, 
+            depth_buf_v1); // <--- Use V1 Buffer
         auto end_gpu_marg = std::chrono::high_resolution_clock::now();
+
+
+        // --- RUN GPU V2 ---
+        auto start_gpu_marg_v2 = std::chrono::high_resolution_clock::now();
+        std::pair<double, double> res_gpu_marg_v2 = segment_evaluator.computeMarginalGainGPU_v2(
+            new_node->point.x(), new_node->point.y(), new_node->point.z(),
+            parent_cam_pos, new_node->parent->point[3], parent_R, 
+            new_node->parent->depth_buffer, 
+            depth_buf_v2); // <--- Use V2 Buffer
+        auto end_gpu_marg_v2 = std::chrono::high_resolution_clock::now();
+
+
+        // --- RUN GPU V3 ---
+        auto start_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
+        std::pair<double, double> res_gpu_marg_v3 = segment_evaluator.computeMarginalGainGPU_v3(
+            new_node->point.x(), new_node->point.y(), new_node->point.z(),
+            parent_cam_pos, new_node->parent->point[3], parent_R, 
+            new_node->parent->depth_buffer, 
+            depth_buf_v3); // <--- Use V3 Buffer
+        auto end_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
         
         /*if (new_node->parent) {
             for (int i = 0; i < new_node->parent->depth_buffer.size(); i++) {
@@ -1042,28 +1170,50 @@ void AEPlanner::localPlanner() {
         }*/
 
         // --- C. RUN GPU (Single) ---
-        auto start_gpu_abs = std::chrono::high_resolution_clock::now();
+        /*auto start_gpu_abs = std::chrono::high_resolution_clock::now();
         std::pair<double, double> res_gpu_abs = segment_evaluator.computeSingleGainGPU(
             new_node->point.x(), new_node->point.y(), new_node->point.z());
-        auto end_gpu_abs = std::chrono::high_resolution_clock::now();
+        auto end_gpu_abs = std::chrono::high_resolution_clock::now();*/
 
         // --- D. METRICS & REPORTING ---
         double ms_cpu      = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
+        double ms_cpu_hash = std::chrono::duration<double, std::milli>(end_cpu_hash - start_cpu_hash).count();
         double ms_gpu_marg = std::chrono::duration<double, std::milli>(end_gpu_marg - start_gpu_marg).count();
-        double ms_gpu_abs  = std::chrono::duration<double, std::milli>(end_gpu_abs - start_gpu_abs).count();
+        double ms_gpu_marg_v2 = std::chrono::duration<double, std::milli>(end_gpu_marg_v2 - start_gpu_marg_v2).count();
+        double ms_gpu_marg_v3 = std::chrono::duration<double, std::milli>(end_gpu_marg_v3 - start_gpu_marg_v3).count();
+        //double ms_gpu_abs  = std::chrono::duration<double, std::milli>(end_gpu_abs - start_gpu_abs).count();
 
         ROS_INFO(
             "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
             "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
+            "2. CPU (Hash): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "3. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "4. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "5. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "---------------------------------------",
+            res_cpu.first,      res_cpu.second,      ms_cpu,
+            res_cpu_hash.first, res_cpu_hash.second, ms_cpu_hash, (ms_cpu / (ms_cpu_hash + 1e-5)),
+            res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
+            res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
+            res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5))
+        );
+
+        /*ROS_INFO(
+            "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
+            "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
             "2. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "2. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+            "2. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
             "3. GPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
             "---------------------------------------",
             res_cpu.first,      res_cpu.second,      ms_cpu,
             res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
+            res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
+            res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5)),
             res_gpu_abs.first,  res_gpu_abs.second,  ms_gpu_abs,  (ms_cpu / (ms_gpu_abs + 1e-5))
-        );
+        );*/
 
-        std::pair<double, double> result = res_gpu_marg;
+        std::pair<double, double> result = res_gpu_marg_v2;
 
         /*trajectory_point.position_W = new_node->point.head(3);
         trajectory_point.setFromYaw(new_node->point[3]);
@@ -1072,6 +1222,7 @@ void AEPlanner::localPlanner() {
 
         new_node->gain = result.first;
         new_node->point[3] = result.second;
+        new_node->depth_buffer = depth_buf_v2;
 
         segment_evaluator.computeCost(new_node);
         segment_evaluator.computeScore(new_node, lambda);

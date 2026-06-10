@@ -81,6 +81,8 @@ windows:
         #- waitForControl; roslaunch motion_planning voxblox.launch
         - waitForControl; roslaunch motion_planning processed_voxblox.launch
         #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP(ours)/20240904_120233/voxblox_maps/00045.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/police_station/police_station/three_drones/JS/JSKinodynamicAEPours/20241005_130649/voxblox_maps/00006.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/police_station/police_station/three_drones/SS/SSKinodynamicAEPours/20241005_122942/voxblox_maps/00006.vxblx'
         #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/police_station_gt.tsdf'
         #- 'history -s rosservice call /uav1/voxblox_node/generate_mesh'
   - processed_pointclouds:

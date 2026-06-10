@@ -21,6 +21,11 @@ public:
         double gain;
         double score;
 
+        // THE MAP: Stores indices of voxels that were UNKNOWN but are now SEEN.
+        // We only add to this if the voxel is NOT in the global map (flat_map).
+        // Key: Packed Index, Value: 1 (Just a flag)
+        std::unordered_map<uint64_t, uint8_t> observed_unknown_voxels;
+
         std::vector<float> depth_buffer;
 
         Node(const Eigen::Vector4d& p);

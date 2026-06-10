@@ -25,6 +25,8 @@ class GainEvaluator {
 
   ~GainEvaluator();
 
+  inline uint64_t pack_index(int x, int y, int z);
+
 
   /*              SETUP FUNCTIONS                 */
 
@@ -94,6 +96,16 @@ class GainEvaluator {
   std::pair<double, double> computeSingleGainGPU(const double pos_x, const double pos_y, const double pos_z);
 
   std::pair<double, double> computeMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+
+  std::pair<double, double> computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+
+  std::pair<double, double> computeMarginalGainGPU_v3(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+
+  std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
+
+  std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, std::shared_ptr<rrt_star::Node> candidate_node);
+
+  void populateParentHistory(const std::vector<uint8_t>& flat_map, std::shared_ptr<rrt_star::Node> node);
 
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);
