@@ -1,7 +1,7 @@
 <launch>
   <!-- Data source Data, -->
-  <arg name="target_directory" default="/home/joaomendes/motion_workspace/src/data" />
-  <arg name="gt_file_path" default="/mnt/c/Users/joaof/Documents/data/gt_school_processed.ply"/>
+  <arg name="target_directory" default="$(find motion_planning)/data" />
+  <arg name="gt_file_path" default="$(find motion_planning)/data/gt_school_processed.ply"/>
   <arg name="experiment_config" default="School.yaml"/>
   <arg name="method" default="recent"/>
 
