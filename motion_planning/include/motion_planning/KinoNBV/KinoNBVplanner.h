@@ -55,7 +55,7 @@ public:
     KinoNBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const;
+    bool isTrajectoryCollisionFree(kino_rrt_star::Trajectory* trajectory) const;
     void GetTransformation();
 
     void KinoNBV();
@@ -73,10 +73,10 @@ public:
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
-    void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
-    void visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position);
+    void visualize_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns);
+    void visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns);
+    void visualize_frustum(kino_rrt_star::Node* position);
+    void visualize_unknown_voxels(kino_rrt_star::Node* position);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -155,9 +155,12 @@ private:
     bool reset_velocity;
 
     // Tree variables
-    std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
-    std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
-    std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
+    // best_branch / previous_trajectory / previous_trajectory_parent_cache_ own their
+    // objects and survive clearKDTree(). next_best_trajectory is a non-owning observer.
+    std::vector<std::unique_ptr<kino_rrt_star::Trajectory>> best_branch;
+    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory;
+    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent_cache_;
+    kino_rrt_star::Trajectory* next_best_trajectory = nullptr;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     Eigen::Vector4d next_start;

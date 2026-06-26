@@ -1599,7 +1599,7 @@ double GainEvaluator::computeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose
   return num_unknown;
 }
 
-void GainEvaluator::computeGainFromsampledYaw(const std::shared_ptr<rrt_star::Node>& node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
+void GainEvaluator::computeGainFromsampledYaw(rrt_star::Node* node, int yaw_samples, eth_mav_msgs::EigenTrajectoryPoint& trajectory_point) {
     double best_gain = 0;
     double gain;
     double best_yaw;
@@ -1617,36 +1617,36 @@ void GainEvaluator::computeGainFromsampledYaw(const std::shared_ptr<rrt_star::No
     node->point[3] = best_yaw;
 }
 
-void GainEvaluator::computeCost(std::shared_ptr<rrt_star::Node>& new_node) {
+void GainEvaluator::computeCost(rrt_star::Node* new_node) {
     new_node->cost = new_node->parent->cost + (new_node->point.head(3) - new_node->parent->point.head(3)).norm();
 }
 
-void GainEvaluator::computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda) {
+void GainEvaluator::computeScore(rrt_star::Node* new_node, double lambda) {
     new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
 }
 
-void GainEvaluator::computeCost(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory) {
+void GainEvaluator::computeCost(kino_rrt_star::Trajectory* new_trajectory) {
     new_trajectory->cost = new_trajectory->parent->cost + new_trajectory->cost;
 }
 
-void GainEvaluator::computeCostTwo(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory) {
+void GainEvaluator::computeCostTwo(kino_rrt_star::Trajectory* new_trajectory) {
     new_trajectory->cost1 = new_trajectory->parent->cost1 + new_trajectory->cost1;
     new_trajectory->cost2 = new_trajectory->parent->cost2 + new_trajectory->cost2;
 }
 
-void GainEvaluator::computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda) {
+void GainEvaluator::computeScore(kino_rrt_star::Trajectory* new_trajectory, double lambda) {
     new_trajectory->score = new_trajectory->parent->score + new_trajectory->gain * exp(-lambda * new_trajectory->cost);
 }
 
-void GainEvaluator::computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2) {
+void GainEvaluator::computeScore(kino_rrt_star::Trajectory* new_trajectory, double lambda1, double lambda2) {
     new_trajectory->score = new_trajectory->parent->score + new_trajectory->gain * exp(-lambda1 * new_trajectory->cost1 - lambda2 * new_trajectory->cost2);
 }
 
-void GainEvaluator::computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda) {
+void GainEvaluator::computeSingleScore(kino_rrt_star::Trajectory* new_trajectory, double lambda) {
     new_trajectory->score = new_trajectory->gain * exp(-lambda * new_trajectory->cost);
 }
 
-void GainEvaluator::computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2) {
+void GainEvaluator::computeSingleScore(kino_rrt_star::Trajectory* new_trajectory, double lambda1, double lambda2) {
     new_trajectory->score = new_trajectory->gain * exp(-lambda1 * new_trajectory->cost1 - lambda2 * new_trajectory->cost2);
 }
 

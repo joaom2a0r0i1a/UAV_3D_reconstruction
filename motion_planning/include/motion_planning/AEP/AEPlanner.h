@@ -67,18 +67,18 @@ public:
     AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const;
+    bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
     void GetTransformation();
 
     void AEP();
     void localPlanner();
-    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node);
+    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
-    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<rrt_star::Node>& node);
-    void getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node);
+    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node);
+    void getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goals, rrt_star::Node*& best_global_node);
 
-    void cacheNode(std::shared_ptr<rrt_star::Node> Node);
+    void cacheNode(rrt_star::Node* Node);
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
@@ -92,10 +92,10 @@ public:
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns);
-    void visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns);
-    void visualize_frustum(std::shared_ptr<rrt_star::Node> position);
-    void visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position);
+    void visualize_edge(rrt_star::Node* node, const std::string& ns);
+    void visualize_path(rrt_star::Node* node, const std::string& ns);
+    void visualize_frustum(rrt_star::Node* position);
+    void visualize_unknown_voxels(rrt_star::Node* position);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -179,15 +179,17 @@ private:
     int waypoint_index_ = 0;
 
     // Local Planner variables
-    std::vector<std::shared_ptr<rrt_star::Node>> best_branch;
-    std::shared_ptr<rrt_star::Node> previous_node;
-    std::shared_ptr<rrt_star::Node> next_best_node;
+    // best_branch / previous_node are caches that must outlive clearKDTree(), so they
+    // OWN their nodes (deep copies). next_best_node is a non-owning observer.
+    std::vector<std::unique_ptr<rrt_star::Node>> best_branch;
+    std::unique_ptr<rrt_star::Node> previous_node;
+    rrt_star::Node* next_best_node = nullptr;
     eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
 
     // Global Planner variables
-    std::shared_ptr<rrt_star::Node> best_global_node;
+    rrt_star::Node* best_global_node = nullptr;
     std::vector<Eigen::Vector3d> GlobalFrontiers;
 
     // UAV variables

@@ -66,18 +66,18 @@ public:
     KinoAEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const;
+    bool isTrajectoryCollisionFree(kino_rrt_star::Trajectory* trajectory) const;
     void GetTransformation();
 
     void KAEP();
     void localPlanner();
-    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
+    void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, kino_rrt_star::Trajectory*& best_global_trajectory);
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
-    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<kino_rrt_star::Trajectory>& trajectory);
-    void getBestGlobalTrajectory(const std::vector<std::shared_ptr<kino_rrt_star::Trajectory>>& global_goals, std::shared_ptr<kino_rrt_star::Trajectory>& best_global_trajectory);
+    bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, kino_rrt_star::Trajectory* trajectory);
+    void getBestGlobalTrajectory(const std::vector<kino_rrt_star::Trajectory*>& global_goals, kino_rrt_star::Trajectory*& best_global_trajectory);
 
-    void cacheNode(std::shared_ptr<kino_rrt_star::Trajectory> trajectory);
+    void cacheNode(kino_rrt_star::Trajectory* trajectory);
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
@@ -91,10 +91,10 @@ public:
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
-    void visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns);
-    void visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position);
-    void visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position);
+    void visualize_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns);
+    void visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns);
+    void visualize_frustum(kino_rrt_star::Node* position);
+    void visualize_unknown_voxels(kino_rrt_star::Node* position);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -184,16 +184,19 @@ private:
     bool backtrack = false;
 
     // Local Planner variables
-    std::vector<std::shared_ptr<kino_rrt_star::Trajectory>> best_branch;
-    std::shared_ptr<kino_rrt_star::Trajectory> previous_trajectory;
-    std::shared_ptr<kino_rrt_star::Trajectory> next_best_trajectory;
-    std::shared_ptr<kino_rrt_star::Trajectory> previous_best_global_trajectory;
+    // best_branch / previous_trajectory / previous_trajectory_parent_cache_ own their
+    // trajectories and survive clearKDTree(). The other pointers are non-owning observers.
+    std::vector<std::unique_ptr<kino_rrt_star::Trajectory>> best_branch;
+    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory;
+    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent_cache_;
+    kino_rrt_star::Trajectory* next_best_trajectory = nullptr;
+    kino_rrt_star::Trajectory* previous_best_global_trajectory = nullptr;
     eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
 
     // Global Planner variables
-    std::shared_ptr<kino_rrt_star::Trajectory> best_global_trajectory;
+    kino_rrt_star::Trajectory* best_global_trajectory = nullptr;
     std::vector<Eigen::Vector3d> GlobalFrontiers;
 
     // UAV variables

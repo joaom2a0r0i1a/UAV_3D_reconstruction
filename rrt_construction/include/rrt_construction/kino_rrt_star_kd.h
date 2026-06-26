@@ -22,8 +22,9 @@ public:
     };
 
     struct Trajectory {
-        std::vector<std::shared_ptr<Node>> TrajectoryPoints;
-        std::shared_ptr<Trajectory> parent;
+        std::vector<std::unique_ptr<Node>> TrajectoryPoints;   // owns the trajectory nodes
+        Trajectory* parent;                                    // non-owning observer of the parent trajectory
+        std::vector<Trajectory*> children;                     // non-owning observers of downstream branches
         double cost;
         double gain;
         double score;
@@ -33,14 +34,20 @@ public:
 
         // Constructors
         Trajectory();
-        Trajectory(const std::shared_ptr<Node>& Node);
+        Trajectory(std::unique_ptr<Node> Node);
 
-        // Method to add a node to the trajectory
-        void addNode(const std::shared_ptr<Node>& node) {
-            TrajectoryPoints.push_back(node);
+        // Method to add a node to the trajectory (takes ownership)
+        void addNode(std::unique_ptr<Node> node) {
+            TrajectoryPoints.push_back(std::move(node));
         }
 
+        // Deep copy of this trajectory (owns fresh node copies); parent/children are left empty.
+        std::unique_ptr<Trajectory> clone() const;
+
         void clear() {
+            // Zero the raw structural links first, then drop the owned nodes.
+            parent = nullptr;
+            children.clear();
             TrajectoryPoints.clear();
             cost = 0.0;
             gain = 0.0;
@@ -53,19 +60,31 @@ public:
 
     struct KDTree_data {
         std::vector<Eigen::Vector3d> points;
-        std::vector<std::shared_ptr<Trajectory>> data;
+        std::vector<std::unique_ptr<Trajectory>> data;   // exclusive owner of all trajectory memory
 
         void clear();
 
-        inline void addTrajectory(const std::shared_ptr<Trajectory>& newTrajectory) {
-            data.push_back(newTrajectory);
+        // Takes exclusive ownership of newTrajectory and returns a non-owning observer.
+        // The raw parent <-> children links are aligned BEFORE ownership is transferred
+        // into the flat `data` vector, so they are valid the instant it lands in the tree.
+        inline Trajectory* addTrajectory(std::unique_ptr<Trajectory> newTrajectory, Trajectory* parentTrajectory) {
+            if (parentTrajectory) {
+                newTrajectory->parent = parentTrajectory;
+                parentTrajectory->children.push_back(newTrajectory.get());
+            }
             points.push_back(newTrajectory->TrajectoryPoints.back()->point.head(3));
+            data.push_back(std::move(newTrajectory));
+            return data.back().get();
         }
 
-        inline void addTrajectories(const std::vector<std::shared_ptr<Trajectory>>& newTrajectories) {
-            for (int i = 0; i < newTrajectories.size(); ++i) {
-                data.push_back(newTrajectories[i]);
+        inline void addTrajectories(std::vector<std::unique_ptr<Trajectory>>& newTrajectories) {
+            for (size_t i = 0; i < newTrajectories.size(); ++i) {
+                Trajectory* parentTrajectory = newTrajectories[i]->parent;   // links already set by the caller
+                if (parentTrajectory) {
+                    parentTrajectory->children.push_back(newTrajectories[i].get());
+                }
                 points.push_back(newTrajectories[i]->TrajectoryPoints.back()->point.head(3));
+                data.push_back(std::move(newTrajectories[i]));
             }
         }
 
@@ -88,29 +107,34 @@ public:
     
     kino_rrt_star();
 
-    void addKDTreeTrajectory(std::shared_ptr<Trajectory>& newTrajectory);
+    // Takes ownership of newTrajectory and returns a non-owning observer to it.
+    Trajectory* addKDTreeTrajectory(std::unique_ptr<Trajectory> newTrajectory);
 
     void clearKDTree();
 
-    void initializeKDTreeWithTrajectories(std::vector<std::shared_ptr<Trajectory>>& Trajectories);
+    void initializeKDTreeWithTrajectories(std::vector<std::unique_ptr<Trajectory>>& Trajectories);
 
     void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
 
     void computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result);
-    
+
     void computeAccelerationSampling(double a_max, Eigen::Vector3d& result);
 
-    void findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Trajectory>& nearestTrajectory);
+    void findNearestKD(const Eigen::Vector3d& point, Trajectory*& nearestTrajectory);
 
-    void steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+    void steer_trajectory(Trajectory* fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::unique_ptr<Trajectory>& newTrajectory);
 
-    void steer_trajectory_linear(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory);
+    void steer_trajectory_linear(Trajectory* fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::unique_ptr<Trajectory>& newTrajectory);
 
-    void steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, std::shared_ptr<Trajectory>& toChangeTrajectory);
+    void steer_trajectory_angular(Trajectory* fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, Trajectory* toChangeTrajectory);
 
-    void backtrackTrajectory(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory, std::shared_ptr<Trajectory>& nextBestTrajectory);
+    // Fills fullTrajectory with owning deep copies of the branch (root -> trajectory).
+    // The clones keep their parent links amongst themselves so the branch is
+    // self-contained and outlives clearKDTree(). Callers store this in their owning
+    // best_branch cache.
+    void backtrackTrajectory(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory, Trajectory*& nextBestTrajectory);
 
-    void backtrackTrajectoryAEP(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory);
+    void backtrackTrajectoryAEP(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory);
 
 private:
     std::unique_ptr<Tree> kdtree_;

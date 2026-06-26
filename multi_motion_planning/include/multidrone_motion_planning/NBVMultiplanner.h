@@ -55,7 +55,7 @@ public:
     NBVMultiPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
-    bool isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const;
+    bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
     void GetTransformation();
 
     void NBV();
@@ -74,10 +74,10 @@ public:
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns);
-    void visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns);
-    void visualize_frustum(std::shared_ptr<rrt_star::Node> position);
-    void visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position);
+    void visualize_edge(rrt_star::Node* node, const std::string& ns);
+    void visualize_path(rrt_star::Node* node, const std::string& ns);
+    void visualize_frustum(rrt_star::Node* position);
+    void visualize_unknown_voxels(rrt_star::Node* position);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -156,8 +156,8 @@ private:
     std::vector<Eigen::Vector4d> path;
     std::vector<Eigen::Vector4d> prev_best_branch;
     std::vector<Eigen::Vector4d> best_branch;
-    std::shared_ptr<rrt_star::Node> next_best_node;
-    std::shared_ptr<rrt_star::Node> previous_root;
+    rrt_star::Node* next_best_node = nullptr;
+    std::unique_ptr<rrt_star::Node> previous_root;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
 
     // UAV variables
