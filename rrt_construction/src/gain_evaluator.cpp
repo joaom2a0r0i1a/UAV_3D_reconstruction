@@ -3,90 +3,20 @@
 #include <voxblox/integrator/integrator_utils.h>
 
 #include "rrt_construction/gain_evaluator.h"
+#include "rrt_construction/gpu_raycast_launch.h"
 
-extern "C" void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size);
-extern "C" void wrapper_cuda_free(void* dev_ptr);
-extern "C" void wrapper_cuda_memcpy(void* dev_ptr, const void* host_ptr, size_t size);
+// Bundle the cached map / sensor state into the launcher ABI structs so each
+// GPU call passes a couple of grouped arguments instead of a dozen scalars.
+GpuMap GainEvaluator::gpuMap() const {
+    return GpuMap{d_map_,
+                  cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
+                  (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z()};
+}
 
-// External CUDA function declaration
-extern "C" void launch_aep_kernel_single(
-    uint8_t* d_map,
-    int dx, int dy, int dz, 
-    float ox, float oy, float oz,
-    float pos_x, float pos_y, float pos_z,
-    float* h_result_gain, float* h_result_yaw,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-);
-
-extern "C" void launch_aep_kernel(
-    const uint8_t* h_map, 
-    int dx, int dy, int dz, 
-    float ox, float oy, float oz,
-    float* h_pos_x, float* h_pos_y, float* h_pos_z,
-    float* h_results_gain,
-    float* h_results_yaw,
-    int num_candidates,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-);
-
-extern "C" void launch_aep_kernel_batch(
-    uint8_t* d_map,
-    int dx, int dy, int dz, 
-    float ox, float oy, float oz,
-    float* h_pos_x, float* h_pos_y, float* h_pos_z,
-    float* h_results_gain,
-    float* h_results_yaw,
-    int num_candidates,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-);
-
-extern "C" void launch_aep_kernel_batch_depth(
-    uint8_t* d_map,
-    int dx, int dy, int dz, 
-    float ox, float oy, float oz,
-    float* h_pos_x, float* h_pos_y, float* h_pos_z,
-    float* h_results_gain,
-    float* h_results_yaw,
-    float* h_results_depths,
-    int num_candidates,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-);
-
-extern "C" void launch_marginal_gain_kernel(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float h_cand_x, float h_cand_y, float h_cand_z,
-    float h_parent_x, float h_parent_y, float h_parent_z,
-    float h_parent_yaw, float* h_parent_R, float* h_parent_depth,
-    float* h_result_gain, float* h_result_yaw, float* h_result_depths,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-);
-
-extern "C" void launch_marginal_gain_kernel_v2(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float h_cand_x, float h_cand_y, float h_cand_z,
-    float h_parent_x, float h_parent_y, float h_parent_z,
-    float h_parent_yaw, float* h_parent_R, float* h_parent_depth,
-    float* h_result_gain, float* h_result_yaw, float* h_result_depths,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-  );
-
-extern "C" void launch_marginal_gain_kernel_v3(
-  uint8_t* d_map,
-  int dx, int dy, int dz,
-  float ox, float oy, float oz,
-  float h_cand_x, float h_cand_y, float h_cand_z,
-  int num_ancestors,
-  float* h_parent_pos,    // [3*num_ancestors]
-  float* h_parent_yaw,    // [num_ancestors]
-  float* h_parent_R,      // [9*num_ancestors]
-  float* h_parent_depth,  // [num_ancestors * p_width * p_height], or nullptr
-  float* h_result_gain, float* h_result_yaw, float* h_result_depths,
-  float voxel_size, float gain_range, float fov_y, float fov_p, float pitch
-);
+GpuSensor GainEvaluator::gpuSensor() const {
+    return GpuSensor{(float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_,
+                     (float)(camera_pitch_ * M_PI / 180.0)};
+}
 
 GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("gain_evaluation/min_x", min_x_, -17.0f);
@@ -513,16 +443,9 @@ std::pair<double, double> GainEvaluator::computeGainGPU(const std::vector<double
     std::vector<float> results_yaw(num_candidates);
 
     // 4. LAUNCH THE KERNEL DIRECTLY
-    launch_aep_kernel_batch(
-        d_map_, 
-        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-        x_f.data(), y_f.data(), z_f.data(),
-        results_gain.data(),
-        results_yaw.data(),
-        num_candidates,
-        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );
+    GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
+    GpuResult out = {results_gain.data(), results_yaw.data(), nullptr};
+    launch_gain_kernel_batch(gpuMap(), cands, out, gpuSensor());
 
     // 5. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.
@@ -555,16 +478,9 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     std::vector<float> results_yaw(num_candidates);
 
     // 3. Launch Kernel
-    launch_aep_kernel_batch(
-        d_map_,
-        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-        x_f.data(), y_f.data(), z_f.data(),
-        results_gain.data(), 
-        results_yaw.data(),
-        num_candidates,
-        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );
+    GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
+    GpuResult out = {results_gain.data(), results_yaw.data(), nullptr};
+    launch_gain_kernel_batch(gpuMap(), cands, out, gpuSensor());
 
     /*const float DTHETA_RAD = 2.0f * M_PI / 180.0f;
     const float DPHI_RAD   = 2.0f * M_PI / 180.0f;
@@ -578,17 +494,9 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     int total_floats = num_candidates * win_w * win_h;
     std::vector<float> results_depths(total_floats);
 
-    launch_aep_kernel_batch_depth(
-        d_map_,
-        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-        x_f.data(), y_f.data(), z_f.data(),
-        results_gain.data(), 
-        results_yaw.data(),
-        results_depths.data(),
-        num_candidates,
-        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );*/
+    GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
+    GpuResult out = {results_gain.data(), results_yaw.data(), results_depths.data()};
+    launch_gain_kernel_batch_depth(gpuMap(), cands, out, gpuSensor());*/
 
     // 4. Return Results
     std::vector<std::pair<double, double>> results;
@@ -611,14 +519,9 @@ std::pair<double, double> GainEvaluator::computeSingleGainGPU(const double pos_x
     float results_gain = 0.0f;
     float results_yaw = 0.0f;
 
-    launch_aep_kernel_single(
-      d_map_,
-      cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-      (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-      (float)pos_x, (float)pos_y, (float)pos_z,
-      &results_gain, &results_yaw,
-      (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );
+    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
+    GpuResult out = {&results_gain, &results_yaw, nullptr};
+    launch_gain_kernel_single(gpuMap(), cand, out, gpuSensor());
 
     // 2. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.
@@ -652,16 +555,11 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU(const double pos
 
     // 2. Launch The Kernel Wrapper
     // Note: We use the member variables we cached earlier for the parent state
-    launch_marginal_gain_kernel(
-        d_map_,
-        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-        (float)pos_x, (float)pos_y, (float)pos_z,
-        (float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z(),
-        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data(),
-        &results_gain, &results_yaw, result_depths.data(),
-        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );
+    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
+    GpuParent parent = {{(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()},
+                        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data()};
+    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
+    launch_marginal_gain_kernel(gpuMap(), cand, parent, out, gpuSensor());
 
     // 3. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.
@@ -695,16 +593,11 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v2(const double 
 
     // 2. Launch The Kernel Wrapper
     // Note: We use the member variables we cached earlier for the parent state
-    launch_marginal_gain_kernel_v2(
-        d_map_,
-        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-        (float)pos_x, (float)pos_y, (float)pos_z,
-        (float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z(),
-        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data(),
-        &results_gain, &results_yaw, result_depths.data(),
-        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );
+    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
+    GpuParent parent = {{(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()},
+                        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data()};
+    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
+    launch_marginal_gain_kernel_v2(gpuMap(), cand, parent, out, gpuSensor());
 
     // 3. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.
@@ -755,19 +648,14 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v3(const double 
     float results_yaw = 0.0f;
 
     // 2. Launch The Kernel Wrapper
-    launch_marginal_gain_kernel_v3(
-        d_map_,
-        cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
-        (float)cached_origin_.x(), (float)cached_origin_.y(), (float)cached_origin_.z(),
-        (float)pos_x, (float)pos_y, (float)pos_z,
-        num_ancestors,
-        parent_pos_flat.data(),
-        parent_yaw_flat.data(),
-        parent_R.data(),
-        parent_depth.empty() ? nullptr : (float*)parent_depth.data(),
-        &results_gain, &results_yaw, result_depths.data(),
-        (float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_, (float)(camera_pitch_ * M_PI / 180.0)
-    );
+    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
+    GpuAncestors ancestors = {num_ancestors,
+                              parent_pos_flat.data(),
+                              parent_yaw_flat.data(),
+                              parent_R.data(),
+                              parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
+    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
+    launch_marginal_gain_kernel_v3(gpuMap(), cand, ancestors, out, gpuSensor());
 
     // 3. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.

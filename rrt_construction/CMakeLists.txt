@@ -71,7 +71,7 @@ add_library(tree_construction
   src/kino_rrt_star_kd.cpp
   src/rrt_star_kd.cpp
   src/gain_evaluator.cpp
-  src/aep_evaluator.cu
+  src/gpu_raycaster.cu
   )
 
  # Add dependencies for library targets

@@ -5,22 +5,24 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include <rrt_construction/aep_device_math.cuh>
+#include <rrt_construction/gpu_raycast_math.cuh>
+#include <rrt_construction/gpu_raycast_launch.h>
 
 // ============================================================================
-//  aep_evaluator.cu
+//  gpu_raycaster.cu
 //
-//  CUDA front end for the AEP information-gain and marginal-gain raycasters.
+//  CUDA front end for the information-gain and marginal-gain raycasters.
 //  This translation unit holds ONLY:
 //    * __global__ kernels  -- thin orchestration; the math lives in
-//                             aep_device_math.cuh.
+//                             gpu_raycast_math.cuh.
 //    * extern "C" launchers -- host glue that packs parameters, manages device
 //                             memory and launches the kernels.
 //
 //  Kernel argument lists are bundled into small structs (MapContext, ParentFrame,
-//  AncestorSet, GainResults) to stay well under the JPL 6-argument limit. The
-//  extern "C" launcher signatures are the ABI consumed by gain_evaluator.cpp and
-//  are intentionally left unchanged.
+//  AncestorSet, GainResults) to stay well under the JPL 5-argument limit. The
+//  extern "C" launcher signatures (declared in gpu_raycast_launch.h, consumed by
+//  gain_evaluator.cpp) are likewise grouped into POD structs -- GpuMap, GpuSensor,
+//  GpuCandidates, GpuParent, GpuAncestors, GpuResult.
 // ============================================================================
 
 // ----------------------------------------------------------------------------
@@ -48,9 +50,9 @@ static KernelParams make_kernel_params(float voxel_size, float gain_range,
 
 // Derive the parent depth-image geometry (pixel size + pinhole intrinsics) that
 // every marginal kernel shares.
-static aep::ParentCameraConfig derive_camera_config(float gain_range, float voxel_size,
+static gpuray::ParentCameraConfig derive_camera_config(float gain_range, float voxel_size,
                                                     const KernelParams& params) {
-    aep::ParentCameraConfig cam;
+    gpuray::ParentCameraConfig cam;
     cam.p_width  = ceil((2.0f * gain_range * tanf(params.fov_y_rad * 0.5f)) / voxel_size);
     cam.p_height = ceil((2.0f * gain_range * tanf(params.fov_p_rad * 0.5f)) / voxel_size);
     cam.fx = (cam.p_width  / 2.0f) / tanf(params.fov_y_rad * 0.5f);
@@ -66,7 +68,7 @@ static aep::ParentCameraConfig derive_camera_config(float gain_range, float voxe
 
 // One candidate, one block. Threads share the ray workload and reduce to the
 // best yaw window.
-__global__ void evaluate_aep_kernel_single(MapContext m, float3 candidate_pos,
+__global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
                                            float* __restrict__ result_gain,
                                            float* __restrict__ result_yaw,
                                            KernelParams params) {
@@ -86,10 +88,11 @@ __global__ void evaluate_aep_kernel_single(MapContext m, float3 candidate_pos,
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float3 dir = aep::spherical_ray_dir(theta, phi);
+        float3 dir = gpuray::spherical_ray_dir(theta, phi);
 
         float depth;
-        float ray_gain = march_gain_basic(m, candidate_pos, dir, sin_phi, params, &depth);
+        MarchRay ray = {candidate_pos, dir, sin_phi};
+        float ray_gain = march_gain_basic(m, ray, params, &depth);
         if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
     }
     __syncthreads();
@@ -97,14 +100,14 @@ __global__ void evaluate_aep_kernel_single(MapContext m, float3 candidate_pos,
     if (tid == 0) {
         int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
         float max_gain;
-        int best = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
         *result_gain = max_gain;
-        *result_yaw  = aep::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        *result_yaw  = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
     }
 }
 
 // One candidate per block, batched over many candidates.
-__global__ void evaluate_aep_kernel(MapContext m, const float3* __restrict__ positions,
+__global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ positions,
                                     float* __restrict__ results_gain,
                                     float* __restrict__ results_yaw,
                                     KernelParams params) {
@@ -125,10 +128,11 @@ __global__ void evaluate_aep_kernel(MapContext m, const float3* __restrict__ pos
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float3 dir = aep::spherical_ray_dir(theta, phi);
+        float3 dir = gpuray::spherical_ray_dir(theta, phi);
 
         float depth;
-        float ray_gain = march_gain_basic(m, positions[candidate], dir, sin_phi, params, &depth);
+        MarchRay ray = {positions[candidate], dir, sin_phi};
+        float ray_gain = march_gain_basic(m, ray, params, &depth);
         if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
     }
     __syncthreads();
@@ -136,15 +140,15 @@ __global__ void evaluate_aep_kernel(MapContext m, const float3* __restrict__ pos
     if (ray_id == 0) {
         int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
         float max_gain;
-        int best = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
         results_gain[candidate] = max_gain;
-        results_yaw[candidate]  = aep::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        results_yaw[candidate]  = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
     }
 }
 
 // As above, but also records the per-ray first-hit depth and copies the windowed
 // subset that falls inside the chosen yaw FOV.
-__global__ void evaluate_aep_kernel_depth(MapContext m, const float3* __restrict__ positions,
+__global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restrict__ positions,
                                           float* __restrict__ results_gain,
                                           float* __restrict__ results_yaw,
                                           float* __restrict__ depth_buffer_all,
@@ -167,10 +171,11 @@ __global__ void evaluate_aep_kernel_depth(MapContext m, const float3* __restrict
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float3 dir = aep::spherical_ray_dir(theta, phi);
+        float3 dir = gpuray::spherical_ray_dir(theta, phi);
 
         float final_depth;
-        float ray_gain = march_gain_basic(m, positions[candidate], dir, sin_phi, params, &final_depth);
+        MarchRay ray = {positions[candidate], dir, sin_phi};
+        float ray_gain = march_gain_basic(m, ray, params, &final_depth);
         depth_buffer_all[candidate * rays_per_candidate + idx] = final_depth;
         if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
     }
@@ -179,9 +184,9 @@ __global__ void evaluate_aep_kernel_depth(MapContext m, const float3* __restrict
     if (ray_id == 0) {
         int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
         float max_gain;
-        int best_start_idx = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best_start_idx = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
         results_gain[candidate] = max_gain;
-        results_yaw[candidate]  = aep::yaw_window_center_angle(best_start_idx, params.dtheta, params.fov_y_rad);
+        results_yaw[candidate]  = gpuray::yaw_window_center_angle(best_start_idx, params.dtheta, params.fov_y_rad);
 
         // Copy the depths that lie inside the selected yaw window.
         int my_out = candidate * (sectors_in_fov * rows_in_fov);
@@ -223,19 +228,20 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float3 ray_dir = aep::spherical_ray_dir(theta, phi);
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
 
         // Project the ray into the parent frustum, convert the observed-free span
         // to voxel units, then march while jumping that span.
-        float3 interval = compute_skip_distance(parent.cam, parent.pos, parent.R, parent.depth,
-                                                cam_pos, ray_dir, params.gain_range);
-        float skip_start_vox = (interval.x != -1.0f) ? (interval.x / params.voxel_size) : -1.0f;
-        float skip_end_vox   = (interval.x != -1.0f) ? (interval.y / params.voxel_size) : -1.0f;
+        Ray ray = {cam_pos, ray_dir};
+        float3 interval = compute_skip_distance(parent, ray, params.gain_range);
+        float2 skip = make_float2(
+            (interval.x != -1.0f) ? (interval.x / params.voxel_size) : -1.0f,
+            (interval.x != -1.0f) ? (interval.y / params.voxel_size) : -1.0f);
 
         float final_depth;
-        float ray_gain = march_marginal_gain_single(m, cam_pos, ray_dir, sin_phi,
-                                                     skip_start_vox, skip_end_vox, params, &final_depth);
+        MarchRay mray = {cam_pos, ray_dir, sin_phi};
+        float ray_gain = march_marginal_gain_single(m, mray, skip, params, &final_depth);
 
         out.depth_all[candidate * rays_per_candidate + idx] = final_depth;
         if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
@@ -245,8 +251,8 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
         float max_gain;
-        int best = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = aep::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -254,8 +260,8 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
     __syncthreads();
 
     int buffer_rays = parent.cam.p_width * parent.cam.p_height;
-    generate_depth_buffer(m, parent.cam, positions[candidate], s_best_yaw, params,
-                          out.depth + candidate * buffer_rays);
+    CameraPose pose = {positions[candidate], s_best_yaw};
+    generate_depth_buffer(m, parent.cam, pose, params, out.depth + candidate * buffer_rays);
 }
 
 // Legacy single-parent, multi-segment skip without jumping (v2).
@@ -280,16 +286,16 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float3 ray_dir = aep::spherical_ray_dir(theta, phi);
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
 
         const int MAX_SEGS = 32;
         float2 skip_m[MAX_SEGS];
         int skip_count = 0;
         float status = 1.0f;
-        compute_multi_segment_skip_distance(parent.cam, parent.pos, parent.R, parent.depth,
-                                            cam_pos, ray_dir, params,
-                                            skip_m, &skip_count, MAX_SEGS, &status);
+        Ray ray = {cam_pos, ray_dir};
+        SkipBuffer skip_out = {skip_m, &skip_count, MAX_SEGS, &status};
+        compute_skip_intervals_single(parent, ray, params, skip_out);
 
         float2 skip_vox[MAX_SEGS];
         for (int i = 0; i < skip_count; ++i) {
@@ -298,8 +304,9 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
         }
 
         float final_depth;
-        float ray_gain = march_marginal_gain_suppress(m, cam_pos, ray_dir, sin_phi,
-                                                      skip_vox, skip_count, params, &final_depth);
+        MarchRay mray = {cam_pos, ray_dir, sin_phi};
+        SkipSet skips = {skip_vox, skip_count};
+        float ray_gain = march_marginal_gain_suppress(m, mray, skips, params, &final_depth);
 
         out.depth_all[candidate * rays_per_candidate + idx] = final_depth;
         if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
@@ -309,8 +316,8 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
         float max_gain;
-        int best = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = aep::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -318,8 +325,8 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
     __syncthreads();
 
     int buffer_rays = parent.cam.p_width * parent.cam.p_height;
-    generate_depth_buffer(m, parent.cam, positions[candidate], s_best_yaw, params,
-                          out.depth + candidate * buffer_rays);
+    CameraPose pose = {positions[candidate], s_best_yaw};
+    generate_depth_buffer(m, parent.cam, pose, params, out.depth + candidate * buffer_rays);
 }
 
 // Canonical multi-ancestor marginal gain with jumping + range/skip clamps (v3).
@@ -344,7 +351,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float3 ray_dir = aep::spherical_ray_dir(theta, phi);
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
 
         // Merge the observed-free spans across every ancestor, in voxel units.
@@ -352,9 +359,9 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
         float2 skip_m[MAX_SEGS];
         int skip_count = 0;
         float status = 1.0f;
-        compute_multi_segment_skip_distance(ancestors.cam, ancestors.positions, ancestors.R_rows,
-                                            ancestors.depth, ancestors.num, cam_pos, ray_dir, params,
-                                            skip_m, &skip_count, MAX_SEGS, &status);
+        Ray ray = {cam_pos, ray_dir};
+        SkipBuffer skip_out = {skip_m, &skip_count, MAX_SEGS, &status};
+        compute_multi_segment_skip_distance(ancestors, ray, params, skip_out);
 
         float2 skip_vox[MAX_SEGS];
         for (int i = 0; i < skip_count; ++i) {
@@ -363,8 +370,9 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
         }
 
         float final_depth;
-        float ray_gain = march_marginal_gain(m, cam_pos, ray_dir, sin_phi,
-                                             skip_vox, skip_count, params, &final_depth);
+        MarchRay mray = {cam_pos, ray_dir, sin_phi};
+        SkipSet skips = {skip_vox, skip_count};
+        float ray_gain = march_marginal_gain(m, mray, skips, params, &final_depth);
 
         out.depth_all[candidate * rays_per_candidate + idx] = final_depth;
         if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
@@ -374,8 +382,8 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
         float max_gain;
-        int best = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = aep::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -383,23 +391,39 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
     __syncthreads();
 
     int buffer_rays = ancestors.cam.p_width * ancestors.cam.p_height;
-    generate_depth_buffer(m, ancestors.cam, positions[candidate], s_best_yaw, params,
-                          out.depth + candidate * buffer_rays);
+    CameraPose pose = {positions[candidate], s_best_yaw};
+    generate_depth_buffer(m, ancestors.cam, pose, params, out.depth + candidate * buffer_rays);
 }
 
 // ============================================================================
 //  Launchers (extern "C" ABI -- consumed by gain_evaluator.cpp).
 // ============================================================================
 
-extern "C" void launch_aep_kernel_single(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float pos_x, float pos_y, float pos_z,
-    float* h_result_gain, float* h_result_yaw,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
+// Pack the loose host config fields into the device-side launch structs.
+static KernelParams params_of(const GpuSensor& cfg) {
+    return make_kernel_params(cfg.voxel_size, cfg.gain_range, cfg.fov_y, cfg.fov_p, cfg.pitch);
+}
+static MapContext context_of(const GpuMap& map) {
+    return MapContext{map.d_map, make_int3(map.dx, map.dy, map.dz),
+                      make_float3(map.ox, map.oy, map.oz)};
+}
 
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
+// Upload an x/y/z candidate list to a freshly allocated device float3 array.
+static float3* upload_candidates(const GpuCandidates& cands) {
+    float3* d_positions;
+    cudaMalloc(&d_positions, cands.count * sizeof(float3));
+    float3* h_positions = new float3[cands.count];
+    for (int i = 0; i < cands.count; ++i) {
+        h_positions[i] = make_float3(cands.x[i], cands.y[i], cands.z[i]);
+    }
+    cudaMemcpy(d_positions, h_positions, cands.count * sizeof(float3), cudaMemcpyHostToDevice);
+    delete[] h_positions;
+    return d_positions;
+}
+
+extern "C" void launch_gain_kernel_single(GpuMap map, GpuVec3 cand,
+                                         GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
 
     float* d_res_gain;
     float* d_res_yaw;
@@ -409,56 +433,42 @@ extern "C" void launch_aep_kernel_single(
     int rows = max(1, (int)ceilf(params.fov_p_rad / params.dphi));
     int total_rays = THETA_BINS * rows;
 
-    MapContext m = {d_map, make_int3(dx, dy, dz), make_float3(ox, oy, oz)};
-    float3 candidate_pos = make_float3(pos_x, pos_y, pos_z);
+    MapContext m = context_of(map);
+    float3 candidate_pos = make_float3(cand.x, cand.y, cand.z);
 
-    evaluate_aep_kernel_single<<<1, min(total_rays, MAX_THREADS_PER_BLOCK)>>>(
+    evaluate_gain_kernel_single<<<1, min(total_rays, MAX_THREADS_PER_BLOCK)>>>(
         m, candidate_pos, d_res_gain, d_res_yaw, params);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(h_result_gain, d_res_gain, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_result_yaw, d_res_yaw, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.gain, d_res_gain, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw, d_res_yaw, sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(d_res_gain);
     cudaFree(d_res_yaw);
 }
 
-extern "C" void launch_aep_kernel(
-    const uint8_t* h_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float* h_pos_x, float* h_pos_y, float* h_pos_z,
-    float* h_results_gain, float* h_results_yaw,
-    int num_candidates,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
+// Self-contained variant: map.d_map is a HOST grid; it is uploaded here.
+extern "C" void launch_gain_kernel(GpuMap map, GpuCandidates cands,
+                                  GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
 
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
+    size_t map_size = (size_t)map.dx * map.dy * map.dz * sizeof(uint8_t);
+    size_t res_size = cands.count * sizeof(float);
 
     uint8_t* d_map;
-    float3* d_positions;
+    cudaMalloc(&d_map, map_size);
+    cudaMemcpy(d_map, map.d_map, map_size, cudaMemcpyHostToDevice);
+
+    float3* d_positions = upload_candidates(cands);
     float* d_results_gain;
     float* d_results_yaw;
-
-    size_t map_size = (size_t)dx * dy * dz * sizeof(uint8_t);
-    size_t cand_size = num_candidates * sizeof(float3);
-    size_t res_size = num_candidates * sizeof(float);
-
-    cudaMalloc(&d_map, map_size);
-    cudaMalloc(&d_positions, cand_size);
     cudaMalloc(&d_results_gain, res_size);
     cudaMalloc(&d_results_yaw, res_size);
 
-    float3* h_positions = new float3[num_candidates];
-    for (int i = 0; i < num_candidates; ++i) {
-        h_positions[i] = make_float3(h_pos_x[i], h_pos_y[i], h_pos_z[i]);
-    }
+    MapContext m = {d_map, make_int3(map.dx, map.dy, map.dz),
+                    make_float3(map.ox, map.oy, map.oz)};
 
-    cudaMemcpy(d_map, h_map, map_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_positions, h_positions, cand_size, cudaMemcpyHostToDevice);
-
-    MapContext m = {d_map, make_int3(dx, dy, dz), make_float3(ox, oy, oz)};
-
-    evaluate_aep_kernel<<<num_candidates, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
+    evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params);
     cudaDeviceSynchronize();
 
@@ -467,108 +477,72 @@ extern "C" void launch_aep_kernel(
         printf("CUDA Kernel Error: %s\n", cudaGetErrorString(err));
     }
 
-    cudaMemcpy(h_results_gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_results_yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
 
     cudaFree(d_map);
     cudaFree(d_positions);
     cudaFree(d_results_gain);
     cudaFree(d_results_yaw);
-    delete[] h_positions;
 }
 
-extern "C" void launch_aep_kernel_batch(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float* h_pos_x, float* h_pos_y, float* h_pos_z,
-    float* h_results_gain, float* h_results_yaw,
-    int num_candidates,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
+extern "C" void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands,
+                                        GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
+    size_t res_size = cands.count * sizeof(float);
 
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
-
-    float3* d_positions;
+    float3* d_positions = upload_candidates(cands);
     float* d_results_gain;
     float* d_results_yaw;
-
-    size_t cand_size = num_candidates * sizeof(float3);
-    size_t res_size = num_candidates * sizeof(float);
-
-    cudaMalloc(&d_positions, cand_size);
     cudaMalloc(&d_results_gain, res_size);
     cudaMalloc(&d_results_yaw, res_size);
 
-    float3* h_positions = new float3[num_candidates];
-    for (int i = 0; i < num_candidates; ++i) {
-        h_positions[i] = make_float3(h_pos_x[i], h_pos_y[i], h_pos_z[i]);
-    }
-    cudaMemcpy(d_positions, h_positions, cand_size, cudaMemcpyHostToDevice);
+    MapContext m = context_of(map);
 
-    MapContext m = {d_map, make_int3(dx, dy, dz), make_float3(ox, oy, oz)};
-
-    evaluate_aep_kernel<<<num_candidates, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
+    evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(h_results_gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_results_yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
 
     cudaFree(d_positions);
     cudaFree(d_results_gain);
     cudaFree(d_results_yaw);
-    delete[] h_positions;
 }
 
-extern "C" void launch_aep_kernel_batch_depth(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float* h_pos_x, float* h_pos_y, float* h_pos_z,
-    float* h_results_gain, float* h_results_yaw, float* h_results_depths,
-    int num_candidates,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
-
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
+extern "C" void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands,
+                                              GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
 
     int window_width  = floor(params.fov_y_rad / params.dtheta);
     int window_height = floor(params.fov_p_rad / params.dphi);
     int rays_per_candidate = THETA_BINS * window_height;
 
-    size_t buffer_size_all = (size_t)num_candidates * rays_per_candidate * sizeof(float);
-    size_t buffer_size = (size_t)num_candidates * window_width * window_height * sizeof(float);
+    size_t buffer_size_all = (size_t)cands.count * rays_per_candidate * sizeof(float);
+    size_t buffer_size = (size_t)cands.count * window_width * window_height * sizeof(float);
+    size_t res_size = cands.count * sizeof(float);
 
-    float3* d_positions;
+    float3* d_positions = upload_candidates(cands);
     float* d_results_gain;
     float* d_results_yaw;
     float* d_depth_buffer_all;
     float* d_depth_buffer;
-
-    size_t cand_size = num_candidates * sizeof(float3);
-    size_t res_size = num_candidates * sizeof(float);
-
-    cudaMalloc(&d_positions, cand_size);
     cudaMalloc(&d_results_gain, res_size);
     cudaMalloc(&d_results_yaw, res_size);
     cudaMalloc(&d_depth_buffer_all, buffer_size_all);
     cudaMalloc(&d_depth_buffer, buffer_size);
 
-    float3* h_positions = new float3[num_candidates];
-    for (int i = 0; i < num_candidates; ++i) {
-        h_positions[i] = make_float3(h_pos_x[i], h_pos_y[i], h_pos_z[i]);
-    }
-    cudaMemcpy(d_positions, h_positions, cand_size, cudaMemcpyHostToDevice);
+    MapContext m = context_of(map);
 
-    MapContext m = {d_map, make_int3(dx, dy, dz), make_float3(ox, oy, oz)};
-
-    evaluate_aep_kernel_depth<<<num_candidates, min(rays_per_candidate, MAX_THREADS_PER_BLOCK)>>>(
+    evaluate_gain_kernel_depth<<<cands.count, min(rays_per_candidate, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, d_depth_buffer_all, d_depth_buffer, params);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(h_results_gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_results_yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
-    if (h_results_depths != nullptr) {
-        cudaMemcpy(h_results_depths, d_depth_buffer, buffer_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
+    if (out.depths != nullptr) {
+        cudaMemcpy(out.depths, d_depth_buffer, buffer_size, cudaMemcpyDeviceToHost);
     }
 
     cudaFree(d_positions);
@@ -576,18 +550,14 @@ extern "C" void launch_aep_kernel_batch_depth(
     cudaFree(d_results_yaw);
     cudaFree(d_depth_buffer_all);
     cudaFree(d_depth_buffer);
-    delete[] h_positions;
 }
 
 // Shared setup for the single-parent marginal launchers (v1 and v2): allocate
 // device buffers, upload the candidate + parent state, and assemble the kernel
 // argument structs. Returns the rays-per-candidate launch width.
 static int setup_single_parent_marginal(
-    uint8_t* d_map, int dx, int dy, int dz, float ox, float oy, float oz,
-    float h_cand_x, float h_cand_y, float h_cand_z,
-    float h_parent_x, float h_parent_y, float h_parent_z,
-    float* h_parent_R, float* h_parent_depth,
-    const KernelParams& params, const aep::ParentCameraConfig& cam,
+    const GpuMap& map, GpuVec3 cand, const GpuParent& parent_in,
+    const KernelParams& params, const gpuray::ParentCameraConfig& cam,
     MapContext* m, float3** d_cand_pos, ParentFrame* parent, GainResults* out) {
 
     int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
@@ -608,23 +578,24 @@ static int setup_single_parent_marginal(
     cudaMalloc(&d_depth_buffer, buffer_size);
     cudaMalloc(&d_parent_depth_buffer, buffer_size);
 
-    float3 h_pos = make_float3(h_cand_x, h_cand_y, h_cand_z);
+    float3 h_pos = make_float3(cand.x, cand.y, cand.z);
     cudaMemcpy(*d_cand_pos, &h_pos, sizeof(float3), cudaMemcpyHostToDevice);
 
-    if (h_parent_depth != nullptr) {
-        cudaMemcpy(d_parent_depth_buffer, h_parent_depth, buffer_size, cudaMemcpyHostToDevice);
+    if (parent_in.depth != nullptr) {
+        cudaMemcpy(d_parent_depth_buffer, parent_in.depth, buffer_size, cudaMemcpyHostToDevice);
     } else {
         cudaMemset(d_parent_depth_buffer, 0, buffer_size);
     }
 
-    *m = MapContext{d_map, make_int3(dx, dy, dz), make_float3(ox, oy, oz)};
+    *m = context_of(map);
 
-    aep::RotationRows R = {
-        make_float3(h_parent_R[0], h_parent_R[1], h_parent_R[2]),
-        make_float3(h_parent_R[3], h_parent_R[4], h_parent_R[5]),
-        make_float3(h_parent_R[6], h_parent_R[7], h_parent_R[8])};
-    *parent = ParentFrame{make_float3(h_parent_x, h_parent_y, h_parent_z),
-                          d_parent_depth_buffer, R, cam};
+    const float* R = parent_in.R;
+    gpuray::RotationRows rot = {
+        make_float3(R[0], R[1], R[2]),
+        make_float3(R[3], R[4], R[5]),
+        make_float3(R[6], R[7], R[8])};
+    *parent = ParentFrame{make_float3(parent_in.pos.x, parent_in.pos.y, parent_in.pos.z),
+                          d_parent_depth_buffer, rot, cam};
     *out = GainResults{d_res_gain, d_res_yaw, d_depth_buffer_all, d_depth_buffer};
     return rays_per_candidate;
 }
@@ -633,14 +604,13 @@ static int setup_single_parent_marginal(
 // the (single) parent depth buffer and candidate position.
 static void teardown_single_parent_marginal(
     float3* d_cand_pos, const ParentFrame& parent, const GainResults& out,
-    const aep::ParentCameraConfig& cam,
-    float* h_result_gain, float* h_result_yaw, float* h_result_depths) {
+    const gpuray::ParentCameraConfig& cam, GpuResult result) {
 
     size_t buffer_size = (size_t)cam.p_width * cam.p_height * sizeof(float);
-    cudaMemcpy(h_result_gain, out.gain, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_result_yaw, out.yaw, sizeof(float), cudaMemcpyDeviceToHost);
-    if (h_result_depths != nullptr) {
-        cudaMemcpy(h_result_depths, out.depth, buffer_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(result.gain, out.gain, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(result.yaw, out.yaw, sizeof(float), cudaMemcpyDeviceToHost);
+    if (result.depths != nullptr) {
+        cudaMemcpy(result.depths, out.depth, buffer_size, cudaMemcpyDeviceToHost);
     }
     cudaFree(d_cand_pos);
     cudaFree(out.gain);
@@ -650,82 +620,50 @@ static void teardown_single_parent_marginal(
     cudaFree(const_cast<float*>(parent.depth));
 }
 
-extern "C" void launch_marginal_gain_kernel(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float h_cand_x, float h_cand_y, float h_cand_z,
-    float h_parent_x, float h_parent_y, float h_parent_z,
-    float h_parent_yaw, float* h_parent_R, float* h_parent_depth,
-    float* h_result_gain, float* h_result_yaw, float* h_result_depths,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
-
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
-    aep::ParentCameraConfig cam = derive_camera_config(gain_range, voxel_size, params);
+extern "C" void launch_marginal_gain_kernel(GpuMap map, GpuVec3 cand, GpuParent parent_in,
+                                            GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
     MapContext m;
     float3* d_cand_pos;
     ParentFrame parent;
-    GainResults out;
-    int rays = setup_single_parent_marginal(
-        d_map, dx, dy, dz, ox, oy, oz, h_cand_x, h_cand_y, h_cand_z,
-        h_parent_x, h_parent_y, h_parent_z, h_parent_R, h_parent_depth,
-        params, cam, &m, &d_cand_pos, &parent, &out);
+    GainResults res;
+    int rays = setup_single_parent_marginal(map, cand, parent_in, params, cam,
+                                            &m, &d_cand_pos, &parent, &res);
 
     evaluate_marginal_gain_kernel<<<1, min(rays, MAX_THREADS_PER_BLOCK)>>>(
-        m, d_cand_pos, parent, out, params);
+        m, d_cand_pos, parent, res, params);
     cudaDeviceSynchronize();
 
-    teardown_single_parent_marginal(d_cand_pos, parent, out, cam,
-                                    h_result_gain, h_result_yaw, h_result_depths);
+    teardown_single_parent_marginal(d_cand_pos, parent, res, cam, out);
 }
 
-extern "C" void launch_marginal_gain_kernel_v2(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float h_cand_x, float h_cand_y, float h_cand_z,
-    float h_parent_x, float h_parent_y, float h_parent_z,
-    float h_parent_yaw, float* h_parent_R, float* h_parent_depth,
-    float* h_result_gain, float* h_result_yaw, float* h_result_depths,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
-
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
-    aep::ParentCameraConfig cam = derive_camera_config(gain_range, voxel_size, params);
+extern "C" void launch_marginal_gain_kernel_v2(GpuMap map, GpuVec3 cand, GpuParent parent_in,
+                                               GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
     MapContext m;
     float3* d_cand_pos;
     ParentFrame parent;
-    GainResults out;
-    int rays = setup_single_parent_marginal(
-        d_map, dx, dy, dz, ox, oy, oz, h_cand_x, h_cand_y, h_cand_z,
-        h_parent_x, h_parent_y, h_parent_z, h_parent_R, h_parent_depth,
-        params, cam, &m, &d_cand_pos, &parent, &out);
+    GainResults res;
+    int rays = setup_single_parent_marginal(map, cand, parent_in, params, cam,
+                                            &m, &d_cand_pos, &parent, &res);
 
     evaluate_marginal_gain_kernel_v2<<<1, min(rays, MAX_THREADS_PER_BLOCK)>>>(
-        m, d_cand_pos, parent, out, params);
+        m, d_cand_pos, parent, res, params);
     cudaDeviceSynchronize();
 
-    teardown_single_parent_marginal(d_cand_pos, parent, out, cam,
-                                    h_result_gain, h_result_yaw, h_result_depths);
+    teardown_single_parent_marginal(d_cand_pos, parent, res, cam, out);
 }
 
-extern "C" void launch_marginal_gain_kernel_v3(
-    uint8_t* d_map,
-    int dx, int dy, int dz,
-    float ox, float oy, float oz,
-    float h_cand_x, float h_cand_y, float h_cand_z,
-    int num_ancestors,
-    float* h_parent_pos,    // [3*num_ancestors]  (x,y,z per ancestor)
-    float* h_parent_yaw,    // [num_ancestors]
-    float* h_parent_R,      // [9*num_ancestors]  (row-major, 3 rows per ancestor)
-    float* h_parent_depth,  // [num_ancestors * p_width * p_height], or nullptr
-    float* h_result_gain, float* h_result_yaw, float* h_result_depths,
-    float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
+extern "C" void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ancestors_in,
+                                               GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
-    KernelParams params = make_kernel_params(voxel_size, gain_range, fov_y, fov_p, pitch);
-    aep::ParentCameraConfig cam = derive_camera_config(gain_range, voxel_size, params);
-
+    int n = ancestors_in.count;
     int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     size_t buffer_size_all = (size_t)rays_per_candidate * sizeof(float);
@@ -749,34 +687,34 @@ extern "C" void launch_marginal_gain_kernel_v3(
     float3* d_parent_R;
     float*  d_parent_yaw;
     float*  d_parent_depth;
-    cudaMalloc(&d_parent_pos,   num_ancestors * sizeof(float3));
-    cudaMalloc(&d_parent_R,     num_ancestors * 3 * sizeof(float3));
-    cudaMalloc(&d_parent_yaw,   num_ancestors * sizeof(float));
-    cudaMalloc(&d_parent_depth, num_ancestors * per * sizeof(float));
+    cudaMalloc(&d_parent_pos,   n * sizeof(float3));
+    cudaMalloc(&d_parent_R,     n * 3 * sizeof(float3));
+    cudaMalloc(&d_parent_yaw,   n * sizeof(float));
+    cudaMalloc(&d_parent_depth, n * per * sizeof(float));
 
-    float3 h_pos = make_float3(h_cand_x, h_cand_y, h_cand_z);
+    float3 h_pos = make_float3(cand.x, cand.y, cand.z);
     cudaMemcpy(d_cand_pos, &h_pos, sizeof(float3), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_parent_pos, h_parent_pos, num_ancestors * 3 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_parent_R,   h_parent_R,   num_ancestors * 9 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_parent_yaw, h_parent_yaw, num_ancestors * sizeof(float),     cudaMemcpyHostToDevice);
-    if (h_parent_depth != nullptr) {
-        cudaMemcpy(d_parent_depth, h_parent_depth, num_ancestors * per * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parent_pos, ancestors_in.pos, n * 3 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parent_R,   ancestors_in.R,   n * 9 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parent_yaw, ancestors_in.yaw, n * sizeof(float),     cudaMemcpyHostToDevice);
+    if (ancestors_in.depth != nullptr) {
+        cudaMemcpy(d_parent_depth, ancestors_in.depth, n * per * sizeof(float), cudaMemcpyHostToDevice);
     } else {
-        cudaMemset(d_parent_depth, 0, num_ancestors * per * sizeof(float));
+        cudaMemset(d_parent_depth, 0, n * per * sizeof(float));
     }
 
-    MapContext m = {d_map, make_int3(dx, dy, dz), make_float3(ox, oy, oz)};
-    AncestorSet ancestors = {d_parent_pos, d_parent_yaw, d_parent_depth, d_parent_R, num_ancestors, cam};
-    GainResults out = {d_res_gain, d_res_yaw, d_depth_buffer_all, d_depth_buffer};
+    MapContext m = context_of(map);
+    AncestorSet ancestors = {d_parent_pos, d_parent_yaw, d_parent_depth, d_parent_R, n, cam};
+    GainResults res = {d_res_gain, d_res_yaw, d_depth_buffer_all, d_depth_buffer};
 
     evaluate_marginal_gain_kernel_v3<<<1, min(rays_per_candidate, MAX_THREADS_PER_BLOCK)>>>(
-        m, d_cand_pos, ancestors, out, params);
+        m, d_cand_pos, ancestors, res, params);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(h_result_gain, d_res_gain, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_result_yaw, d_res_yaw, sizeof(float), cudaMemcpyDeviceToHost);
-    if (h_result_depths != nullptr) {
-        cudaMemcpy(h_result_depths, d_depth_buffer, buffer_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.gain, d_res_gain, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw, d_res_yaw, sizeof(float), cudaMemcpyDeviceToHost);
+    if (out.depths != nullptr) {
+        cudaMemcpy(out.depths, d_depth_buffer, buffer_size, cudaMemcpyDeviceToHost);
     }
 
     cudaFree(d_cand_pos);

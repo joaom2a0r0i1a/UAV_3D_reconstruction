@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 #include <chrono> // For timing
 
-extern "C" void launch_aep_kernel();
+extern "C" void launch_gain_kernel();
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "gpu_sanity_check");
@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
     ROS_INFO("--- 1. Cold Start (Initializing Driver) ---");
     auto start = std::chrono::high_resolution_clock::now();
     
-    launch_aep_kernel(); // This will take ~0.8s
+    launch_gain_kernel(); // This will take ~0.8s
     
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> diff = end - start;
@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     ROS_INFO("--- 2. Warm Run (Actual Speed) ---");
     start = std::chrono::high_resolution_clock::now();
     
-    launch_aep_kernel(); // This should be nearly instant
+    launch_gain_kernel(); // This should be nearly instant
     
     end = std::chrono::high_resolution_clock::now();
     diff = end - start;

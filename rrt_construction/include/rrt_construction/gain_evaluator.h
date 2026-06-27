@@ -13,6 +13,7 @@
 
 #include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/kino_rrt_star_kd.h>
+#include <rrt_construction/gpu_raycast_launch.h>
 
 #include <cmath>
 #include <chrono>
@@ -166,6 +167,10 @@ class GainEvaluator {
   const voxblox::CameraModel& getCameraModel() const;
 
  private:
+  // Bundle the cached map / sensor state into the launcher ABI structs.
+  GpuMap gpuMap() const;
+  GpuSensor gpuSensor() const;
+
   // NON-OWNED pointer to the tsdf layer to use for evaluating exploration gain.
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
   voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
