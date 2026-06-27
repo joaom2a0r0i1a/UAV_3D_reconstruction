@@ -103,9 +103,9 @@ class GainEvaluator {
 
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
-  std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, std::shared_ptr<rrt_star::Node> candidate_node);
+  std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node);
 
-  void populateParentHistory(const std::vector<uint8_t>& flat_map, std::shared_ptr<rrt_star::Node> node);
+  void populateParentHistory(const std::vector<uint8_t>& flat_map, rrt_star::Node* node);
 
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);
@@ -148,18 +148,17 @@ class GainEvaluator {
 
   /*              COST AND SCORE FUNCTIONS                 */
 
-  // Calculate cost and score - Node version
-  void computeCost(std::shared_ptr<rrt_star::Node>& new_node);
+  // Calculate cost and score
+  void computeCost(rrt_star::Node* new_node);
 
-  void computeScore(std::shared_ptr<rrt_star::Node>& new_node, double lambda);
+  void computeScore(rrt_star::Node* new_node, double lambda);
 
-  // Calculate cost and score - Trajectory version
-  void computeCostTwo(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory);
+  void computeCostTwo(kino_rrt_star::Trajectory* new_trajectory);
 
-  void computeScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2);
+  void computeScore(kino_rrt_star::Trajectory* new_trajectory, double lambda1, double lambda2);
 
-  void computeSingleScore(std::shared_ptr<kino_rrt_star::Trajectory>& new_trajectory, double lambda1, double lambda2);
-
+  void computeSingleScore(kino_rrt_star::Trajectory* new_trajectory, double lambda1, double lambda2);
+  
 
   /*              GET VOXBLOX CAMERA MODEL                 */
 

@@ -126,8 +126,8 @@ double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool AEPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const {
-    for (const std::shared_ptr<rrt_star::Node>& node : path) {
+bool AEPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const {
+    for (rrt_star::Node* node : path) {
         if (getMapDistance(node->point.head(3)) < uav_radius) {
             return false;
         }
@@ -183,90 +183,75 @@ void AEPlanner::AEP() {
 
 void AEPlanner::localPlanner() {
     best_score_ = 0;
-    std::shared_ptr<rrt_star::Node> best_node = nullptr;
-    std::shared_ptr<rrt_star::Node> root;
+    rrt_star::Node* best_node = nullptr;
+
+    std::unique_ptr<rrt_star::Node> root_owned;
     if (best_branch.size() > 1) {
-        root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
+        root_owned = std::make_unique<rrt_star::Node>(best_branch[1]->point);
     } else {
-        root = std::make_shared<rrt_star::Node>(pose);
+        root_owned = std::make_unique<rrt_star::Node>(pose);
     }
-    trajectory_point.position_W = root->point.head(3);
-    trajectory_point.setFromYaw(root->point[3]);
-    std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
-    root->gain = result.first;
-    root->point[3] = result.second;
+    trajectory_point.position_W = root_owned->point.head(3);
+    trajectory_point.setFromYaw(root_owned->point[3]);
+    std::pair<double, double> result_root = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
+    root_owned->gain = result_root.first;
+    root_owned->point[3] = result_root.second;
 
-    root->cost = 0;
-    root->score = root->gain;
-
-    if (root->score > best_score_) {
-        best_score_ = root->score;
-        best_node = root;
-    }
+    root_owned->cost = 0;
+    root_owned->score = root_owned->gain;
 
     RRTStar.clearKDTree();
-    RRTStar.addKDTreeNode(root);
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root_owned));
+
+    if (root_ptr->score > best_score_) {
+        best_score_ = root_ptr->score;
+        best_node = root_ptr;
+    }
 
     clearMarkers();
 
-    visualize_node(root->point, ns);
+    visualize_node(root_ptr->point, ns);
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
     if (best_branch.size() > 0) {
-        previous_root = best_branch[0];
+        previous_root = std::make_unique<rrt_star::Node>(*best_branch[0]);
     }
     while (j < N_max || best_score_ <= g_zero) {
-        /*// Backtrack
-        if (collision_id_counter_ > 10000 * j) {
-            if (previous_root) {
-                //next_best_node = previous_root;
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
-            } else {
-                ROS_INFO("[AEPlanner]: Enough");
-                collision_id_counter_ = 0;
-                break;
-            }
-            return;
-        }*/
-
-        // Add previous best branch 
+        // Add previous best branch
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
                 continue; // Skip first iteration (root)
             }
-            
+
             const Eigen::Vector4d& node_position = best_branch[i]->point;
 
-            std::shared_ptr<rrt_star::Node> nearest_node_best;
+            rrt_star::Node* nearest_node_best = nullptr;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
-            
-            std::shared_ptr<rrt_star::Node> new_node_best;
-            new_node_best = std::make_shared<rrt_star::Node>(node_position);
+
+            std::unique_ptr<rrt_star::Node> new_node_best = std::make_unique<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
             trajectory_point.position_W = new_node_best->point.head(3);
             trajectory_point.setFromYaw(new_node_best->point[3]);
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
-            new_node_best->gain = result.first;
-            new_node_best->point[3] = result.second;
+            std::pair<double, double> result_bb = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
+            new_node_best->gain = result_bb.first;
+            new_node_best->point[3] = result_bb.second;
 
-            segment_evaluator.computeCost(new_node_best);
-            segment_evaluator.computeScore(new_node_best, lambda);
+            segment_evaluator.computeCost(new_node_best.get());
+            segment_evaluator.computeScore(new_node_best.get(), lambda);
 
             if (new_node_best->score > best_score_) {
                 best_score_ = new_node_best->score;
-                best_node = new_node_best;
+                best_node = new_node_best.get(); // capture before move
             }
 
             ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
-            
 
-            RRTStar.addKDTreeNode(new_node_best);
-            visualize_edge(new_node_best, ns);
+            rrt_star::Node* added_bb = RRTStar.addKDTreeNode(std::move(new_node_best));
+            visualize_edge(added_bb, ns);
 
             ++j;
         }
@@ -274,32 +259,32 @@ void AEPlanner::localPlanner() {
         if (j >= N_max && best_score_ > g_zero) {
             break;
         }
-    
+
         best_branch.clear();
 
         Eigen::Vector3d rand_point;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
-        rand_point += root->point.head(3);
+        rand_point += root_ptr->point.head(3);
 
-        std::shared_ptr<rrt_star::Node> nearest_node;
+        rrt_star::Node* nearest_node = nullptr;
         RRTStar.findNearestKD(rand_point, nearest_node);
 
-        std::shared_ptr<rrt_star::Node> new_node;
+        std::unique_ptr<rrt_star::Node> new_node;
         RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
 
-        if (new_node->point[0] > initial_offset[0] + max_x || new_node->point[0] < initial_offset[0] + min_x || new_node->point[1] < initial_offset[1] + min_y || new_node->point[1] > initial_offset[1] + max_y || new_node->point[2] < initial_offset[2] + min_z || new_node->point[2] > initial_offset[2] + max_z) {
+        if (new_node->point[0] > initial_offset[0] + max_x || new_node->point[0] < initial_offset[0] + min_x
+            || new_node->point[1] < initial_offset[1] + min_y || new_node->point[1] > initial_offset[1] + max_y
+            || new_node->point[2] < initial_offset[2] + min_z || new_node->point[2] > initial_offset[2] + max_z) {
             continue;
         }
 
         // Collision Check
-        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
-        trajectory_segment.push_back(new_node);
+        std::vector<rrt_star::Node*> trajectory_segment;
+        trajectory_segment.push_back(new_node.get());
 
-        bool success_collision = false;
-        success_collision = isPathCollisionFree(trajectory_segment);
+        bool success_collision = isPathCollisionFree(trajectory_segment);
 
         if (!success_collision) {
-            //clear_node();
             trajectory_segment.clear();
             collision_id_counter_++;
             continue;
@@ -314,22 +299,22 @@ void AEPlanner::localPlanner() {
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
-        segment_evaluator.computeCost(new_node);
-        segment_evaluator.computeScore(new_node, lambda);
+        segment_evaluator.computeCost(new_node.get());
+        segment_evaluator.computeScore(new_node.get(), lambda);
 
         if (new_node->score > best_score_) {
             best_score_ = new_node->score;
-            best_node = new_node;
+            best_node = new_node.get(); // capture before move
         }
 
         ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
 
-        RRTStar.addKDTreeNode(new_node);
-        visualize_edge(new_node, ns);
-
         if (new_node->gain > g_zero) {
-            cacheNode(new_node);
+            cacheNode(new_node.get()); // must be before move
         }
+
+        rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
+        visualize_edge(added_node, ns);
 
         if (j > N_termination) {
             ROS_INFO("[AEPlanner]: Going to Global Planning");
@@ -341,28 +326,28 @@ void AEPlanner::localPlanner() {
         }
 
         ++j;
-
     }
-    
+
     if (best_node) {
         next_best_node = best_node;
         RRTStar.backtrackPathAEP(best_node, best_branch);
         visualize_path(best_node, ns);
     }
 
-    for (int k = 1; k < best_branch.size(); ++k) {
+    for (size_t k = 1; k < best_branch.size(); ++k) {
         if (best_branch[k]->gain > g_zero) {
-            next_best_node = best_branch[k];
-            std::vector<std::shared_ptr<rrt_star::Node>>::iterator start = best_branch.begin() + k - 1;
-            std::vector<std::shared_ptr<rrt_star::Node>>::iterator end = best_branch.end();
-            std::vector<std::shared_ptr<rrt_star::Node>> sliced_branch(start, end);
-            best_branch = sliced_branch;
+            next_best_node = best_branch[k].get();
+            std::vector<std::unique_ptr<rrt_star::Node>> sliced_branch;
+            for (size_t m = k - 1; m < best_branch.size(); ++m) {
+                sliced_branch.push_back(std::move(best_branch[m]));
+            }
+            best_branch = std::move(sliced_branch);
             break;
         }
     }
 }
 
-void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node) {
+void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node) {
     if (GlobalFrontiers.size() == 0) {
         ROS_INFO("[AEPlanner]: Terminate AEP");
 
@@ -374,31 +359,29 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         return;
     }
 
-    std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    RRTStar.addKDTreeNode(root);
-    std::vector<std::shared_ptr<rrt_star::Node>> all_global_goals;
+    std::unique_ptr<rrt_star::Node> root_owned = std::make_unique<rrt_star::Node>(pose);
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root_owned));
+    std::vector<rrt_star::Node*> all_global_goals;
 
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
         Eigen::Vector3d rand_point_star;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
-        rand_point_star += root->point.head(3);
+        rand_point_star += root_ptr->point.head(3);
 
-        std::shared_ptr<rrt_star::Node> nearest_node_star;
+        rrt_star::Node* nearest_node_star = nullptr;
         RRTStar.findNearestKD(rand_point_star, nearest_node_star);
 
-        std::shared_ptr<rrt_star::Node> new_node_star;
+        std::unique_ptr<rrt_star::Node> new_node_star;
         RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star);
 
         // Collision Check
-        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_star;
-        trajectory_segment_star.push_back(new_node_star);
+        std::vector<rrt_star::Node*> trajectory_segment_star;
+        trajectory_segment_star.push_back(new_node_star.get());
 
-        bool success_collision_star = false;
-        success_collision_star = isPathCollisionFree(trajectory_segment_star);
+        bool success_collision_star = isPathCollisionFree(trajectory_segment_star);
 
         if (!success_collision_star) {
-            //clear_node();
             trajectory_segment_star.clear();
             continue;
         }
@@ -407,20 +390,18 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         visualize_node(new_node_star->point, ns);
 
         // Add Nodes
-        std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes_star;
-        RRTStar.findNearbyKD(new_node_star, radius, nearby_nodes_star);
-        RRTStar.chooseParent(new_node_star, nearby_nodes_star);
+        std::vector<rrt_star::Node*> nearby_nodes_star;
+        RRTStar.findNearbyKD(new_node_star.get(), radius, nearby_nodes_star);
+        RRTStar.chooseParent(new_node_star.get(), nearby_nodes_star);
 
-        RRTStar.addKDTreeNode(new_node_star);
-        RRTStar.rewire(new_node_star, nearby_nodes_star, radius);
-        visualize_edge(new_node_star, ns);
+        rrt_star::Node* added_star = RRTStar.addKDTreeNode(std::move(new_node_star));
+        RRTStar.rewire(added_star, nearby_nodes_star, radius);
+        visualize_edge(added_star, ns);
 
-        bool goal_reached;
-        goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star);
+        bool goal_reached = getGlobalGoal(GlobalFrontiers, added_star);
         if (goal_reached) {
-            segment_evaluator.computeScore(new_node_star, global_lambda);
-            all_global_goals.push_back(new_node_star);
-            goal_reached = false;
+            segment_evaluator.computeScore(added_star, global_lambda);
+            all_global_goals.push_back(added_star);
         }
         ++m;
     }
@@ -447,7 +428,7 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
     }
 }
 
-bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<rrt_star::Node>& node) {
+bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node) {
     // Initialize KD Tree
     goals_tree.clearKDTreePoints();
     for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
@@ -485,7 +466,7 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
     return false;
 }
 
-void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node) {
+void AEPlanner::getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goals, rrt_star::Node*& best_global_node) {
     if (global_goals.size() == 0) {
         best_global_node = nullptr;
         return;
@@ -514,7 +495,7 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
         }
     }
 
-    std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
+    rrt_star::Node* auxiliar_node = best_global_node;
 
     // Skip the last best node
     if (auxiliar_node->parent) {
@@ -540,7 +521,7 @@ void AEPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::No
     visualize_path(best_global_node, ns);
 }
 
-void AEPlanner::cacheNode(std::shared_ptr<rrt_star::Node> Node) {
+void AEPlanner::cacheNode(rrt_star::Node* Node) {
     if (!Node) {
         return;
     }
@@ -831,7 +812,7 @@ void AEPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& ns
     pub_markers.publish(n);
 }
 
-void AEPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
+void AEPlanner::visualize_edge(rrt_star::Node* node, const std::string& ns) {
     visualization_msgs::Marker e;
     e.header.stamp = ros::Time::now();
     e.header.seq = edge_id_counter_;
@@ -874,8 +855,8 @@ void AEPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, const
     pub_markers.publish(e);
 }
 
-void AEPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
-    std::shared_ptr<rrt_star::Node> current = node;
+void AEPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
+    rrt_star::Node* current = node;
     
     while (current->parent) {
         visualization_msgs::Marker p;
@@ -920,7 +901,7 @@ void AEPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, const
     }
 }
 
-void AEPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
+void AEPlanner::visualize_frustum(rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
@@ -949,7 +930,7 @@ void AEPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
     pub_frustum.publish(frustum);
 }
 
-void AEPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position) {
+void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);

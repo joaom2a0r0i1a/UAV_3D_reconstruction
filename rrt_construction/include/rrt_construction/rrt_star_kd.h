@@ -16,7 +16,8 @@ public:
 
     struct Node {
         Eigen::Vector4d point;
-        std::shared_ptr<Node> parent;
+        Node* parent;                  // non-owning observer of the parent node
+        std::vector<Node*> children;   // non-owning observers of the child nodes
         double cost;
         double gain;
         double score;
@@ -33,19 +34,32 @@ public:
 
     struct KDTree_data {
         std::vector<Eigen::Vector3d> points;
-        std::vector<std::shared_ptr<Node>> data;
+        std::vector<std::unique_ptr<Node>> data;   // exclusive owner of all node memory
 
         void clear();
 
-        inline void addNode(const std::shared_ptr<Node>& newNode) {
-            data.push_back(newNode);
+        // Takes exclusive ownership of newNode and returns a non-owning observer.
+        // The raw structural links (parent <-> children) are wired BEFORE ownership
+        // is transferred into the flat `data` vector, so they are valid the instant
+        // the node lands in the tree.
+        inline Node* addNode(std::unique_ptr<Node> newNode, Node* parentNode) {
+            if (parentNode) {
+                newNode->parent = parentNode;
+                parentNode->children.push_back(newNode.get());
+            }
             points.push_back(newNode->point.head(3));
+            data.push_back(std::move(newNode));
+            return data.back().get();
         }
 
-        inline void addNodes(const std::vector<std::shared_ptr<Node>>& newNodes) {
-            for (int i = 0; i < newNodes.size(); ++i) {
-                data.push_back(newNodes[i]);
+        inline void addNodes(std::vector<std::unique_ptr<Node>>& newNodes) {
+            for (size_t i = 0; i < newNodes.size(); ++i) {
+                Node* parentNode = newNodes[i]->parent;   // links already set by the caller
+                if (parentNode) {
+                    parentNode->children.push_back(newNodes[i].get());
+                }
                 points.push_back(newNodes[i]->point.head(3));
+                data.push_back(std::move(newNodes[i]));
             }
         }
 
@@ -68,11 +82,12 @@ public:
     
     rrt_star();
 
-    void addKDTreeNode(std::shared_ptr<Node>& node);
+    // Takes ownership of node and returns a non-owning observer to it.
+    Node* addKDTreeNode(std::unique_ptr<Node> node);
 
     void clearKDTree();
 
-    void initializeKDTreeWithNodes(std::vector<std::shared_ptr<Node>>& nodes);
+    void initializeKDTreeWithNodes(std::vector<std::unique_ptr<Node>>& nodes);
 
     Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z);
 
@@ -82,37 +97,44 @@ public:
 
     void computeYaw(double radius, double& result);
 
-    void findNearest(const std::vector<std::shared_ptr<Node>>& tree, const Eigen::Vector3d& point, std::shared_ptr<Node>& nearestNode);
+    void findNearest(const std::vector<std::unique_ptr<Node>>& tree, const Eigen::Vector3d& point, Node*& nearestNode);
 
-    void findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Node>& nearestNode);
+    void findNearestKD(const Eigen::Vector3d& point, Node*& nearestNode);
 
-    void steer(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::shared_ptr<Node>& result);
+    void steer(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& result);
 
-    void steer_parent(const std::shared_ptr<Node>& fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::shared_ptr<Node>& new_node);
+    void steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node);
 
     bool collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles);
 
-    void findNearby(const std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& point, double radius, std::vector<std::shared_ptr<Node>>& nearbyNodes);
+    void findNearby(const std::vector<std::unique_ptr<Node>>& tree, Node* point, double radius, std::vector<Node*>& nearbyNodes);
 
-    void findNearbyKD(const std::shared_ptr<Node>& point, double radius, std::vector<std::shared_ptr<Node>>& nearbyNodes);
+    void findNearbyKD(Node* point, double radius, std::vector<Node*>& nearbyNodes);
 
-    void chooseParent(std::shared_ptr<Node>& point, const std::vector<std::shared_ptr<Node>>& nearbyNodes);
+    void chooseParent(Node* point, const std::vector<Node*>& nearbyNodes);
 
-    //void rewire(std::vector<std::shared_ptr<Node>>& tree, const std::shared_ptr<Node>& new_node, const std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
+    //void rewire(std::vector<std::unique_ptr<Node>>& tree, Node* new_node, const std::vector<Node*>& nearby_nodes, double radius);
 
-    void rewire(const std::shared_ptr<Node>& new_node, std::vector<std::shared_ptr<Node>>& nearby_nodes, double radius);
+    void rewire(Node* new_node, std::vector<Node*>& nearby_nodes, double radius);
 
-    double calculateYawAngle(const std::shared_ptr<Node>& node1, const std::shared_ptr<Node>& node2);
+    // Downward traversal helper: after a re-parent, recompute descendant costs by
+    // walking the raw `children` links. Never searches the owning `data` vector.
+    void propagateCost(Node* node);
 
-    void backtrackPathNode(const std::shared_ptr<Node>& node, std::vector<Eigen::Vector4d>& path, std::shared_ptr<Node>& nextBestNode);
+    double calculateYawAngle(Node* node1, Node* node2);
 
-    void backtrackPathAEP(const std::shared_ptr<Node>& node, std::vector<std::shared_ptr<Node>>& path);
+    void backtrackPathNode(Node* node, std::vector<Eigen::Vector4d>& path, Node*& nextBestNode);
+
+    // Fills path with owning deep copies of the branch (root -> node). The clones
+    // keep their parent links amongst themselves so the branch is self-contained and
+    // outlives clearKDTree(). Callers store this in their owning best_branch cache.
+    void backtrackPathAEP(Node* node, std::vector<std::unique_ptr<Node>>& path);
 
     bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
                 const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles,
                 double dim_x, double dim_y, double dim_z, int max_iter,
                 double step_size, double radius, double tolerance,
-                std::vector<std::shared_ptr<Node>>& tree, std::vector<Eigen::Vector4d>& path);
+                std::vector<std::unique_ptr<Node>>& tree, std::vector<Eigen::Vector4d>& path);
 
 private:
     std::unique_ptr<Tree> kdtree_;

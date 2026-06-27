@@ -6,3 +6,5 @@ lib/
 
 # Ignore Visual Studio Code configuration files
 .vscode/
+.catkin_tools/
+.claude/

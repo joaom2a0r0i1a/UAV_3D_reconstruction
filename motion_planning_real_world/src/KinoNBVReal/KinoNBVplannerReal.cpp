@@ -126,8 +126,8 @@ double KinoNBVPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool KinoNBVPlanner::isTrajectoryCollisionFree(const std::shared_ptr<kino_rrt_star::Trajectory>& trajectory) const {    
-    std::shared_ptr<kino_rrt_star::Node>& node = trajectory->TrajectoryPoints.back();
+bool KinoNBVPlanner::isTrajectoryCollisionFree(kino_rrt_star::Trajectory* trajectory) const {
+    kino_rrt_star::Node* node = trajectory->TrajectoryPoints.back().get();
     if (getMapDistance(node->point.head(3)) < uav_radius) {
         return false;
     }
@@ -154,18 +154,18 @@ void KinoNBVPlanner::GetTransformation() {
 
 void KinoNBVPlanner::KinoNBV() {
     best_score_ = 0.0;
-    std::shared_ptr<kino_rrt_star::Trajectory> best_trajectory = nullptr;
+    kino_rrt_star::Trajectory* best_trajectory = nullptr;
 
     double node_size = 0.2;
 
-    std::shared_ptr<kino_rrt_star::Node> root_node;
-    std::shared_ptr<kino_rrt_star::Trajectory> Root;
+    std::unique_ptr<kino_rrt_star::Node> root_node;
+    std::unique_ptr<kino_rrt_star::Trajectory> Root;
     if (best_branch.size() > 1) {
-        root_node = std::make_shared<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
-        Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
+        root_node = std::make_unique<kino_rrt_star::Node>(best_branch[1]->TrajectoryPoints.back()->point, best_branch[1]->TrajectoryPoints.back()->velocity, best_branch[1]->TrajectoryPoints.back()->acceleration);
+        Root = std::make_unique<kino_rrt_star::Trajectory>(std::move(root_node));
     } else {
-        root_node = std::make_shared<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d(0, 0, 0));
-        Root = std::make_shared<kino_rrt_star::Trajectory>(root_node);
+        root_node = std::make_unique<kino_rrt_star::Node>(pose, velocity, Eigen::Vector3d(0, 0, 0));
+        Root = std::make_unique<kino_rrt_star::Trajectory>(std::move(root_node));
     }
 
     Root->cost = 0.0;
@@ -173,20 +173,20 @@ void KinoNBVPlanner::KinoNBV() {
 
     if (Root->score > best_score_) {
         best_score_ = Root->score;
-        best_trajectory = Root;
+        best_trajectory = Root.get();
     }
 
     KinoRRTStar.clearKDTree();
-    KinoRRTStar.addKDTreeTrajectory(Root);
+    kino_rrt_star::Trajectory* root_ptr = KinoRRTStar.addKDTreeTrajectory(std::move(Root));
     clearMarkers();
-    visualize_node(Root->TrajectoryPoints.back()->point, 2*node_size, ns);
+    visualize_node(root_ptr->TrajectoryPoints.back()->point, 2*node_size, ns);
 
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
     if (best_branch.size() > 0) {
-        previous_trajectory = best_branch[0];
+        previous_trajectory = best_branch[0]->clone();
     }
     while (j < N_max || best_score_ <= 0.0) {
         // Backtrack
@@ -212,33 +212,32 @@ void KinoNBVPlanner::KinoNBV() {
 
             const Eigen::Vector4d& node_position = best_branch[i]->TrajectoryPoints.back()->point;
 
-            std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory_best;
+            kino_rrt_star::Trajectory* nearest_trajectory_best = nullptr;
             KinoRRTStar.findNearestKD(node_position.head(3), nearest_trajectory_best);
-            
-            std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory_best;
-            new_trajectory_best = best_branch[i];
-            new_trajectory_best->parent = nearest_trajectory_best;
 
-            visualize_node(new_trajectory_best->TrajectoryPoints.back()->point, node_size, ns);
+            kino_rrt_star::Trajectory* raw_best = best_branch[i].get();
+            raw_best->parent = nearest_trajectory_best;
 
-            trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
-            trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
+            visualize_node(raw_best->TrajectoryPoints.back()->point, node_size, ns);
+
+            trajectory_point.position_W = raw_best->TrajectoryPoints.back()->point.head(3);
+            trajectory_point.setFromYaw(raw_best->TrajectoryPoints.back()->point[3]);
 
             double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point, initial_offset);
-            new_trajectory_best->gain = result_best;
+            raw_best->gain = result_best;
 
-            segment_evaluator.computeCostTwo(new_trajectory_best);
-            segment_evaluator.computeScore(new_trajectory_best, lambda, lambda2);
+            segment_evaluator.computeCostTwo(raw_best);
+            segment_evaluator.computeScore(raw_best, lambda, lambda2);
 
-            if (new_trajectory_best->score > best_score_) {
-                best_score_ = new_trajectory_best->score;
-                best_trajectory = new_trajectory_best;
+            if (raw_best->score > best_score_) {
+                best_score_ = raw_best->score;
+                best_trajectory = raw_best;
             }
 
-            ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", new_trajectory_best->score);
+            ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", raw_best->score);
 
-            KinoRRTStar.addKDTreeTrajectory(new_trajectory_best);
-            visualize_trajectory(new_trajectory_best, ns);
+            kino_rrt_star::Trajectory* added_bb = KinoRRTStar.addKDTreeTrajectory(std::move(best_branch[i]));
+            visualize_trajectory(added_bb, ns);
 
             ++j;
         }
@@ -253,9 +252,9 @@ void KinoNBVPlanner::KinoNBV() {
         Eigen::Vector3d rand_point;
         KinoRRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
         rand_point = rand_point_yaw.head(3);
-        rand_point += root_node->point.head(3);
+        rand_point += root_ptr->TrajectoryPoints.back()->point.head(3);
 
-        std::shared_ptr<kino_rrt_star::Trajectory> nearest_trajectory;
+        kino_rrt_star::Trajectory* nearest_trajectory = nullptr;
         KinoRRTStar.findNearestKD(rand_point, nearest_trajectory);
 
         int accel_iteration = 0;
@@ -265,8 +264,8 @@ void KinoNBVPlanner::KinoNBV() {
             Eigen::Vector3d accel;
             KinoRRTStar.computeAccelerationSampling(max_accel, accel);
 
-            std::shared_ptr<kino_rrt_star::Trajectory> new_trajectory;
-            new_trajectory = std::make_shared<kino_rrt_star::Trajectory>();
+            std::unique_ptr<kino_rrt_star::Trajectory> new_trajectory;
+            new_trajectory = std::make_unique<kino_rrt_star::Trajectory>();
             KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel,  max_heading_velocity, max_heading_accel, step_size, new_trajectory);
             new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
 
@@ -286,7 +285,7 @@ void KinoNBVPlanner::KinoNBV() {
             }
 
             // Collision Check
-            if (!isTrajectoryCollisionFree(new_trajectory)) {
+            if (!isTrajectoryCollisionFree(new_trajectory.get())) {
                 collision_id_counter_++;
                 /*if (collision_id_counter_ > 1000 * j) {
                     break;
@@ -305,18 +304,18 @@ void KinoNBVPlanner::KinoNBV() {
             double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain, initial_offset);
             new_trajectory->gain = result;
 
-            segment_evaluator.computeCostTwo(new_trajectory);
-            segment_evaluator.computeScore(new_trajectory, lambda, lambda2);
+            segment_evaluator.computeCostTwo(new_trajectory.get());
+            segment_evaluator.computeScore(new_trajectory.get(), lambda, lambda2);
 
             if (new_trajectory->score > best_score_) {
                 best_score_ = new_trajectory->score;
-                best_trajectory = new_trajectory;
+                best_trajectory = new_trajectory.get();
             }
 
             ROS_INFO("[KinoNBVPlanner]: Best Score: %f", new_trajectory->score);
 
-            KinoRRTStar.addKDTreeTrajectory(new_trajectory);
-            visualize_trajectory(new_trajectory, ns);
+            kino_rrt_star::Trajectory* added = KinoRRTStar.addKDTreeTrajectory(std::move(new_trajectory));
+            visualize_trajectory(added, ns);
 
         }
 
@@ -331,8 +330,6 @@ void KinoNBVPlanner::KinoNBV() {
             KinoRRTStar.clearKDTree();
             best_branch.clear();
             clearMarkers();
-            best_trajectory.reset();
-            Root.reset();
             changeState(STATE_STOPPED);
             break;
         }
@@ -520,8 +517,8 @@ void KinoNBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            visualize_frustum(next_best_trajectory->TrajectoryPoints.back());
-            visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back());
+            visualize_frustum(next_best_trajectory->TrajectoryPoints.back().get());
+            visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back().get());
 
             mavros_msgs::PositionTarget setpoint_reference;
 
@@ -645,7 +642,7 @@ void KinoNBVPlanner::visualize_node(const Eigen::Vector4d& pos, double size, con
     pub_markers.publish(n);
 }
 
-void KinoNBVPlanner::visualize_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns) {
+void KinoNBVPlanner::visualize_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns) {
     visualization_msgs::Marker trajectory_marker;
     trajectory_marker.header.stamp = ros::Time::now();
     trajectory_marker.header.frame_id = frame_id;
@@ -678,8 +675,8 @@ void KinoNBVPlanner::visualize_trajectory(const std::shared_ptr<kino_rrt_star::T
     trajectory_id_counter_++;
 }
 
-void KinoNBVPlanner::visualize_best_trajectory(const std::shared_ptr<kino_rrt_star::Trajectory> trajectory, const std::string& ns) {
-    std::shared_ptr<kino_rrt_star::Trajectory> currentTrajectory = trajectory;
+void KinoNBVPlanner::visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns) {
+    kino_rrt_star::Trajectory* currentTrajectory = trajectory;
     
     while (currentTrajectory->parent) {
         visualization_msgs::Marker best_trajectory_marker;
@@ -717,7 +714,7 @@ void KinoNBVPlanner::visualize_best_trajectory(const std::shared_ptr<kino_rrt_st
     }
 }
 
-void KinoNBVPlanner::visualize_frustum(std::shared_ptr<kino_rrt_star::Node> position) {
+void KinoNBVPlanner::visualize_frustum(kino_rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
@@ -746,7 +743,7 @@ void KinoNBVPlanner::visualize_frustum(std::shared_ptr<kino_rrt_star::Node> posi
     pub_frustum.publish(frustum);
 }
 
-void KinoNBVPlanner::visualize_unknown_voxels(std::shared_ptr<kino_rrt_star::Node> position) {
+void KinoNBVPlanner::visualize_unknown_voxels(kino_rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);

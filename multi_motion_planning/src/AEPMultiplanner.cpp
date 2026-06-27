@@ -131,8 +131,8 @@ double AEPMultiPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool AEPMultiPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const {
-    for (const std::shared_ptr<rrt_star::Node>& node : path) {
+bool AEPMultiPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const {
+    for (rrt_star::Node* node : path) {
         if (getMapDistance(node->point.head(3)) < uav_radius) {
             return false;
         }
@@ -169,7 +169,7 @@ void AEPMultiPlanner::AEP() {
         getGlobalFrontiers(GlobalFrontiers);
         if (GlobalFrontiers.size() == 0) {
             changeState(STATE_STOPPED);
-            return;   
+            return;
         }
         ROS_INFO("[AEPMultiPlanner]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
@@ -180,7 +180,7 @@ void AEPMultiPlanner::AEP() {
 
 void AEPMultiPlanner::localPlanner() {
     best_score_ = 0;
-    std::shared_ptr<rrt_star::Node> best_node = nullptr;
+    rrt_star::Node* best_node = nullptr;
 
     // Multi-UAV remove previous planned agent path
     int k;
@@ -193,12 +193,12 @@ void AEPMultiPlanner::localPlanner() {
         segments_[k]->clear();
         segments_[k]->push_back(Eigen::Vector3d(pose[0], pose[1], pose[2]));
     }
-    
-    std::shared_ptr<rrt_star::Node> root;
+
+    std::unique_ptr<rrt_star::Node> root;
     if (best_branch.size() > 1) {
-        root = std::make_shared<rrt_star::Node>(best_branch[1]->point);
+        root = std::make_unique<rrt_star::Node>(best_branch[1]->point);
     } else {
-        root = std::make_shared<rrt_star::Node>(pose);
+        root = std::make_unique<rrt_star::Node>(pose);
     }
     trajectory_point.position_W = root->point.head(3);
     trajectory_point.setFromYaw(root->point[3]);
@@ -209,31 +209,32 @@ void AEPMultiPlanner::localPlanner() {
     root->cost = 0;
     root->score = root->gain;
 
-    if (root->score > best_score_) {
-        best_score_ = root->score;
-        best_node = root;
+    RRTStar.clearKDTree();
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
+
+    if (root_ptr->score > best_score_) {
+        best_score_ = root_ptr->score;
+        best_node = root_ptr;
     }
 
-    RRTStar.clearKDTree();
-    RRTStar.addKDTreeNode(root);
-    if (root->gain > g_zero) {
-        cacheNode(root);
+    if (root_ptr->gain > g_zero) {
+        cacheNode(root_ptr);
     }
-    //cacheNode(root);
+    //cacheNode(root_ptr);
     clearMarkers();
 
-    visualize_node(root->point, ns);
+    visualize_node(root_ptr->point, ns);
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
-    if (best_branch.size() > 0) {
-        previous_root = best_branch[0];
+    if (!best_branch.empty()) {
+        previous_root = std::make_unique<rrt_star::Node>(*best_branch[0]);
     }
     while (j < N_max || best_score_ <= g_zero) {
         // Backtrack
         if (collision_id_counter_ > 10000 * j) {
             if (previous_root) {
-                //next_best_node = previous_root;
+                //next_best_node = previous_root.get();
                 rotate();
                 changeState(STATE_WAITING_INITIALIZE);
             } else {
@@ -244,20 +245,19 @@ void AEPMultiPlanner::localPlanner() {
             return;
         }
 
-        // Add previous best branch 
+        // Add previous best branch
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
                 continue; // Skip first iteration (root)
             }
-            
+
             const Eigen::Vector4d& node_position = best_branch[i]->point;
 
-            std::shared_ptr<rrt_star::Node> nearest_node_best;
+            rrt_star::Node* nearest_node_best = nullptr;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
-            
-            std::shared_ptr<rrt_star::Node> new_node_best;
-            new_node_best = std::make_shared<rrt_star::Node>(node_position);
+
+            std::unique_ptr<rrt_star::Node> new_node_best = std::make_unique<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
@@ -267,20 +267,20 @@ void AEPMultiPlanner::localPlanner() {
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
-            segment_evaluator.computeCost(new_node_best);
-            segment_evaluator.computeScore(new_node_best, lambda);
+            segment_evaluator.computeCost(new_node_best.get());
+            segment_evaluator.computeScore(new_node_best.get(), lambda);
 
             if (new_node_best->score > best_score_) {
                 best_score_ = new_node_best->score;
-                best_node = new_node_best;
+                best_node = new_node_best.get();
             }
 
             //ROS_INFO("[AEPMultiPlanner]: Best Gain BB: %f", new_node_best->gain);
             //ROS_INFO("[AEPMultiPlanner]: Best Cost BB: %f", new_node_best->cost);
             ROS_INFO("[AEPMultiPlanner]: Best Score BB: %f", new_node_best->score);
 
-            RRTStar.addKDTreeNode(new_node_best);
-            visualize_edge(new_node_best, ns);
+            rrt_star::Node* added_bb = RRTStar.addKDTreeNode(std::move(new_node_best));
+            visualize_edge(added_bb, ns);
 
             ++j;
         }
@@ -288,17 +288,17 @@ void AEPMultiPlanner::localPlanner() {
         if (j >= N_max && best_score_ > g_zero) {
             break;
         }
-    
+
         best_branch.clear();
 
         Eigen::Vector3d rand_point;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
-        rand_point += root->point.head(3);
+        rand_point += root_ptr->point.head(3);
 
-        std::shared_ptr<rrt_star::Node> nearest_node;
+        rrt_star::Node* nearest_node = nullptr;
         RRTStar.findNearestKD(rand_point, nearest_node);
 
-        std::shared_ptr<rrt_star::Node> new_node;
+        std::unique_ptr<rrt_star::Node> new_node;
         RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
 
         if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
@@ -306,9 +306,9 @@ void AEPMultiPlanner::localPlanner() {
         }
 
         // Collision Check
-        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
+        std::vector<rrt_star::Node*> trajectory_segment;
         //trajectory_segment.push_back(new_node->parent);
-        trajectory_segment.push_back(new_node);
+        trajectory_segment.push_back(new_node.get());
 
         bool success_collision = false;
         success_collision = isPathCollisionFree(trajectory_segment);
@@ -329,24 +329,24 @@ void AEPMultiPlanner::localPlanner() {
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
-        segment_evaluator.computeCost(new_node);
-        segment_evaluator.computeScore(new_node, lambda);
+        segment_evaluator.computeCost(new_node.get());
+        segment_evaluator.computeScore(new_node.get(), lambda);
 
         if (new_node->score > best_score_) {
             best_score_ = new_node->score;
-            best_node = new_node;
+            best_node = new_node.get();
         }
 
         //ROS_INFO("[AEPMultiPlanner]: Best Gain: %f", new_node->gain);
         //ROS_INFO("[AEPMultiPlanner]: Best Cost: %f", new_node->cost);
         ROS_INFO("[AEPMultiPlanner]: Best Score: %f", new_node->score);
 
-        RRTStar.addKDTreeNode(new_node);
-        visualize_edge(new_node, ns);
-
         if (new_node->gain > g_zero) {
-            cacheNode(new_node);
+            cacheNode(new_node.get());
         }
+
+        rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
+        visualize_edge(added_node, ns);
 
         if (j > N_termination) {
             ROS_INFO("[AEPMultiPlanner]: Going to Global Planning");
@@ -360,26 +360,27 @@ void AEPMultiPlanner::localPlanner() {
         ++j;
 
     }
-    
+
     if (best_node) {
         next_best_node = best_node;
         RRTStar.backtrackPathAEP(best_node, best_branch);
         visualize_path(best_node, ns);
     }
 
-    for (int k = 1; k < best_branch.size(); ++k) {
+    for (size_t k = 1; k < best_branch.size(); ++k) {
         if (best_branch[k]->gain > g_zero) {
-            next_best_node = best_branch[k];
-            std::vector<std::shared_ptr<rrt_star::Node>>::iterator start = best_branch.begin() + k - 1;
-            std::vector<std::shared_ptr<rrt_star::Node>>::iterator end = best_branch.end();
-            std::vector<std::shared_ptr<rrt_star::Node>> sliced_branch(start, end);
-            best_branch = sliced_branch;
+            next_best_node = best_branch[k].get();
+            std::vector<std::unique_ptr<rrt_star::Node>> sliced_branch;
+            for (size_t m = k - 1; m < best_branch.size(); ++m) {
+                sliced_branch.push_back(std::move(best_branch[m]));
+            }
+            best_branch = std::move(sliced_branch);
             break;
         }
     }
 }
 
-void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, std::shared_ptr<rrt_star::Node>& best_global_node) {
+void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node) {
     if (GlobalFrontiers.size() == 0) {
         ROS_INFO("[AEPMultiPlanner]: Terminate AEP");
 
@@ -391,25 +392,25 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
         return;
     }
 
-    std::shared_ptr<rrt_star::Node> root = std::make_shared<rrt_star::Node>(pose);
-    RRTStar.addKDTreeNode(root);
-    std::vector<std::shared_ptr<rrt_star::Node>> all_global_goals;
+    std::unique_ptr<rrt_star::Node> root_owned = std::make_unique<rrt_star::Node>(pose);
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root_owned));
+    std::vector<rrt_star::Node*> all_global_goals;
 
     int m = 0;
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
         Eigen::Vector3d rand_point_star;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
-        rand_point_star += root->point.head(3);
+        rand_point_star += root_ptr->point.head(3);
 
-        std::shared_ptr<rrt_star::Node> nearest_node_star;
+        rrt_star::Node* nearest_node_star = nullptr;
         RRTStar.findNearestKD(rand_point_star, nearest_node_star);
 
-        std::shared_ptr<rrt_star::Node> new_node_star;
+        std::unique_ptr<rrt_star::Node> new_node_star;
         RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star);
 
         // Collision Check
-        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment_star;
-        trajectory_segment_star.push_back(new_node_star);
+        std::vector<rrt_star::Node*> trajectory_segment_star;
+        trajectory_segment_star.push_back(new_node_star.get());
 
         bool success_collision_star = false;
         success_collision_star = isPathCollisionFree(trajectory_segment_star);
@@ -423,19 +424,19 @@ void AEPMultiPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFr
         visualize_node(new_node_star->point, ns);
 
         // Add Nodes
-        std::vector<std::shared_ptr<rrt_star::Node>> nearby_nodes_star;
-        RRTStar.findNearbyKD(new_node_star, radius, nearby_nodes_star);
-        RRTStar.chooseParent(new_node_star, nearby_nodes_star);
+        std::vector<rrt_star::Node*> nearby_nodes_star;
+        RRTStar.findNearbyKD(new_node_star.get(), radius, nearby_nodes_star);
+        RRTStar.chooseParent(new_node_star.get(), nearby_nodes_star);
 
-        RRTStar.addKDTreeNode(new_node_star);
-        RRTStar.rewire(new_node_star, nearby_nodes_star, radius);
-        visualize_edge(new_node_star, ns);
+        rrt_star::Node* added_star = RRTStar.addKDTreeNode(std::move(new_node_star));
+        RRTStar.rewire(added_star, nearby_nodes_star, radius);
+        visualize_edge(added_star, ns);
 
         bool goal_reached;
-        goal_reached = getGlobalGoal(GlobalFrontiers, new_node_star);
+        goal_reached = getGlobalGoal(GlobalFrontiers, added_star);
         if (goal_reached) {
-            segment_evaluator.computeScore(new_node_star, global_lambda);
-            all_global_goals.push_back(new_node_star);
+            segment_evaluator.computeScore(added_star, global_lambda);
+            all_global_goals.push_back(added_star);
             goal_reached = false;
         }
         ++m;
@@ -463,7 +464,7 @@ void AEPMultiPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFro
     }
 }
 
-bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, const std::shared_ptr<rrt_star::Node>& node) {
+bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node) {
     // Initialize KD Tree
     goals_tree.clearKDTreePoints();
     for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
@@ -503,7 +504,7 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
     return false;
 }
 
-void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_star::Node>>& global_goals, std::shared_ptr<rrt_star::Node>& best_global_node) {
+void AEPMultiPlanner::getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goals, rrt_star::Node*& best_global_node) {
     if (global_goals.size() == 0) {
         best_global_node = nullptr;
         return;
@@ -532,7 +533,7 @@ void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_st
         }
     }
 
-    std::shared_ptr<rrt_star::Node> auxiliar_node = best_global_node;
+    rrt_star::Node* auxiliar_node = best_global_node;
 
     // Skip the last best node
     if (auxiliar_node->parent) {
@@ -554,7 +555,7 @@ void AEPMultiPlanner::getBestGlobalPath(const std::vector<std::shared_ptr<rrt_st
     visualize_path(best_global_node, ns);
 }
 
-void AEPMultiPlanner::cacheNode(std::shared_ptr<rrt_star::Node> Node) {
+void AEPMultiPlanner::cacheNode(rrt_star::Node* Node) {
     if (!Node) {
         return;
     }
@@ -804,15 +805,16 @@ void AEPMultiPlanner::timerMain(const ros::TimerEvent& event) {
             waypoints_.clear();
             waypoint_index_ = 0;
 
-            while (next_best_node) {
+            rrt_star::Node* wp_node = next_best_node;
+            while (wp_node) {
                 mrs_msgs::Reference ref;
-                ref.position.x = next_best_node->point[0];
-                ref.position.y = next_best_node->point[1];
-                ref.position.z = next_best_node->point[2];
-                ref.heading    = next_best_node->point[3];
+                ref.position.x = wp_node->point[0];
+                ref.position.y = wp_node->point[1];
+                ref.position.z = wp_node->point[2];
+                ref.heading    = wp_node->point[3];
 
                 waypoints_.push_back(ref);
-                next_best_node = next_best_node->parent;
+                wp_node = wp_node->parent;
             }
 
             std::reverse(waypoints_.begin(), waypoints_.end());
@@ -957,7 +959,7 @@ void AEPMultiPlanner::visualize_node(const Eigen::Vector4d& pos, const std::stri
     pub_markers.publish(n);
 }
 
-void AEPMultiPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
+void AEPMultiPlanner::visualize_edge(rrt_star::Node* node, const std::string& ns) {
     visualization_msgs::Marker e;
     e.header.stamp = ros::Time::now();
     e.header.seq = edge_id_counter_;
@@ -1000,8 +1002,8 @@ void AEPMultiPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node,
     pub_markers.publish(e);
 }
 
-void AEPMultiPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
-    std::shared_ptr<rrt_star::Node> current = node;
+void AEPMultiPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
+    rrt_star::Node* current = node;
     
     while (current->parent) {
         visualization_msgs::Marker p;
@@ -1046,7 +1048,7 @@ void AEPMultiPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node,
     }
 }
 
-void AEPMultiPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
+void AEPMultiPlanner::visualize_frustum(rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
@@ -1075,7 +1077,7 @@ void AEPMultiPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position
     pub_frustum.publish(frustum);
 }
 
-void AEPMultiPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position) {
+void AEPMultiPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);

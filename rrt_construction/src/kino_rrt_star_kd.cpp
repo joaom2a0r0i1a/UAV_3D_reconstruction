@@ -7,17 +7,40 @@ kino_rrt_star::Node::Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v, co
 
 kino_rrt_star::Trajectory::Trajectory() : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {}
 
-kino_rrt_star::Trajectory::Trajectory(const std::shared_ptr<Node>& Node) : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {TrajectoryPoints.push_back(Node);}
+kino_rrt_star::Trajectory::Trajectory(std::unique_ptr<Node> Node) : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {TrajectoryPoints.push_back(std::move(Node));}
+
+std::unique_ptr<kino_rrt_star::Trajectory> kino_rrt_star::Trajectory::clone() const {
+    auto copy = std::make_unique<Trajectory>();
+    copy->parent = nullptr;
+    copy->cost = cost;
+    copy->gain = gain;
+    copy->score = score;
+    copy->cost1 = cost1;
+    copy->cost2 = cost2;
+    for (const auto& node : TrajectoryPoints) {
+        copy->TrajectoryPoints.push_back(std::make_unique<Node>(*node));
+    }
+    return copy;
+}
 
 // Add and clear Nodes
 void kino_rrt_star::KDTree_data::clear() {
+    // Clear the raw coordinate mirror FIRST, then release trajectory ownership. Every
+    // structural link (Trajectory* parent and std::vector<Trajectory*> children) is
+    // non-owning, so destroying `data` frees all trajectory memory instantly with zero
+    // risk of cyclic retention or double-free.
     points.clear();
     data.clear();
 }
 
-void kino_rrt_star::addKDTreeTrajectory(std::shared_ptr<Trajectory>& Trajectory) {
-    tree_data_.addTrajectory(Trajectory);
+kino_rrt_star::Trajectory* kino_rrt_star::addKDTreeTrajectory(std::unique_ptr<Trajectory> Trajectory) {
+    // The planners set Trajectory->parent before insertion (steer_trajectory*), so
+    // forward that parent to addTrajectory to keep the parent <-> children raw links
+    // aligned as ownership is transferred into the flat `data` vector.
+    kino_rrt_star::Trajectory* parentTrajectory = Trajectory->parent;
+    kino_rrt_star::Trajectory* observer = tree_data_.addTrajectory(std::move(Trajectory), parentTrajectory);
     kdtree_->addPoints(tree_data_.points.size() - 1, tree_data_.points.size() - 1);
+    return observer;
 }
 
 void kino_rrt_star::clearKDTree() {
@@ -25,7 +48,7 @@ void kino_rrt_star::clearKDTree() {
     kdtree_ = std::unique_ptr<Tree>(new Tree(3, tree_data_));
 }
 
-void kino_rrt_star::initializeKDTreeWithTrajectories(std::vector<std::shared_ptr<Trajectory>>& Trajectories) {
+void kino_rrt_star::initializeKDTreeWithTrajectories(std::vector<std::unique_ptr<Trajectory>>& Trajectories) {
     tree_data_.addTrajectories(Trajectories);
     kdtree_->addPoints(0, tree_data_.points.size() - 1);
 }
@@ -57,7 +80,7 @@ void kino_rrt_star::computeSamplingDimensionsNBV(double radius, Eigen::Vector4d&
     while (!solutionFound) {
         rand_x = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
         rand_y = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
-        rand_z = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);        
+        rand_z = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
         if (Eigen::Vector3d(rand_x, rand_y, rand_z).norm() > radius) {
             continue;
         }
@@ -82,20 +105,20 @@ void kino_rrt_star::computeAccelerationSampling(double a_max, Eigen::Vector3d& r
     result = Eigen::Vector3d(a_x, a_y, a_z);
 }
 
-void kino_rrt_star::findNearestKD(const Eigen::Vector3d& point, std::shared_ptr<Trajectory>& nearestTrajectory) {
+void kino_rrt_star::findNearestKD(const Eigen::Vector3d& point, Trajectory*& nearestTrajectory) {
     double query_pt[3] = {point.x(), point.y(), point.z()};
     nanoflann::KNNResultSet<double> resultSet(1);
     size_t index;
     double out_dist_sqr;
     resultSet.init(&index, &out_dist_sqr);
     kdtree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParameters(10));
-    nearestTrajectory = tree_data_.data[index];
+    nearestTrajectory = tree_data_.data[index].get();
 }
 
-void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
+void kino_rrt_star::steer_trajectory(Trajectory* fromTrajectory, double max_velocity, bool reset_velocity, double target_heading, Eigen::Vector3d& accel, double max_heading_velocity, double max_heading_acceleration, double stepSize, std::unique_ptr<Trajectory>& newTrajectory) {
     double dt = 0.1;
     size_t trajectory_size = fromTrajectory->TrajectoryPoints.size();
-    Eigen::Vector3d current_velocity; 
+    Eigen::Vector3d current_velocity;
     current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
     /*if (!reset_velocity) {
         current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
@@ -103,7 +126,7 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
         current_velocity = Eigen::Vector3d::Zero();
     }*/
 
-    std::shared_ptr<Node> currentNode = fromTrajectory->TrajectoryPoints.back();
+    Node* currentNode = fromTrajectory->TrajectoryPoints.back().get();
     double distance = 0.0;
 
     double current_heading = fromTrajectory->TrajectoryPoints.back()->point[3];
@@ -177,17 +200,18 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
         current_velocity += accel * dt;
         current_heading_velocity += accel_heading * dt;
 
-        std::shared_ptr<Node> newNode = std::make_shared<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), new_heading), current_velocity, accel);
-        newTrajectory->TrajectoryPoints.push_back(newNode);
+        std::unique_ptr<Node> newNode = std::make_unique<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), new_heading), current_velocity, accel);
+        Node* newNodePtr = newNode.get();
+        newTrajectory->TrajectoryPoints.push_back(std::move(newNode));
         //newTrajectory->cost += dt;
         //newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
         //newTrajectory->cost += (max_velocity_modulus - current_velocity.norm());
         newTrajectory->cost2 += (new_position - currentNode->point.head<3>()).norm();
         velocity_sum += current_velocity.norm();
-        
+
         distance += (new_position - currentNode->point.head<3>()).norm();
         time += dt;
-        currentNode = newNode;
+        currentNode = newNodePtr;
         current_heading = new_heading;
         num_points += 1;
     }
@@ -196,10 +220,10 @@ void kino_rrt_star::steer_trajectory(const std::shared_ptr<Trajectory>& fromTraj
     newTrajectory->cost1 = std::abs(max_velocity_modulus - average_velocity);
 }
 
-void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::shared_ptr<Trajectory>& newTrajectory) {
+void kino_rrt_star::steer_trajectory_linear(Trajectory* fromTrajectory, double max_velocity, bool reset_velocity, Eigen::Vector3d& accel, double stepSize, std::unique_ptr<Trajectory>& newTrajectory) {
     double dt = 0.1;
     size_t trajectory_size = fromTrajectory->TrajectoryPoints.size();
-    Eigen::Vector3d current_velocity; 
+    Eigen::Vector3d current_velocity;
     current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
     /*if (!reset_velocity) {
         current_velocity = fromTrajectory->TrajectoryPoints.back()->velocity;
@@ -207,7 +231,7 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
         current_velocity = Eigen::Vector3d::Zero();
     }*/
 
-    std::shared_ptr<Node> currentNode = fromTrajectory->TrajectoryPoints.back();
+    Node* currentNode = fromTrajectory->TrajectoryPoints.back().get();
     double distance = 0.0;
     int num_points = 0;
     double velocity_sum = 0.0;
@@ -239,17 +263,18 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
 
         current_velocity += accel * dt;
 
-        std::shared_ptr<Node> newNode = std::make_shared<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), heading), current_velocity, accel);
-        newTrajectory->TrajectoryPoints.push_back(newNode);
+        std::unique_ptr<Node> newNode = std::make_unique<Node>(Eigen::Vector4d(new_position.x(), new_position.y(), new_position.z(), heading), current_velocity, accel);
+        Node* newNodePtr = newNode.get();
+        newTrajectory->TrajectoryPoints.push_back(std::move(newNode));
         //newTrajectory->cost += dt;
         //newTrajectory->cost += (new_position - currentNode->point.head<3>()).norm();
         //newTrajectory->cost += (max_velocity_modulus - current_velocity.norm());
         newTrajectory->cost2 += (new_position - currentNode->point.head<3>()).norm();
         velocity_sum += current_velocity.norm();
-        
+
         distance += (new_position - currentNode->point.head<3>()).norm();
         time += dt;
-        currentNode = newNode;
+        currentNode = newNodePtr;
         num_points += 1;
     }
     //newTrajectory->cost = newTrajectory->cost / num_points;
@@ -257,7 +282,7 @@ void kino_rrt_star::steer_trajectory_linear(const std::shared_ptr<Trajectory>& f
     newTrajectory->cost1 += std::abs(max_velocity_modulus - average_velocity);
 }
 
-void kino_rrt_star::steer_trajectory_angular(const std::shared_ptr<Trajectory>& fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, std::shared_ptr<Trajectory>& toChangeTrajectory) {
+void kino_rrt_star::steer_trajectory_angular(Trajectory* fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, Trajectory* toChangeTrajectory) {
     double dt = 0.1;
     double current_heading = fromTrajectory->TrajectoryPoints.back()->point[3];
     double current_heading_velocity = 0.0;
@@ -311,23 +336,54 @@ void kino_rrt_star::steer_trajectory_angular(const std::shared_ptr<Trajectory>& 
     }
 }
 
-void kino_rrt_star::backtrackTrajectory(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory, std::shared_ptr<Trajectory>& nextBestTrajectory) {
-    std::shared_ptr<Trajectory> currentTrajectory = trajectory;
-    while (currentTrajectory) {
-        fullTrajectory.push_back(currentTrajectory);
-        currentTrajectory = currentTrajectory->parent;
-        if (currentTrajectory && currentTrajectory->parent && currentTrajectory->cost2 < nextBestTrajectory->cost2) {
-            nextBestTrajectory = currentTrajectory;
+void kino_rrt_star::backtrackTrajectory(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory, Trajectory*& nextBestTrajectory) {
+    // Collect the branch (trajectory -> root) as observers, tracking the lowest
+    // cost2 interior trajectory for nextBestTrajectory.
+    std::vector<Trajectory*> chain;
+    Trajectory* bestInterior = nullptr;
+    for (Trajectory* currentTrajectory = trajectory; currentTrajectory; currentTrajectory = currentTrajectory->parent) {
+        chain.push_back(currentTrajectory);
+        Trajectory* parent = currentTrajectory->parent;
+        if (parent && parent->parent) {
+            if (!bestInterior || parent->cost2 < bestInterior->cost2) {
+                bestInterior = parent;
+            }
         }
     }
-    std::reverse(fullTrajectory.begin(), fullTrajectory.end());
+    std::reverse(chain.begin(), chain.end());   // root first
+
+    // Emit owning deep copies, relinking parents amongst the clones so the branch
+    // is self-contained and survives clearKDTree(). nextBestTrajectory points at
+    // the clone matching the chosen interior trajectory.
+    fullTrajectory.clear();
+    Trajectory* prev_clone = nullptr;
+    for (Trajectory* original : chain) {
+        std::unique_ptr<Trajectory> copy = original->clone();
+        copy->parent = prev_clone;
+        if (original == bestInterior) {
+            nextBestTrajectory = copy.get();
+        }
+        prev_clone = copy.get();
+        fullTrajectory.push_back(std::move(copy));
+    }
 }
 
-void kino_rrt_star::backtrackTrajectoryAEP(const std::shared_ptr<Trajectory>& trajectory, std::vector<std::shared_ptr<Trajectory>>& fullTrajectory) {
-    std::shared_ptr<Trajectory> currentTrajectory = trajectory;
-    while (currentTrajectory) {
-        fullTrajectory.push_back(currentTrajectory);
-        currentTrajectory = currentTrajectory->parent;
+void kino_rrt_star::backtrackTrajectoryAEP(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory) {
+    // Collect the branch (trajectory -> root) as observers first.
+    std::vector<Trajectory*> chain;
+    for (Trajectory* currentTrajectory = trajectory; currentTrajectory; currentTrajectory = currentTrajectory->parent) {
+        chain.push_back(currentTrajectory);
     }
-    std::reverse(fullTrajectory.begin(), fullTrajectory.end());
+    std::reverse(chain.begin(), chain.end());   // root first
+
+    // Emit owning deep copies, relinking parents amongst the clones so the branch
+    // is self-contained and survives clearKDTree().
+    fullTrajectory.clear();
+    Trajectory* prev_clone = nullptr;
+    for (Trajectory* original : chain) {
+        std::unique_ptr<Trajectory> copy = original->clone();
+        copy->parent = prev_clone;
+        prev_clone = copy.get();
+        fullTrajectory.push_back(std::move(copy));
+    }
 }

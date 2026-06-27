@@ -117,8 +117,8 @@ double NBVPlanner::getMapDistance(const Eigen::Vector3d& position) const {
     return distance;
 }
 
-bool NBVPlanner::isPathCollisionFree(const std::vector<std::shared_ptr<rrt_star::Node>>& path) const {
-    for (const std::shared_ptr<rrt_star::Node>& node : path) {
+bool NBVPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const {
+    for (rrt_star::Node* node : path) {
         if (getMapDistance(node->point.head(3)) < uav_radius) {
             return false;
         }
@@ -146,13 +146,13 @@ void NBVPlanner::GetTransformation() {
 
 void NBVPlanner::NBV() {
     best_score_ = 0;
-    std::shared_ptr<rrt_star::Node> best_node = nullptr;
+    rrt_star::Node* best_node = nullptr;
 
-    std::shared_ptr<rrt_star::Node> root;
+    std::unique_ptr<rrt_star::Node> root;
     if (prev_best_branch.size() > 1) {
-        root = std::make_shared<rrt_star::Node>(prev_best_branch[1]);
+        root = std::make_unique<rrt_star::Node>(prev_best_branch[1]);
     } else {
-        root = std::make_shared<rrt_star::Node>(pose);
+        root = std::make_unique<rrt_star::Node>(pose);
     }
 
     root->cost = 0;
@@ -160,18 +160,18 @@ void NBVPlanner::NBV() {
 
     if (root->score > best_score_) {
         best_score_ = root->score;
-        best_node = root;
+        best_node = root.get();
     }
 
     RRTStar.clearKDTree();
-    RRTStar.addKDTreeNode(root);
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
     clearMarkers();
 
     bool isFirstIteration = true;
     int j = 1; // initialized at one because of the root node
     collision_id_counter_ = 0;
     if (prev_best_branch.size() > 0) {
-        previous_root = std::make_shared<rrt_star::Node>(prev_best_branch[0]);
+        previous_root = std::make_unique<rrt_star::Node>(prev_best_branch[0]);
     }
     while (j < N_max || best_score_ == 0.0) {
         /*// Backtrack
@@ -196,11 +196,10 @@ void NBVPlanner::NBV() {
             
             const Eigen::Vector4d& node_position = prev_best_branch[i];
 
-            std::shared_ptr<rrt_star::Node> nearest_node_best;
+            rrt_star::Node* nearest_node_best = nullptr;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
-            
-            std::shared_ptr<rrt_star::Node> new_node_best;
-            new_node_best = std::make_shared<rrt_star::Node>(node_position);
+
+            auto new_node_best = std::make_unique<rrt_star::Node>(node_position);
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
@@ -210,18 +209,18 @@ void NBVPlanner::NBV() {
             double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point, initial_offset);
             new_node_best->gain = result_best;
 
-            segment_evaluator.computeCost(new_node_best);
-            segment_evaluator.computeScore(new_node_best, lambda);
+            segment_evaluator.computeCost(new_node_best.get());
+            segment_evaluator.computeScore(new_node_best.get(), lambda);
 
             if (new_node_best->score > best_score_) {
                 best_score_ = new_node_best->score;
-                best_node = new_node_best;
+                best_node = new_node_best.get();
             }
 
             ROS_INFO("[NBVPlanner]: Best Score BB: %f", new_node_best->score);
 
-            RRTStar.addKDTreeNode(new_node_best);
-            visualize_edge(new_node_best, ns);
+            rrt_star::Node* added_bb = RRTStar.addKDTreeNode(std::move(new_node_best));
+            visualize_edge(added_bb, ns);
 
             ++j;
         }
@@ -236,12 +235,12 @@ void NBVPlanner::NBV() {
         Eigen::Vector3d rand_point;
         RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
         rand_point = rand_point_yaw.head(3);
-        rand_point += root->point.head(3);
+        rand_point += root_ptr->point.head(3);
 
-        std::shared_ptr<rrt_star::Node> nearest_node;
+        rrt_star::Node* nearest_node = nullptr;
         RRTStar.findNearestKD(rand_point, nearest_node);
 
-        std::shared_ptr<rrt_star::Node> new_node;
+        std::unique_ptr<rrt_star::Node> new_node;
         RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
 
         //std::shared_ptr<rrt_star::Node> new_node;
@@ -250,8 +249,8 @@ void NBVPlanner::NBV() {
         }
 
         // Collision Check
-        std::vector<std::shared_ptr<rrt_star::Node>> trajectory_segment;
-        trajectory_segment.push_back(new_node);
+        std::vector<rrt_star::Node*> trajectory_segment;
+        trajectory_segment.push_back(new_node.get());
 
         bool success_collision = false;
         success_collision = isPathCollisionFree(trajectory_segment);
@@ -273,18 +272,18 @@ void NBVPlanner::NBV() {
         double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain, initial_offset);
         new_node->gain = result;
 
-        segment_evaluator.computeCost(new_node);
-        segment_evaluator.computeScore(new_node, lambda);
+        segment_evaluator.computeCost(new_node.get());
+        segment_evaluator.computeScore(new_node.get(), lambda);
 
         if (new_node->score > best_score_) {
             best_score_ = new_node->score;
-            best_node = new_node;
+            best_node = new_node.get();
         }
 
         ROS_INFO("[NBVPlanner]: Best Score: %f", new_node->score);
 
-        RRTStar.addKDTreeNode(new_node);
-        visualize_edge(new_node, ns);
+        rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
+        visualize_edge(added_node, ns);
 
         if (j > N_termination) {
             ROS_INFO("[NBVPlanner]: NBV Terminated");
@@ -586,7 +585,7 @@ void NBVPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& n
     pub_markers.publish(n);
 }
 
-void NBVPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
+void NBVPlanner::visualize_edge(rrt_star::Node* node, const std::string& ns) {
     visualization_msgs::Marker e;
     e.header.stamp = ros::Time::now();
     e.header.seq = edge_id_counter_;
@@ -628,8 +627,8 @@ void NBVPlanner::visualize_edge(const std::shared_ptr<rrt_star::Node> node, cons
     pub_markers.publish(e);
 }
 
-void NBVPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, const std::string& ns) {
-    std::shared_ptr<rrt_star::Node> current = node;
+void NBVPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
+    rrt_star::Node* current = node;
     
     while (current->parent) {
         visualization_msgs::Marker p;
@@ -674,7 +673,7 @@ void NBVPlanner::visualize_path(const std::shared_ptr<rrt_star::Node> node, cons
     }
 }
 
-void NBVPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
+void NBVPlanner::visualize_frustum(rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
@@ -703,7 +702,7 @@ void NBVPlanner::visualize_frustum(std::shared_ptr<rrt_star::Node> position) {
     pub_frustum.publish(frustum);
 }
 
-void NBVPlanner::visualize_unknown_voxels(std::shared_ptr<rrt_star::Node> position) {
+void NBVPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
     trajectory_point_visualize.position_W = position->point.head(3);
     trajectory_point_visualize.setFromYaw(position->point[3]);
