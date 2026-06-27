@@ -1067,11 +1067,39 @@ void AEPlanner::localPlanner() {
             new_node->parent->depth_buffer, depth_buf_v2); 
         auto end_gpu_marg_v2 = std::chrono::high_resolution_clock::now();
 
+        // --- Build the full ancestor chain for multi-ancestor marginal gain (v3) ---
+        std::vector<Eigen::Vector3d> anc_positions;
+        std::vector<double>          anc_yaws;
+        std::vector<float>           anc_R_flat;     // 9 floats per ancestor
+        std::vector<float>           anc_depth_flat; // p_width*p_height floats per ancestor
+
+        // Per-ancestor depth-buffer size, taken from any evaluated ancestor.
+        size_t per_anc = 0;
+        for (auto* a = new_node->parent; a != nullptr; a = a->parent) {
+            if (!a->depth_buffer.empty()) { per_anc = a->depth_buffer.size(); break; }
+        }
+
+        for (auto* a = new_node->parent; a != nullptr; a = a->parent) {
+            auto [anc_R, anc_cam_pos] = get_parent_cam_state(
+                a->point.head(3), (float)a->point[3], camera_pitch_rad);
+            anc_positions.push_back(anc_cam_pos);
+            anc_yaws.push_back(a->point[3]);
+            anc_R_flat.insert(anc_R_flat.end(), anc_R.begin(), anc_R.end());
+            if (!a->depth_buffer.empty()) {
+                anc_depth_flat.insert(anc_depth_flat.end(),
+                                      a->depth_buffer.begin(), a->depth_buffer.end());
+            } else if (per_anc > 0) {
+                // Root / unevaluated ancestor: pad with -1.0f sentinel (unknown)
+                // so the flattened buffer stays index-aligned with the pose arrays.
+                anc_depth_flat.insert(anc_depth_flat.end(), per_anc, -1.0f);
+            }
+        }
+
         auto start_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
         res_gpu_marg_v3 = segment_evaluator.computeMarginalGainGPU_v3(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
-            parent_cam_pos, new_node->parent->point[3], parent_R, 
-            new_node->parent->depth_buffer, depth_buf_v3); 
+            anc_positions, anc_yaws, anc_R_flat,
+            anc_depth_flat, depth_buf_v3);
         auto end_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
 
         // ==========================================================

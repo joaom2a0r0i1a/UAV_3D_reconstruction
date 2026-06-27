@@ -998,17 +998,44 @@ __device__ float3 compute_skip_distance(
     return make_float3(t_visible_start, t_hit, status);
 }
 
+// Insert [lo,hi] into a sorted, non-overlapping interval set, coalescing overlaps/touches.
+__device__ void insert_and_merge_interval(
+    float2* intervals, int* count, int max_intervals, float lo, float hi)
+{
+    if (hi <= lo) return;
+    // find insertion point, absorb every interval that overlaps or touches [lo,hi]
+    int i = 0;
+    while (i < *count && intervals[i].y < lo) i++;        // strictly-before, keep
+    int j = i;
+    while (j < *count && intervals[j].x <= hi) {          // overlaps/touches -> absorb
+        lo = fminf(lo, intervals[j].x);
+        hi = fmaxf(hi, intervals[j].y);
+        j++;
+    }
+    // shift tail [j..count) to land right after slot i+1, then write merged at i
+    int tail = *count - j;
+    if (i + 1 + tail > max_intervals) { // clamp: drop overflow tail
+        tail = max_intervals - (i + 1);
+        if (tail < 0) tail = 0;
+    }
+    for (int k = tail - 1; k >= 0; --k) intervals[i + 1 + k] = intervals[j + k];
+    intervals[i] = make_float2(lo, hi);
+    *count = i + 1 + tail;
+}
+
 __device__ void compute_multi_segment_skip_distance(
     int p_width, int p_height,
-    float fx, float fy, float cx, float cy, 
-    float3 parent_pos, float3 R0, float3 R1, float3 R2,
-    const float* __restrict__ parent_depth_buffer,
-    float3 ray_start, float3 ray_dir, 
-    const KernelParams& params, 
-    float2* out_intervals, 
-    int* out_count, 
-    int max_intervals, 
-    float* out_status) 
+    float fx, float fy, float cx, float cy,
+    const float3* parent_positions,                  // [num_ancestors]
+    const float3* parent_R_rows,                     // [num_ancestors*3] (R0,R1,R2 per ancestor)
+    const float* __restrict__ parent_depth_buffers,  // [num_ancestors * p_width * p_height]
+    int num_ancestors,
+    float3 ray_start, float3 ray_dir,
+    const KernelParams& params,
+    float2* out_intervals,
+    int* out_count,
+    int max_intervals,
+    float* out_status)
 {
     *out_count = 0;
     *out_status = 1.0f; // Default to free space
@@ -1016,8 +1043,18 @@ __device__ void compute_multi_segment_skip_distance(
     const float z_near = 0.1f;
     const float z_far  = params.gain_range;
 
+    // Loop over every ancestor on the candidate's path. Each contributes its own
+    // skip intervals, which are merged into the shared sorted interval set.
+    for (int a = 0; a < num_ancestors; ++a) {
+
+    float3 parent_pos = parent_positions[a];
+    float3 R0 = parent_R_rows[a*3 + 0];
+    float3 R1 = parent_R_rows[a*3 + 1];
+    float3 R2 = parent_R_rows[a*3 + 2];
+    const float* parent_depth_buffer = parent_depth_buffers + (size_t)a * p_width * p_height;
+
     // --- 1. Transform Ray to Camera Frame ---
-    float3 diff = make_float3(ray_start.x - parent_pos.x, 
+    float3 diff = make_float3(ray_start.x - parent_pos.x,
                               ray_start.y - parent_pos.y, 
                               ray_start.z - parent_pos.z);
     
@@ -1036,7 +1073,7 @@ __device__ void compute_multi_segment_skip_distance(
     float t1 = params.gain_range;
 
     if (fabsf(D.z) < 1e-3f) {
-        if (O.z < z_near || O.z > z_far) return;
+        if (O.z < z_near || O.z > z_far) continue;
     } else {
         float inv_Dz = 1.0f / D.z;
         float t_near = (z_near - O.z) * inv_Dz;
@@ -1049,7 +1086,7 @@ __device__ void compute_multi_segment_skip_distance(
         t1 = fminf(t1, t_max);
     }
 
-    if (t0 >= t1) return;
+    if (t0 >= t1) continue;
 
     float3 P_start = make_float3(O.x + t0*D.x, O.y + t0*D.y, O.z + t0*D.z);
     float3 P_end   = make_float3(O.x + t1*D.x, O.y + t1*D.y, O.z + t1*D.z);
@@ -1070,9 +1107,9 @@ __device__ void compute_multi_segment_skip_distance(
     float eps = 1e-4f;
     if (!clip_line_2d(u0, v0, u1, v1, 
                       eps, (float)p_width - eps, 
-                      eps, (float)p_height - eps, 
+                      eps, (float)p_height - eps,
                       &s_min, &s_max)) {
-        return;
+        continue;
     }
 
     // --- 5. Compute Exact Frustum Interval ---
@@ -1203,8 +1240,8 @@ __device__ void compute_multi_segment_skip_distance(
                 }
                 
                 if (t_meters_end > t_meters_start + 1e-4f) {
-                    out_intervals[*out_count] = make_float2(t_meters_start, t_meters_end);
-                    (*out_count)++;
+                    insert_and_merge_interval(out_intervals, out_count, max_intervals,
+                                              t_meters_start, t_meters_end);
                 }
             }
             is_building_skip_interval = false;
@@ -1240,10 +1277,34 @@ __device__ void compute_multi_segment_skip_distance(
         }
         
         if (t_meters_end > t_meters_start + 1e-4f) {
-            out_intervals[*out_count] = make_float2(t_meters_start, t_meters_end);
-            (*out_count)++;
+            insert_and_merge_interval(out_intervals, out_count, max_intervals,
+                                      t_meters_start, t_meters_end);
         }
     }
+
+    } // end for each ancestor
+}
+
+// Single-parent overload (used by v1/v2): forwards to the multi-ancestor version
+// with num_ancestors = 1. Keeps legacy call sites compiling unchanged.
+__device__ void compute_multi_segment_skip_distance(
+    int p_width, int p_height,
+    float fx, float fy, float cx, float cy,
+    float3 parent_pos, float3 R0, float3 R1, float3 R2,
+    const float* __restrict__ parent_depth_buffer,
+    float3 ray_start, float3 ray_dir,
+    const KernelParams& params,
+    float2* out_intervals,
+    int* out_count,
+    int max_intervals,
+    float* out_status)
+{
+    float3 R_rows[3] = {R0, R1, R2};
+    compute_multi_segment_skip_distance(
+        p_width, p_height, fx, fy, cx, cy,
+        &parent_pos, R_rows, parent_depth_buffer, 1,
+        ray_start, ray_dir, params,
+        out_intervals, out_count, max_intervals, out_status);
 }
 
 __global__ void evaluate_marginal_gain_kernel(
@@ -1966,9 +2027,11 @@ __global__ void evaluate_marginal_gain_kernel_v3(
     const int3 map_dim,
     const float3 map_origin,
     const float3* __restrict__ positions,
-    float3 parent_pos, float parent_yaw,
-    const float* __restrict__ parent_depth_buffer,
-    float3 R0, float3 R1, float3 R2,
+    const float3* __restrict__ parent_positions,
+    const float* __restrict__ parent_yaws,            // parity only; unused in device math
+    const float* __restrict__ parent_depth_buffers,
+    const float3* __restrict__ parent_R_rows,
+    int num_ancestors,
     int p_width, int p_height,
     float fx, float fy, float cx, float cy,
     float* __restrict__ results_gain,
@@ -2029,9 +2092,9 @@ __global__ void evaluate_marginal_gain_kernel_v3(
         float status = 1.0f;
 
         compute_multi_segment_skip_distance(
-            p_width, p_height, fx, fy, cx, cy, 
-            parent_pos, R0, R1, R2, parent_depth_buffer,
-            cam_pos, ray_dir, params, 
+            p_width, p_height, fx, fy, cx, cy,
+            parent_positions, parent_R_rows, parent_depth_buffers, num_ancestors,
+            cam_pos, ray_dir, params,
             skip_intervals, &skip_count, MAX_SEGS, &status
         );
 
@@ -2874,11 +2937,14 @@ extern "C" void launch_marginal_gain_kernel_v3(
     int dx, int dy, int dz,
     float ox, float oy, float oz,
     float h_cand_x, float h_cand_y, float h_cand_z,
-    float h_parent_x, float h_parent_y, float h_parent_z,
-    float h_parent_yaw, float* h_parent_R, float* h_parent_depth,
+    int num_ancestors,
+    float* h_parent_pos,    // [3*num_ancestors]  (x,y,z per ancestor)
+    float* h_parent_yaw,    // [num_ancestors]
+    float* h_parent_R,      // [9*num_ancestors]  (row-major, 3 rows per ancestor)
+    float* h_parent_depth,  // [num_ancestors * p_width * p_height], or nullptr
     float* h_result_gain, float* h_result_yaw, float* h_result_depths,
     float voxel_size, float gain_range, float fov_y, float fov_p, float pitch) {
-    
+
     // 1. Pack Params
     KernelParams params;
     params.voxel_size = voxel_size;
@@ -2910,9 +2976,9 @@ extern "C" void launch_marginal_gain_kernel_v3(
     int total_rays_buffer = p_width * p_height;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     
-    int buffer_size_all = rays_per_candidate * sizeof(float); 
+    int buffer_size_all = rays_per_candidate * sizeof(float);
     int buffer_size = p_width * p_height * sizeof(float);
-    int parent_buffer_size = p_width * p_height * sizeof(float);
+    size_t per = (size_t)p_width * p_height;  // depth-buffer elements per ancestor
 
     // 2. Allocate Device Memory
     float3* d_cand_pos;
@@ -2921,7 +2987,12 @@ extern "C" void launch_marginal_gain_kernel_v3(
 
     float* d_depth_buffer_all;
     float* d_depth_buffer;
-    float* d_parent_depth_buffer;
+
+    // Multi-ancestor parent state (flattened, one block per ancestor).
+    float3* d_parent_pos;
+    float3* d_parent_R;      // 3 rows (float3) per ancestor == 9 floats
+    float*  d_parent_yaw;
+    float*  d_parent_depth;
 
     cudaMalloc(&d_cand_pos, sizeof(float3));
     cudaMalloc(&d_res_gain, sizeof(float));
@@ -2929,15 +3000,24 @@ extern "C" void launch_marginal_gain_kernel_v3(
 
     cudaMalloc(&d_depth_buffer_all, buffer_size_all);
     cudaMalloc(&d_depth_buffer, buffer_size);
-    cudaMalloc(&d_parent_depth_buffer, parent_buffer_size);
+
+    cudaMalloc(&d_parent_pos,   num_ancestors * sizeof(float3));
+    cudaMalloc(&d_parent_R,     num_ancestors * 3 * sizeof(float3)); // 9 floats/ancestor
+    cudaMalloc(&d_parent_yaw,   num_ancestors * sizeof(float));
+    cudaMalloc(&d_parent_depth, num_ancestors * per * sizeof(float));
 
     float3 h_pos = make_float3(h_cand_x, h_cand_y, h_cand_z);
     cudaMemcpy(d_cand_pos, &h_pos, sizeof(float3), cudaMemcpyHostToDevice);
 
+    // Flat host layouts match float3 (3 floats) and 3xfloat3 (9 floats) packing exactly.
+    cudaMemcpy(d_parent_pos, h_parent_pos, num_ancestors * 3 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parent_R,   h_parent_R,   num_ancestors * 9 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_parent_yaw, h_parent_yaw, num_ancestors * sizeof(float),     cudaMemcpyHostToDevice);
+
     if (h_parent_depth != nullptr) {
-        cudaMemcpy(d_parent_depth_buffer, h_parent_depth, parent_buffer_size, cudaMemcpyHostToDevice);
+        cudaMemcpy(d_parent_depth, h_parent_depth, num_ancestors * per * sizeof(float), cudaMemcpyHostToDevice);
     } else {
-        cudaMemset(d_parent_depth_buffer, 0, parent_buffer_size); 
+        cudaMemset(d_parent_depth, 0, num_ancestors * per * sizeof(float));
     }
 
     // 3. Launch Kernel
@@ -2946,16 +3026,11 @@ extern "C" void launch_marginal_gain_kernel_v3(
 
     int3 map_dim = make_int3(dx, dy, dz);
     float3 map_origin = make_float3(ox, oy, oz);
-    float3 parent_pos = make_float3(h_parent_x, h_parent_y, h_parent_z);
-    float parent_yaw = h_parent_yaw;
-
-    float3 R0 = make_float3(h_parent_R[0], h_parent_R[1], h_parent_R[2]);
-    float3 R1 = make_float3(h_parent_R[3], h_parent_R[4], h_parent_R[5]);
-    float3 R2 = make_float3(h_parent_R[6], h_parent_R[7], h_parent_R[8]);
 
     evaluate_marginal_gain_kernel_v3<<<blocks, threads>>>(
-        d_map, map_dim, map_origin, d_cand_pos, parent_pos, parent_yaw, d_parent_depth_buffer,
-        R0, R1, R2, p_width, p_height, fx, fy, cx, cy,
+        d_map, map_dim, map_origin, d_cand_pos,
+        d_parent_pos, d_parent_yaw, d_parent_depth, d_parent_R, num_ancestors,
+        p_width, p_height, fx, fy, cx, cy,
         d_res_gain, d_res_yaw, d_depth_buffer_all, d_depth_buffer, params
     );
 
@@ -2975,7 +3050,10 @@ extern "C" void launch_marginal_gain_kernel_v3(
     cudaFree(d_res_yaw);
     cudaFree(d_depth_buffer_all);
     cudaFree(d_depth_buffer);
-    cudaFree(d_parent_depth_buffer);
+    cudaFree(d_parent_pos);
+    cudaFree(d_parent_R);
+    cudaFree(d_parent_yaw);
+    cudaFree(d_parent_depth);
 }
 
 
