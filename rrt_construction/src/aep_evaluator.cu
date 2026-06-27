@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include <rrt_construction/aep_device_math.cuh>
+
 // ==========================================
 // 1. CONFIGURATION STRUCT
 // ==========================================
@@ -82,75 +84,33 @@ __global__ void evaluate_aep_kernel_single(
         if (phi > params.phi_end) continue;
 
         float sin_phi = sinf(phi);
-        float dir_x = cosf(theta) * sin_phi;
-        float dir_y = sinf(theta) * sin_phi;
-        float dir_z = cosf(phi);
+        float3 dir = aep::spherical_ray_dir(theta, phi);
 
-        // --- DDA SETUP ---
-        float gx = (candidate_pos.x - map_origin.x) / params.voxel_size;
-        float gy = (candidate_pos.y - map_origin.y) / params.voxel_size;
-        float gz = (candidate_pos.z - map_origin.z) / params.voxel_size;
-
-        int ix = floor(gx);
-        int iy = floor(gy);
-        int iz = floor(gz);
-
-        int stepX = (dir_x > 0.0f) ? 1 : ((dir_x < 0.0f) ? -1 : 0);
-        int stepY = (dir_y > 0.0f) ? 1 : ((dir_y < 0.0f) ? -1 : 0);
-        int stepZ = (dir_z > 0.0f) ? 1 : ((dir_z < 0.0f) ? -1 : 0);
-
-        float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
-        float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
-        float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
-
-        float tMaxX, tMaxY, tMaxZ;
-        if (stepX > 0) tMaxX = (ix + 1.0f - gx) * tDeltaX; else tMaxX = (gx - ix) * tDeltaX;
-        if (stepY > 0) tMaxY = (iy + 1.0f - gy) * tDeltaY; else tMaxY = (gy - iy) * tDeltaY;
-        if (stepZ > 0) tMaxZ = (iz + 1.0f - gz) * tDeltaZ; else tMaxZ = (gz - iz) * tDeltaZ;
+        float3 g = aep::world_to_voxel(candidate_pos, map_origin, params.voxel_size);
+        aep::Dda3 d = aep::dda3_init(g, dir);
 
         float ray_gain = 0.0f;
-        float t = 0.0f;
         float max_t = params.gain_range / params.voxel_size;
 
-        // --- DDA LOOP ---
-        while (t < max_t) {
-            if (ix >= 0 && ix < map_dim.x &&
-                iy >= 0 && iy < map_dim.y &&
-                iz >= 0 && iz < map_dim.z) 
-            {
-                int flat_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
+        // --- DDA LOOP (fixed upper bound per Power of 10 rule 2) ---
+        for (int s = 0; s < aep::kMaxDdaSteps && d.t < max_t; ++s) {
+            if (aep::in_bounds(d.ix, d.iy, d.iz, map_dim)) {
+                int flat_idx = aep::voxel_flat_index(d.ix, d.iy, d.iz, map_dim);
                 uint8_t val = map[flat_idx];
 
                 if (val == V_OCCUPIED) {
                     break;
-                } 
-                else if (val == V_UNKNOWN) {
-                    float t_exit = fminf(tMaxX, fminf(tMaxY, tMaxZ));
-                    float dt = t_exit - t; 
-                    float dr = dt * params.voxel_size;
-                    float r = t * params.voxel_size;
-                    float term1 = 2.0f * r * r * dr;
-                    float term2 = (dr * dr * dr) / 6.0f;
-                    ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                } else if (val == V_UNKNOWN) {
+                    float t_exit = aep::dda3_t_exit(d);
+                    float dr = (t_exit - d.t) * params.voxel_size;
+                    float r  = d.t * params.voxel_size;
+                    ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                 }
             }
-
-            if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-                ix += stepX; 
-                t = tMaxX; 
-                tMaxX += tDeltaX;
-            } else if (tMaxY < tMaxZ) {
-                iy += stepY; 
-                t = tMaxY; 
-                tMaxY += tDeltaY;
-            } else {
-                iz += stepZ; 
-                t = tMaxZ; 
-                tMaxZ += tDeltaZ;
-            }
+            aep::dda3_step(d);
         }
 
-        // Accumulate gain into shared memory (Atomic because multiple rays map to same yaw bin)
+        // Accumulate gain into shared memory (multiple rays map to same yaw bin)
         if (ray_gain > 0.0f) {
             atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
         }
@@ -160,31 +120,16 @@ __global__ void evaluate_aep_kernel_single(
 
     // 4. Sliding Window Optimization (Single Thread)
     if (tid == 0) {
-        float max_gain = 0.0f;
-        int best_start_idx = 0;
-        
         int sectors_in_fov = (int)(params.fov_y_rad / params.dtheta);
         if (sectors_in_fov < 1) sectors_in_fov = 1;
 
-        for (int i = 0; i < THETA_BINS; ++i) {
-            float current_window_gain = 0.0f;
-            for (int k = 0; k < sectors_in_fov; ++k) {
-                int idx = (i + k) % THETA_BINS;
-                current_window_gain += s_yaw_gains[idx];
-            }
-            if (current_window_gain > max_gain) {
-                max_gain = current_window_gain;
-                best_start_idx = i;
-            }
-        }
+        float max_gain;
+        int best_start_idx = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS,
+                                                       sectors_in_fov, &max_gain);
+        float center_angle = aep::yaw_window_center_angle(best_start_idx,
+                                                          params.dtheta, params.fov_y_rad);
 
-        // Write Final Result
         *result_gain = max_gain;
-        
-        float start_angle = -CUDART_PI_F + (best_start_idx * params.dtheta);
-        float center_angle = start_angle + (params.fov_y_rad * 0.5f);
-        if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
-        
         *result_yaw = center_angle;
     }
 }
@@ -231,92 +176,29 @@ __global__ void evaluate_aep_kernel(
         float3 cam_pos = positions[candidate];
 
         float sin_phi = sinf(phi);
-        float dir_x = cosf(theta) * sin_phi;
-        float dir_y = sinf(theta) * sin_phi;
-        float dir_z = cosf(phi);
+        float3 dir = aep::spherical_ray_dir(theta, phi);
 
-        // Origin in Voxel Coordinates
-        float gx = (cam_pos.x - map_origin.x) / params.voxel_size;
-        float gy = (cam_pos.y - map_origin.y) / params.voxel_size;
-        float gz = (cam_pos.z - map_origin.z) / params.voxel_size;
-
-        // Integer start indices
-        int ix = floor(gx);
-        int iy = floor(gy);
-        int iz = floor(gz);
-
-        // Step Direction
-        int stepX = (dir_x > 0.0f) ? 1 : ((dir_x < 0.0f) ? -1 : 0);
-        int stepY = (dir_y > 0.0f) ? 1 : ((dir_y < 0.0f) ? -1 : 0);
-        int stepZ = (dir_z > 0.0f) ? 1 : ((dir_z < 0.0f) ? -1 : 0);
-
-        // tDelta: Distance along ray to cross one voxel in each dimension
-        float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
-        float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
-        float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
-
-        // tMax: Distance to the *next* boundary
-        float tMaxX, tMaxY, tMaxZ;
-
-        if (stepX > 0) {
-            tMaxX = (ix + 1.0f - gx) * tDeltaX;
-        } else {
-            tMaxX = (gx - ix) * tDeltaX;
-        }
-
-        if (stepY > 0) {
-            tMaxY = (iy + 1.0f - gy) * tDeltaY;
-        } else {
-            tMaxY = (gy - iy) * tDeltaY;
-        }
-
-        if (stepZ > 0) {
-            tMaxZ = (iz + 1.0f - gz) * tDeltaZ;
-        } else {
-            tMaxZ = (gz - iz) * tDeltaZ;
-        }
+        float3 g = aep::world_to_voxel(cam_pos, map_origin, params.voxel_size);
+        aep::Dda3 d = aep::dda3_init(g, dir);
 
         float ray_gain = 0.0f;
-        float t = 0.0f;
         float max_t = params.gain_range / params.voxel_size;
 
-        while (t < max_t) {
-            if (ix >= 0 && ix < map_dim.x &&
-                iy >= 0 && iy < map_dim.y &&
-                iz >= 0 && iz < map_dim.z) {
-                
-                int flat_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
+        for (int s = 0; s < aep::kMaxDdaSteps && d.t < max_t; ++s) {
+            if (aep::in_bounds(d.ix, d.iy, d.iz, map_dim)) {
+                int flat_idx = aep::voxel_flat_index(d.ix, d.iy, d.iz, map_dim);
                 uint8_t val = map[flat_idx];
 
                 if (val == V_OCCUPIED) {
                     break;
-                } 
-                else if (val == V_UNKNOWN) {
-                    float t_exit = fminf(tMaxX, fminf(tMaxY, tMaxZ));
-                    float dt = t_exit - t; 
-                    float dr = dt * params.voxel_size;
-
-                    float r = t * params.voxel_size;
-                    float term1 = 2.0f * r * r * dr;
-                    float term2 = (dr * dr * dr) / 6.0f;
-                    ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                } else if (val == V_UNKNOWN) {
+                    float t_exit = aep::dda3_t_exit(d);
+                    float dr = (t_exit - d.t) * params.voxel_size;
+                    float r  = d.t * params.voxel_size;
+                    ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                 }
             }
-
-            // Step to Next Voxel
-            if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-                ix += stepX;
-                t = tMaxX;
-                tMaxX += tDeltaX;
-            } else if (tMaxY < tMaxZ) {
-                iy += stepY;
-                t = tMaxY;
-                tMaxY += tDeltaY;
-            } else {
-                iz += stepZ;
-                t = tMaxZ;
-                tMaxZ += tDeltaZ;
-            }
+            aep::dda3_step(d);
         }
 
         if (ray_gain > 0.0f) {
@@ -330,42 +212,18 @@ __global__ void evaluate_aep_kernel(
     //    Sliding Window Optimization (Single Thread per Block)
     // -----------------------------------------------------------
     if (ray_id == 0) {
-        float max_gain = 0.0f;
-        int best_start_idx = 0;
-
-        // How many 10-degree strips fit in my Horizontal FOV?
         int sectors_in_fov = (int)(params.fov_y_rad / params.dtheta);
         if (sectors_in_fov < 1) {
             sectors_in_fov = 1;
         }
 
-        // Slide the window 0 to 36
-        for (int i = 0; i < THETA_BINS; ++i) {
-            float current_window_gain = 0.0f;
-            
-            // Sum up the strips inside the window
-            for (int k = 0; k < sectors_in_fov; ++k) {
-                int idx = (i + k) % THETA_BINS; // Wrap around (35 -> 0)
-                current_window_gain += s_yaw_gains[idx];
-            }
+        float max_gain;
+        int best_start_idx = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS,
+                                                       sectors_in_fov, &max_gain);
+        float center_angle = aep::yaw_window_center_angle(best_start_idx,
+                                                          params.dtheta, params.fov_y_rad);
 
-            // Keep track of the winner
-            if (current_window_gain > max_gain) {
-                max_gain = current_window_gain;
-                best_start_idx = i;
-            }
-        }
-
-        // 7. Write Final Result to Global Memory
         results_gain[candidate] = max_gain;
-        
-        // Calculate the center angle of the best window
-        float start_angle = -CUDART_PI_F + (best_start_idx * params.dtheta);
-        float center_angle = start_angle + (params.fov_y_rad * 0.5f);
-        
-        // Normalize angle to -PI to PI
-        if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
-        
         results_yaw[candidate] = center_angle;
     }
 }
@@ -412,94 +270,31 @@ __global__ void evaluate_aep_kernel_depth(
         float3 cam_pos = positions[candidate];
 
         float sin_phi = sinf(phi);
-        float dir_x = cosf(theta) * sin_phi;
-        float dir_y = sinf(theta) * sin_phi;
-        float dir_z = cosf(phi);
+        float3 dir = aep::spherical_ray_dir(theta, phi);
 
-        // Origin in Voxel Coordinates
-        float gx = (cam_pos.x - map_origin.x) / params.voxel_size;
-        float gy = (cam_pos.y - map_origin.y) / params.voxel_size;
-        float gz = (cam_pos.z - map_origin.z) / params.voxel_size;
-
-        // Integer start indices
-        int ix = floor(gx);
-        int iy = floor(gy);
-        int iz = floor(gz);
-
-        // Step Direction
-        int stepX = (dir_x > 0.0f) ? 1 : ((dir_x < 0.0f) ? -1 : 0);
-        int stepY = (dir_y > 0.0f) ? 1 : ((dir_y < 0.0f) ? -1 : 0);
-        int stepZ = (dir_z > 0.0f) ? 1 : ((dir_z < 0.0f) ? -1 : 0);
-
-        // tDelta: Distance along ray to cross one voxel in each dimension
-        float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
-        float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
-        float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
-
-        // tMax: Distance to the *next* boundary
-        float tMaxX, tMaxY, tMaxZ;
-
-        if (stepX > 0) {
-            tMaxX = (ix + 1.0f - gx) * tDeltaX;
-        } else {
-            tMaxX = (gx - ix) * tDeltaX;
-        }
-
-        if (stepY > 0) {
-            tMaxY = (iy + 1.0f - gy) * tDeltaY;
-        } else {
-            tMaxY = (gy - iy) * tDeltaY;
-        }
-
-        if (stepZ > 0) {
-            tMaxZ = (iz + 1.0f - gz) * tDeltaZ;
-        } else {
-            tMaxZ = (gz - iz) * tDeltaZ;
-        }
+        float3 g = aep::world_to_voxel(cam_pos, map_origin, params.voxel_size);
+        aep::Dda3 d = aep::dda3_init(g, dir);
 
         float ray_gain = 0.0f;
-        float t = 0.0f;
         float max_t = params.gain_range / params.voxel_size;
         float final_depth = params.gain_range;
 
-        while (t < max_t) {
-            if (ix >= 0 && ix < map_dim.x &&
-                iy >= 0 && iy < map_dim.y &&
-                iz >= 0 && iz < map_dim.z) {
-                
-                int flat_idx = iz * (map_dim.x * map_dim.y) + iy * map_dim.x + ix;
+        for (int s = 0; s < aep::kMaxDdaSteps && d.t < max_t; ++s) {
+            if (aep::in_bounds(d.ix, d.iy, d.iz, map_dim)) {
+                int flat_idx = aep::voxel_flat_index(d.ix, d.iy, d.iz, map_dim);
                 uint8_t val = map[flat_idx];
 
                 if (val == V_OCCUPIED) {
-                    final_depth = t * params.voxel_size;
+                    final_depth = d.t * params.voxel_size;
                     break;
-                } 
-                else if (val == V_UNKNOWN) {
-                    float t_exit = fminf(tMaxX, fminf(tMaxY, tMaxZ));
-                    float dt = t_exit - t; 
-                    float dr = dt * params.voxel_size;
-
-                    float r = t * params.voxel_size;
-                    float term1 = 2.0f * r * r * dr;
-                    float term2 = (dr * dr * dr) / 6.0f;
-                    ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                } else if (val == V_UNKNOWN) {
+                    float t_exit = aep::dda3_t_exit(d);
+                    float dr = (t_exit - d.t) * params.voxel_size;
+                    float r  = d.t * params.voxel_size;
+                    ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                 }
             }
-
-            // Step to Next Voxel
-            if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-                ix += stepX;
-                t = tMaxX;
-                tMaxX += tDeltaX;
-            } else if (tMaxY < tMaxZ) {
-                iy += stepY;
-                t = tMaxY;
-                tMaxY += tDeltaY;
-            } else {
-                iz += stepZ;
-                t = tMaxZ;
-                tMaxZ += tDeltaZ;
-            }
+            aep::dda3_step(d);
         }
 
         int global_ray_idx = candidate * rays_per_candidate + ray_id;
@@ -516,42 +311,18 @@ __global__ void evaluate_aep_kernel_depth(
     //    Sliding Window Optimization (Single Thread per Block)
     // -----------------------------------------------------------
     if (ray_id == 0) {
-        float max_gain = 0.0f;
-        int best_start_idx = 0;
-
-        // How many 10-degree strips fit in my Horizontal FOV?
         int sectors_in_fov = (int)(params.fov_y_rad / params.dtheta);
         if (sectors_in_fov < 1) {
             sectors_in_fov = 1;
         }
 
-        // Slide the window 0 to 36
-        for (int i = 0; i < THETA_BINS; ++i) {
-            float current_window_gain = 0.0f;
-            
-            // Sum up the strips inside the window
-            for (int k = 0; k < sectors_in_fov; ++k) {
-                int idx = (i + k) % THETA_BINS; // Wrap around (35 -> 0)
-                current_window_gain += s_yaw_gains[idx];
-            }
+        float max_gain;
+        int best_start_idx = aep::best_yaw_start_index(s_yaw_gains, THETA_BINS,
+                                                       sectors_in_fov, &max_gain);
+        float center_angle = aep::yaw_window_center_angle(best_start_idx,
+                                                          params.dtheta, params.fov_y_rad);
 
-            // Keep track of the winner
-            if (current_window_gain > max_gain) {
-                max_gain = current_window_gain;
-                best_start_idx = i;
-            }
-        }
-
-        // 7. Write Final Result to Global Memory
         results_gain[candidate] = max_gain;
-        
-        // Calculate the center angle of the best window
-        float start_angle = -CUDART_PI_F + (best_start_idx * params.dtheta);
-        float center_angle = start_angle + (params.fov_y_rad * 0.5f);
-        
-        // Normalize angle to -PI to PI
-        if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
-        
         results_yaw[candidate] = center_angle;
 
         // Copy relevant depth buffer portion
@@ -664,10 +435,11 @@ __device__ float3 compute_skip_distance(
     float inv_z0 = 1.0f / P_start.z;
     float inv_z1 = 1.0f / P_end.z;
 
-    float u0 = fx * P_start.x * inv_z0 + cx;
-    float v0 = fy * P_start.y * inv_z0 + cy;
-    float u1 = fx * P_end.x   * inv_z1 + cx;
-    float v1 = fy * P_end.y   * inv_z1 + cy;
+    aep::PinholeIntrinsics intr = {fx, fy, cx, cy};
+    float2 px0 = aep::project_pinhole(P_start, intr);
+    float2 px1 = aep::project_pinhole(P_end, intr);
+    float u0 = px0.x, v0 = px0.y;
+    float u1 = px1.x, v1 = px1.y;
 
     // --- 4. 2D Screen Clipping (Liang-Barsky) ---
     float s_min = 0.0f;
@@ -999,29 +771,7 @@ __device__ float3 compute_skip_distance(
 }
 
 // Insert [lo,hi] into a sorted, non-overlapping interval set, coalescing overlaps/touches.
-__device__ void insert_and_merge_interval(
-    float2* intervals, int* count, int max_intervals, float lo, float hi)
-{
-    if (hi <= lo) return;
-    // find insertion point, absorb every interval that overlaps or touches [lo,hi]
-    int i = 0;
-    while (i < *count && intervals[i].y < lo) i++;        // strictly-before, keep
-    int j = i;
-    while (j < *count && intervals[j].x <= hi) {          // overlaps/touches -> absorb
-        lo = fminf(lo, intervals[j].x);
-        hi = fmaxf(hi, intervals[j].y);
-        j++;
-    }
-    // shift tail [j..count) to land right after slot i+1, then write merged at i
-    int tail = *count - j;
-    if (i + 1 + tail > max_intervals) { // clamp: drop overflow tail
-        tail = max_intervals - (i + 1);
-        if (tail < 0) tail = 0;
-    }
-    for (int k = tail - 1; k >= 0; --k) intervals[i + 1 + k] = intervals[j + k];
-    intervals[i] = make_float2(lo, hi);
-    *count = i + 1 + tail;
-}
+// insert_and_merge_interval now lives in aep_device_math.cuh (aep::namespace).
 
 __device__ void compute_multi_segment_skip_distance(
     int p_width, int p_height,
@@ -1053,20 +803,14 @@ __device__ void compute_multi_segment_skip_distance(
     float3 R2 = parent_R_rows[a*3 + 2];
     const float* parent_depth_buffer = parent_depth_buffers + (size_t)a * p_width * p_height;
 
-    // --- 1. Transform Ray to Camera Frame ---
+    // --- 1. Transform Ray to Camera Frame (O = R*(ray_start - parent), D = R*dir) ---
     float3 diff = make_float3(ray_start.x - parent_pos.x,
-                              ray_start.y - parent_pos.y, 
+                              ray_start.y - parent_pos.y,
                               ray_start.z - parent_pos.z);
-    
-    float3 O; 
-    O.x = R0.x*diff.x + R0.y*diff.y + R0.z*diff.z;
-    O.y = R1.x*diff.x + R1.y*diff.y + R1.z*diff.z;
-    O.z = R2.x*diff.x + R2.y*diff.y + R2.z*diff.z;
 
-    float3 D;
-    D.x = R0.x*ray_dir.x + R0.y*ray_dir.y + R0.z*ray_dir.z;
-    D.y = R1.x*ray_dir.x + R1.y*ray_dir.y + R1.z*ray_dir.z;
-    D.z = R2.x*ray_dir.x + R2.y*ray_dir.y + R2.z*ray_dir.z;
+    aep::RotationRows R = {R0, R1, R2};
+    float3 O = aep::apply_rotation_rows(R, diff);
+    float3 D = aep::apply_rotation_rows(R, ray_dir);
 
     // --- 2. Z-Clipping (Slab Method) ---
     float t0 = 0.0f;
@@ -1095,10 +839,11 @@ __device__ void compute_multi_segment_skip_distance(
     float inv_z0 = 1.0f / P_start.z;
     float inv_z1 = 1.0f / P_end.z;
 
-    float u0 = fx * P_start.x * inv_z0 + cx;
-    float v0 = fy * P_start.y * inv_z0 + cy;
-    float u1 = fx * P_end.x   * inv_z1 + cx;
-    float v1 = fy * P_end.y   * inv_z1 + cy;
+    aep::PinholeIntrinsics intr = {fx, fy, cx, cy};
+    float2 px0 = aep::project_pinhole(P_start, intr);
+    float2 px1 = aep::project_pinhole(P_end, intr);
+    float u0 = px0.x, v0 = px0.y;
+    float u1 = px1.x, v1 = px1.y;
 
     // --- 4. 2D Screen Clipping (Liang-Barsky) ---
     float s_min = 0.0f;
@@ -1136,30 +881,14 @@ __device__ void compute_multi_segment_skip_distance(
     float v_end   = v0 + s_max * (v1 - v0);
 
     // --- 7. Woo's DDA Setup ---
-    int x = floor(u_start);
-    int y = floor(v_start);
-    int x_end = floor(u_end);
-    int y_end = floor(v_end);
-
-    x = max(0, min(x, p_width - 1));
-    y = max(0, min(y, p_height - 1));
-    x_end = max(0, min(x_end, p_width - 1));
-    y_end = max(0, min(y_end, p_height - 1));
-
-    int stepX = (u_end > u_start) ? 1 : ((u_end < u_start) ? -1 : 0);
-    int stepY = (v_end > v_start) ? 1 : ((v_end < v_start) ? -1 : 0);
-
-    float dx = u_end - u_start;
-    float dy = v_end - v_start;
-    float tDeltaX = (dx != 0.0f) ? fabsf(1.0f / dx) : 1e30f;
-    float tDeltaY = (dy != 0.0f) ? fabsf(1.0f / dy) : 1e30f;
-
-    float tMaxX, tMaxY;
-    if (stepX > 0) tMaxX = (floor(u_start) + 1.0f - u_start) * tDeltaX;
-    else           tMaxX = (u_start - floor(u_start)) * tDeltaX;
-
-    if (stepY > 0) tMaxY = (floor(v_start) + 1.0f - v_start) * tDeltaY;
-    else           tMaxY = (v_start - floor(v_start)) * tDeltaY;
+    // dda2_init reproduces the exact clamp/step/tMax expressions; locals are
+    // aliased out so the state machine below stays unchanged.
+    aep::Dda2 dd = aep::dda2_init(u_start, v_start, u_end, v_end, p_width, p_height);
+    int x = dd.x, y = dd.y;
+    int x_end = dd.x_end, y_end = dd.y_end;
+    int stepX = dd.stepX, stepY = dd.stepY;
+    float tDeltaX = dd.tDeltaX, tDeltaY = dd.tDeltaY;
+    float tMaxX = dd.tMaxX, tMaxY = dd.tMaxY;
 
     // --- 8. The Stable State Machine ---
     float current_t = 0.0f;
@@ -1240,7 +969,7 @@ __device__ void compute_multi_segment_skip_distance(
                 }
                 
                 if (t_meters_end > t_meters_start + 1e-4f) {
-                    insert_and_merge_interval(out_intervals, out_count, max_intervals,
+                    aep::insert_and_merge_interval(out_intervals, out_count, max_intervals,
                                               t_meters_start, t_meters_end);
                 }
             }
@@ -1277,7 +1006,7 @@ __device__ void compute_multi_segment_skip_distance(
         }
         
         if (t_meters_end > t_meters_start + 1e-4f) {
-            insert_and_merge_interval(out_intervals, out_count, max_intervals,
+            aep::insert_and_merge_interval(out_intervals, out_count, max_intervals,
                                       t_meters_start, t_meters_end);
         }
     }
@@ -1520,9 +1249,7 @@ __global__ void evaluate_marginal_gain_kernel(
                     float dr = dt * params.voxel_size;
 
                     float r = t * params.voxel_size;
-                    float term1 = 2.0f * r * r * dr;
-                    float term2 = (dr * dr * dr) / 6.0f;
-                    ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                    ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                 }
             }
 
@@ -1862,9 +1589,7 @@ __global__ void evaluate_marginal_gain_kernel_v2(
                         float dr = dt * params.voxel_size;
 
                         float r = t * params.voxel_size;
-                        float term1 = 2.0f * r * r * dr;
-                        float term2 = (dr * dr * dr) / 6.0f;
-                        ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                        ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                     }
                 }
             }
@@ -2236,9 +1961,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(
                     float dr = dt * params.voxel_size;
 
                     float r = t * params.voxel_size;
-                    float term1 = 2.0f * r * r * dr;
-                    float term2 = (dr * dr * dr) / 6.0f;
-                    ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                    ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                 }*/
                 else if (val == V_UNKNOWN) {
                     float t_exit = fminf(tMaxX, fminf(tMaxY, tMaxZ));
@@ -2257,9 +1980,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(
                     if (dt > 0.0f) {
                         float dr = dt * params.voxel_size;
                         float r = t * params.voxel_size;
-                        float term1 = 2.0f * r * r * dr;
-                        float term2 = (dr * dr * dr) / 6.0f;
-                        ray_gain += (term1 + term2) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
+                        ray_gain += aep::gain_volume_increment(r, dr) * params.dtheta * sin_phi * sinf(params.dphi * 0.5f);
                     }
                 }
             }
