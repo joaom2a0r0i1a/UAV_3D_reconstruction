@@ -662,6 +662,58 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v3(const double 
     return { (double)results_gain, (double)results_yaw };
 }
 
+std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v4(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
+    // v4 shares v3's data preparation exactly; only the launcher (marcher) differs.
+    // 0. Safety Check
+    if (d_map_ == nullptr) {
+        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
+        return {0.0, 0.0};
+    }
+
+    int num_ancestors = (int)parent_positions.size();
+    if (num_ancestors == 0) {
+        // No ancestors -> no marginal subtraction possible; nothing to evaluate against.
+        return {0.0, 0.0};
+    }
+
+    int p_width = ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
+    int p_height = ceil((2.0f * r_max_ * tanf(fov_p_rad_ * 0.5f)) / dr_);
+
+    // Resize the vector to fit the result
+    size_t required_size = p_width * p_height;
+    if (result_depths.size() != required_size) {
+        result_depths.resize(required_size);
+    }
+
+    // Flatten the per-ancestor pose/yaw inputs into contiguous float arrays
+    // that match the kernel's expected layout (x,y,z per ancestor; one yaw each).
+    std::vector<float> parent_pos_flat(3 * num_ancestors);
+    std::vector<float> parent_yaw_flat(num_ancestors);
+    for (int i = 0; i < num_ancestors; ++i) {
+        parent_pos_flat[3*i + 0] = (float)parent_positions[i].x();
+        parent_pos_flat[3*i + 1] = (float)parent_positions[i].y();
+        parent_pos_flat[3*i + 2] = (float)parent_positions[i].z();
+        parent_yaw_flat[i] = (i < (int)parent_yaws.size()) ? (float)parent_yaws[i] : 0.0f;
+    }
+
+    // 1. Prepare Output Buffers
+    float results_gain = 0.0f;
+    float results_yaw = 0.0f;
+
+    // 2. Launch The Kernel Wrapper
+    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
+    GpuAncestors ancestors = {num_ancestors,
+                              parent_pos_flat.data(),
+                              parent_yaw_flat.data(),
+                              parent_R.data(),
+                              parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
+    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
+    launch_marginal_gain_kernel_v4(gpuMap(), cand, ancestors, out, gpuSensor());
+
+    // 3. Return Result
+    return { (double)results_gain, (double)results_yaw };
+}
+
 std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R) {
     // 1. Setup Parameters (Exact match to GPU Wrapper)
     float dr = (float)dr_;

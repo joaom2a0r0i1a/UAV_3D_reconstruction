@@ -818,6 +818,48 @@ __device__ inline float march_marginal_gain(const MapContext& m, const MarchRay&
     return ray_gain;
 }
 
+// Multi-ancestor marginal march, traversal variant (v4): same result as v3 in the
+// common case, but it NEVER reseats the DDA. It walks every voxel and simply omits
+// the gain of any segment that lies inside an observed-free span (traversed, not
+// counted). It keeps v3's two clamps (cap at range, no bleed into the next span),
+// so the counted t-range matches v3 wherever the ray is unobstructed. Because it
+// steps through skipped voxels instead of jumping them, an OCCUPIED voxel found
+// inside a span still terminates the ray -- exactly how v2 relates to v1. This is
+// the safer path: reseating past a span assumes it is empty, traversal re-checks it.
+__device__ inline float march_marginal_gain_traverse(const MapContext& m, const MarchRay& ray,
+                                                     SkipSet skips, const KernelParams& p,
+                                                     float* out_final_depth) {
+    gpuray::Dda3 d = gpuray::dda3_init(gpuray::world_to_voxel(ray.origin, m.origin, p.voxel_size), ray.dir);
+    float max_t = p.gain_range / p.voxel_size;
+    float final_depth = p.gain_range;
+    int current_skip_idx = 0;
+    float ray_gain = 0.0f;
+
+    for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
+        // Drop skip intervals the ray has already passed.
+        while (current_skip_idx < skips.count && d.t >= skips.intervals[current_skip_idx].y) current_skip_idx++;
+
+        uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
+        if (val == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
+        if (val == V_UNKNOWN) {
+            // Inside an observed-free span: traverse the voxel but count no gain.
+            bool inside = (current_skip_idx < skips.count &&
+                           d.t >= skips.intervals[current_skip_idx].x &&
+                           d.t <  skips.intervals[current_skip_idx].y);
+            if (!inside) {
+                float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);                       // FIX 1: cap at range
+                if (current_skip_idx < skips.count && t_exit > skips.intervals[current_skip_idx].x) {
+                    t_exit = fminf(t_exit, skips.intervals[current_skip_idx].x);        // FIX 2: no bleed into skip span
+                }
+                if (t_exit > d.t) ray_gain += ray_segment_gain(d.t, t_exit, ray.sin_phi, p);
+            }
+        }
+        gpuray::dda3_step(d);
+    }
+    *out_final_depth = final_depth;
+    return ray_gain;
+}
+
 // --- Depth-buffer synthesis (shared by every marginal kernel) ---
 // Block-strided fill: cast one ray per pixel at the chosen pose and store the
 // planar (camera-frame z) first-hit depth. `depth_out` is this candidate's slice.

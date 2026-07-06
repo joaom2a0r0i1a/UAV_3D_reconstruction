@@ -77,11 +77,14 @@ void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands, GpuResult out, Gp
 void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
 
 // --- Marginal-gain launchers (v3 is the live path; v1/v2 are legacy) --------
+// v4 mirrors v3 but traverses the observed-free spans instead of jumping them.
 void launch_marginal_gain_kernel(GpuMap map, GpuVec3 cand, GpuParent parent,
                                  GpuResult out, GpuSensor cfg);
 void launch_marginal_gain_kernel_v2(GpuMap map, GpuVec3 cand, GpuParent parent,
                                     GpuResult out, GpuSensor cfg);
 void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
+                                    GpuResult out, GpuSensor cfg);
+void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
                                     GpuResult out, GpuSensor cfg);
 
 // --- Thin device-memory wrappers (host owns the cached map buffer) ----------

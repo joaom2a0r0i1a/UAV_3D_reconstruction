@@ -395,6 +395,74 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
     generate_depth_buffer(m, ancestors.cam, pose, params, out.depth + candidate * buffer_rays);
 }
 
+// Multi-ancestor marginal gain, traversal variant (v4). Identical to v3 except it
+// marches the observed-free spans instead of jumping them (safer, no DDA reseat);
+// gain inside a span is suppressed rather than skipped. See march_marginal_gain_traverse.
+__global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __restrict__ positions,
+                                                 AncestorSet ancestors, GainResults out,
+                                                 KernelParams params) {
+    __shared__ float s_yaw_gains[THETA_BINS];
+    int candidate = blockIdx.x;
+    int ray_id = threadIdx.x;
+    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    __syncthreads();
+
+    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
+    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rays_per_candidate = THETA_BINS * rows_in_fov;
+
+    for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
+        int theta_idx = idx % THETA_BINS;
+        int phi_idx   = idx / THETA_BINS;
+        float theta = -CUDART_PI_F + theta_idx * params.dtheta;
+        float phi   = params.phi_start + phi_idx * params.dphi;
+        if (phi > params.phi_end) continue;
+
+        float sin_phi = sinf(phi);
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
+        float3 cam_pos = positions[candidate];
+
+        // Merge the observed-free spans across every ancestor, in voxel units.
+        const int MAX_SEGS = 32;
+        float2 skip_m[MAX_SEGS];
+        int skip_count = 0;
+        float status = 1.0f;
+        Ray ray = {cam_pos, ray_dir};
+        SkipBuffer skip_out = {skip_m, &skip_count, MAX_SEGS, &status};
+        compute_multi_segment_skip_distance(ancestors, ray, params, skip_out);
+
+        float2 skip_vox[MAX_SEGS];
+        for (int i = 0; i < skip_count; ++i) {
+            skip_vox[i] = make_float2(skip_m[i].x / params.voxel_size,
+                                      skip_m[i].y / params.voxel_size);
+        }
+
+        float final_depth;
+        MarchRay mray = {cam_pos, ray_dir, sin_phi};
+        SkipSet skips = {skip_vox, skip_count};
+        float ray_gain = march_marginal_gain_traverse(m, mray, skips, params, &final_depth);
+
+        out.depth_all[candidate * rays_per_candidate + idx] = final_depth;
+        if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
+    }
+    __syncthreads();
+
+    __shared__ float s_best_yaw;
+    if (ray_id == 0) {
+        float max_gain;
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        out.gain[candidate] = max_gain;
+        out.yaw[candidate]  = center;
+        s_best_yaw = center;
+    }
+    __syncthreads();
+
+    int buffer_rays = ancestors.cam.p_width * ancestors.cam.p_height;
+    CameraPose pose = {positions[candidate], s_best_yaw};
+    generate_depth_buffer(m, ancestors.cam, pose, params, out.depth + candidate * buffer_rays);
+}
+
 // ============================================================================
 //  Launchers (extern "C" ABI -- consumed by gain_evaluator.cpp).
 // ============================================================================
@@ -658,10 +726,13 @@ extern "C" void launch_marginal_gain_kernel_v2(GpuMap map, GpuVec3 cand, GpuPare
     teardown_single_parent_marginal(d_cand_pos, parent, res, cam, out);
 }
 
-extern "C" void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ancestors_in,
-                                               GpuResult out, GpuSensor cfg) {
-    KernelParams params = params_of(cfg);
-    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+// Shared setup for the multi-ancestor marginal launchers (v3 and v4): allocate
+// device buffers, upload the candidate + flattened ancestor chain, and assemble
+// the kernel argument structs. Returns the rays-per-candidate launch width.
+static int setup_multi_ancestor_marginal(
+    const GpuMap& map, GpuVec3 cand, const GpuAncestors& ancestors_in,
+    const KernelParams& params, const gpuray::ParentCameraConfig& cam,
+    MapContext* m, float3** d_cand_pos, AncestorSet* ancestors, GainResults* out) {
 
     int n = ancestors_in.count;
     int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
@@ -671,12 +742,11 @@ extern "C" void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAnce
     size_t per = (size_t)cam.p_width * cam.p_height;   // depth elements per ancestor
 
     // Candidate + output buffers.
-    float3* d_cand_pos;
     float* d_res_gain;
     float* d_res_yaw;
     float* d_depth_buffer_all;
     float* d_depth_buffer;
-    cudaMalloc(&d_cand_pos, sizeof(float3));
+    cudaMalloc(d_cand_pos, sizeof(float3));
     cudaMalloc(&d_res_gain, sizeof(float));
     cudaMalloc(&d_res_yaw, sizeof(float));
     cudaMalloc(&d_depth_buffer_all, buffer_size_all);
@@ -693,7 +763,7 @@ extern "C" void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAnce
     cudaMalloc(&d_parent_depth, n * per * sizeof(float));
 
     float3 h_pos = make_float3(cand.x, cand.y, cand.z);
-    cudaMemcpy(d_cand_pos, &h_pos, sizeof(float3), cudaMemcpyHostToDevice);
+    cudaMemcpy(*d_cand_pos, &h_pos, sizeof(float3), cudaMemcpyHostToDevice);
     cudaMemcpy(d_parent_pos, ancestors_in.pos, n * 3 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_parent_R,   ancestors_in.R,   n * 9 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_parent_yaw, ancestors_in.yaw, n * sizeof(float),     cudaMemcpyHostToDevice);
@@ -703,29 +773,71 @@ extern "C" void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAnce
         cudaMemset(d_parent_depth, 0, n * per * sizeof(float));
     }
 
-    MapContext m = context_of(map);
-    AncestorSet ancestors = {d_parent_pos, d_parent_yaw, d_parent_depth, d_parent_R, n, cam};
-    GainResults res = {d_res_gain, d_res_yaw, d_depth_buffer_all, d_depth_buffer};
+    *m = context_of(map);
+    *ancestors = AncestorSet{d_parent_pos, d_parent_yaw, d_parent_depth, d_parent_R, n, cam};
+    *out = GainResults{d_res_gain, d_res_yaw, d_depth_buffer_all, d_depth_buffer};
+    return rays_per_candidate;
+}
 
-    evaluate_marginal_gain_kernel_v3<<<1, min(rays_per_candidate, MAX_THREADS_PER_BLOCK)>>>(
+// Download results then release every device buffer held in a GainResults plus
+// the flattened ancestor state and candidate position.
+static void teardown_multi_ancestor_marginal(
+    float3* d_cand_pos, const AncestorSet& ancestors, const GainResults& out,
+    const gpuray::ParentCameraConfig& cam, GpuResult result) {
+
+    size_t buffer_size = (size_t)cam.p_width * cam.p_height * sizeof(float);
+    cudaMemcpy(result.gain, out.gain, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(result.yaw, out.yaw, sizeof(float), cudaMemcpyDeviceToHost);
+    if (result.depths != nullptr) {
+        cudaMemcpy(result.depths, out.depth, buffer_size, cudaMemcpyDeviceToHost);
+    }
+    cudaFree(d_cand_pos);
+    cudaFree(out.gain);
+    cudaFree(out.yaw);
+    cudaFree(out.depth_all);
+    cudaFree(out.depth);
+    cudaFree(const_cast<float3*>(ancestors.positions));
+    cudaFree(const_cast<float3*>(ancestors.R_rows));
+    cudaFree(const_cast<float*>(ancestors.yaws));
+    cudaFree(const_cast<float*>(ancestors.depth));
+}
+
+extern "C" void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ancestors_in,
+                                               GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m;
+    float3* d_cand_pos;
+    AncestorSet ancestors;
+    GainResults res;
+    int rays = setup_multi_ancestor_marginal(map, cand, ancestors_in, params, cam,
+                                             &m, &d_cand_pos, &ancestors, &res);
+
+    evaluate_marginal_gain_kernel_v3<<<1, min(rays, MAX_THREADS_PER_BLOCK)>>>(
         m, d_cand_pos, ancestors, res, params);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(out.gain, d_res_gain, sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(out.yaw, d_res_yaw, sizeof(float), cudaMemcpyDeviceToHost);
-    if (out.depths != nullptr) {
-        cudaMemcpy(out.depths, d_depth_buffer, buffer_size, cudaMemcpyDeviceToHost);
-    }
+    teardown_multi_ancestor_marginal(d_cand_pos, ancestors, res, cam, out);
+}
 
-    cudaFree(d_cand_pos);
-    cudaFree(d_res_gain);
-    cudaFree(d_res_yaw);
-    cudaFree(d_depth_buffer_all);
-    cudaFree(d_depth_buffer);
-    cudaFree(d_parent_pos);
-    cudaFree(d_parent_R);
-    cudaFree(d_parent_yaw);
-    cudaFree(d_parent_depth);
+extern "C" void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAncestors ancestors_in,
+                                               GpuResult out, GpuSensor cfg) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m;
+    float3* d_cand_pos;
+    AncestorSet ancestors;
+    GainResults res;
+    int rays = setup_multi_ancestor_marginal(map, cand, ancestors_in, params, cam,
+                                             &m, &d_cand_pos, &ancestors, &res);
+
+    evaluate_marginal_gain_kernel_v4<<<1, min(rays, MAX_THREADS_PER_BLOCK)>>>(
+        m, d_cand_pos, ancestors, res, params);
+    cudaDeviceSynchronize();
+
+    teardown_multi_ancestor_marginal(d_cand_pos, ancestors, res, cam, out);
 }
 
 // ============================================================================

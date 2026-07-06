@@ -102,6 +102,10 @@ class GainEvaluator {
 
   std::pair<double, double> computeMarginalGainGPU_v3(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
 
+  // v4: same multi-ancestor marginal gain as v3, but the GPU marcher traverses the
+  // observed-free spans instead of jumping them (safer, no DDA reseat).
+  std::pair<double, double> computeMarginalGainGPU_v4(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
   std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node);
