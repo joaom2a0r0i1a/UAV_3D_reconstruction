@@ -1,5 +1,4 @@
 #include "motion_planning/AEP/AEPlanner.h"
-#include <map>
 
 AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
