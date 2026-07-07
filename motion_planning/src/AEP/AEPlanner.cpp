@@ -1,4 +1,5 @@
 #include "motion_planning/AEP/AEPlanner.h"
+#include <map>
 
 AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
@@ -153,7 +154,7 @@ void AEPlanner::GetTransformation() {
 }
 
 void AEPlanner::AEP() {
-    localPlanner();
+    localPlannerGPU();   // batched marginal-gain planner (fused vs split comparison)
     if (goto_global_planning) {
         // Clear variables from possible previous iterations
         best_global_node = nullptr;
@@ -441,9 +442,26 @@ void AEPlanner::localPlannerGPU() {
     rrt_star::Node* best_node = nullptr;
 
     // BENCHMARKING ACCUMULATORS
-    double total_time_gpu_calc = 0.0;
+    double total_time_gpu_calc = 0.0;   // Phase A (absolute batch gain)
     double total_time_cpu_calc = 0.0;
+    double total_time_fused = 0.0;      // Phase B batched marginal, Option 1 (fused)
+    double total_time_split = 0.0;      // Phase B batched marginal, Option 2 (split)
+    double total_time_v4    = 0.0;      // Phase B per-candidate GPU v4 (traverse march)
+    double total_time_cpu   = 0.0;      // Phase B per-candidate CPU hash-map marginal
     int total_nodes_evaluated = 0;
+
+    // World<-camera rotation rows for an ancestor pose (matches the GPU kernel).
+    const float camera_pitch_rad = 10.0f * M_PI / 180.0f;
+    auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw, float pitch_rad)
+                                    -> std::pair<std::vector<float>, Eigen::Vector3d> {
+        float cos_y = cosf(yaw), sin_y = sinf(yaw);
+        float cos_p = cosf(pitch_rad), sin_p = sinf(pitch_rad);
+        std::vector<float> R(9);
+        R[0] = sin_y;          R[1] = -cos_y;         R[2] = 0.0f;
+        R[3] = -sin_p * cos_y; R[4] = -sin_p * sin_y; R[5] = -cos_p;
+        R[6] =  cos_p * cos_y; R[7] =  cos_p * sin_y; R[8] = -sin_p;
+        return {R, body_pos};
+    };
 
     int j = 1; // Total nodes processed
 
@@ -596,42 +614,149 @@ void AEPlanner::localPlannerGPU() {
 
         if (batch_nodes.empty()) continue;
 
-        auto t1 = std::chrono::high_resolution_clock::now();
-        auto batch_results = segment_evaluator.computeGainBatchGPU(batch_x, batch_y, batch_z);
-        auto t2 = std::chrono::high_resolution_clock::now();
-        total_time_gpu_calc += std::chrono::duration<double, std::milli>(t2 - t1).count();
-
-        auto t3 = std::chrono::high_resolution_clock::now();
-        for (size_t k = 0; k < batch_nodes.size(); ++k) {
-             eth_mav_msgs::EigenTrajectoryPoint dummy_pose;
-             dummy_pose.position_W = Eigen::Vector3d(batch_x[k], batch_y[k], batch_z[k]);
-             segment_evaluator.computeGainCPU_FlatMap(flat_map_, dummy_pose);
-        }
-        auto t4 = std::chrono::high_resolution_clock::now();
-        total_time_cpu_calc += std::chrono::duration<double, std::milli>(t4 - t3).count();
-
-        total_nodes_evaluated += batch_nodes.size();
-
+        // --- Marginal gain requires ancestors evaluated BEFORE their descendants ---
+        // A node's subtractable depth buffer only exists once it has itself been
+        // evaluated (it is generated at that node's chosen best yaw). A single GPU
+        // launch cannot satisfy that for a parent/child pair sampled into the same
+        // batch. So we evaluate in tree-depth GENERATIONS: bucket this batch's nodes
+        // by depth from the root and launch one wavefront per level, shallow first.
+        // By the time level d runs, every shallower ancestor (from this batch or an
+        // earlier one) already carries its best-yaw depth buffer, so the kernels
+        // actually subtract the observed-free overlap (true v2/v3/v4 marginal gain).
+        const int per = segment_evaluator.depthImagePixels();
+        std::map<int, std::vector<size_t>> levels;   // tree depth -> indices into batch_nodes
         for (size_t i = 0; i < batch_nodes.size(); ++i) {
-            rrt_star::Node* node = batch_nodes[i];
-            node->gain = batch_results[i].first;
-            node->point[3] = batch_results[i].second;
+            int depth = 0;
+            for (rrt_star::Node* a = batch_nodes[i]->parent; a != nullptr; a = a->parent) ++depth;
+            levels[depth].push_back(i);
+        }
 
-            segment_evaluator.computeScore(node, lambda);
+        for (const auto& level : levels) {
+            int depth = level.first;
+            const std::vector<size_t>& idxs = level.second;
+            const size_t n = idxs.size();
 
-            if (node->score > best_score_) {
-                best_score_ = node->score;
-                best_node = node;
+            // --- Build the ancestor CSR for THIS LEVEL (marginal-gain inputs) ---
+            // Each candidate lists its ancestor chain (camera pose + rotation + the
+            // ancestor's stored depth buffer). Only the root pads with -1 now.
+            std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n);
+            std::vector<int>   anc_offsets(1, 0);
+            std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
+            for (size_t li = 0; li < n; ++li) {
+                rrt_star::Node* nd = batch_nodes[idxs[li]];
+                cand_x_f[li] = (float)nd->point.x();
+                cand_y_f[li] = (float)nd->point.y();
+                cand_z_f[li] = (float)nd->point.z();
+                for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
+                    auto [R_flat, cam_pos] = get_parent_cam_state(a->point.head(3), (float)a->point[3], camera_pitch_rad);
+                    anc_pos.push_back((float)cam_pos.x());
+                    anc_pos.push_back((float)cam_pos.y());
+                    anc_pos.push_back((float)cam_pos.z());
+                    anc_yaw.push_back((float)a->point[3]);
+                    anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
+                    if ((int)a->depth_buffer.size() == per)
+                        anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+                    else
+                        anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+                }
+                anc_offsets.push_back((int)(anc_pos.size() / 3));
             }
 
-            visualize_edge(node, ns);
-            visualize_node(node->point, ns);
+            // --- Evaluate this level with BOTH batched architectures; compare speed ---
+            std::vector<float> depth_fused, depth_split;
+            float ms_fused = 0.0f, ms_split = 0.0f;
+            auto batch_results = segment_evaluator.computeMarginalGainBatchGPU(
+                cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
+                /*use_split=*/false, depth_fused, ms_fused);
+            auto split_results = segment_evaluator.computeMarginalGainBatchGPU(
+                cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
+                /*use_split=*/true, depth_split, ms_split);
+            total_time_fused += ms_fused;
+            total_time_split += ms_split;
+            total_nodes_evaluated += n;
 
-            if (node->gain > g_zero) {
-                cacheNode(node);
+            // --- Reference methods on the SAME nodes: per-candidate GPU v4 and CPU hash-map ---
+            // v4 is the ground-truth the batched kernels reproduce; CPU is the original baseline.
+            // DIAGNOSTIC: also compute absolute gain (upper bound) and single-parent v2
+            // (isolates the immediate-parent subtraction from the multi-ancestor merge).
+            std::vector<std::pair<double,double>> v4_results(n), cpu_results(n), abs_results(n), v2_results(n);
+            double ms_v4 = 0.0, ms_cpu = 0.0;
+            for (size_t li = 0; li < n; ++li) {
+                // Slice this candidate's ancestor chain out of the shared CSR arrays.
+                int a0 = anc_offsets[li], a1 = anc_offsets[li + 1];
+                std::vector<Eigen::Vector3d> v4_pos;
+                std::vector<double>          v4_yaw;
+                std::vector<float>           v4_R(anc_R.begin() + (size_t)a0 * 9,       anc_R.begin() + (size_t)a1 * 9);
+                std::vector<float>           v4_depth(anc_depth.begin() + (size_t)a0 * per, anc_depth.begin() + (size_t)a1 * per);
+                for (int a = a0; a < a1; ++a) {
+                    v4_pos.emplace_back(anc_pos[a * 3 + 0], anc_pos[a * 3 + 1], anc_pos[a * 3 + 2]);
+                    v4_yaw.push_back(anc_yaw[a]);
+                }
+                std::vector<float> v4_depth_out;
+                auto tv0 = std::chrono::high_resolution_clock::now();
+                v4_results[li] = segment_evaluator.computeMarginalGainGPU_v4(
+                    cand_x_f[li], cand_y_f[li], cand_z_f[li], v4_pos, v4_yaw, v4_R, v4_depth, v4_depth_out);
+                auto tv1 = std::chrono::high_resolution_clock::now();
+                ms_v4 += std::chrono::duration<double, std::milli>(tv1 - tv0).count();
+
+                // CPU hash-map marginal gain (immediate-parent reference path).
+                rrt_star::Node* node = batch_nodes[idxs[li]];
+                auto tc0 = std::chrono::high_resolution_clock::now();
+                if (node->parent && node->parent->parent)
+                    segment_evaluator.populateParentHistory(flat_map_, node->parent);
+                cpu_results[li] = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, node);
+                auto tc1 = std::chrono::high_resolution_clock::now();
+                ms_cpu += std::chrono::duration<double, std::milli>(tc1 - tc0).count();
+
+                // DIAGNOSTIC: absolute gain (no subtraction) = physical upper bound.
+                eth_mav_msgs::EigenTrajectoryPoint abs_pose;
+                abs_pose.position_W = Eigen::Vector3d(cand_x_f[li], cand_y_f[li], cand_z_f[li]);
+                abs_results[li] = segment_evaluator.computeGainCPU_FlatMap(flat_map_, abs_pose);
+
+                // DIAGNOSTIC: single-parent v2 (subtract ONLY the immediate parent).
+                v2_results[li] = {0.0, 0.0};
+                if (a1 > a0) {
+                    std::vector<float> p_R(anc_R.begin() + (size_t)a0 * 9, anc_R.begin() + (size_t)a0 * 9 + 9);
+                    std::vector<float> p_depth(anc_depth.begin() + (size_t)a0 * per, anc_depth.begin() + (size_t)a0 * per + per);
+                    Eigen::Vector3d p_pos(anc_pos[a0 * 3 + 0], anc_pos[a0 * 3 + 1], anc_pos[a0 * 3 + 2]);
+                    std::vector<float> v2_depth_out;
+                    v2_results[li] = segment_evaluator.computeMarginalGainGPU_v2(
+                        cand_x_f[li], cand_y_f[li], cand_z_f[li], p_pos, anc_yaw[a0], p_R, p_depth, v2_depth_out);
+                }
+            }
+            total_time_v4  += ms_v4;
+            total_time_cpu += ms_cpu;
+
+            // --- Per-node gain results: abs (upper bound) | v2 (single parent) | fused/v4 (multi) | cpu ---
+            for (size_t li = 0; li < n; ++li) {
+                ROS_INFO("[MargGain d%d node %d] abs=%7.3f | v2=%7.3f | fused=%7.3f | v4=%7.3f | cpu=%7.3f",
+                         depth, (int)idxs[li], abs_results[li].first, v2_results[li].first,
+                         batch_results[li].first, v4_results[li].first, cpu_results[li].first);
             }
 
-            if (j >= N_max && best_score_ > g_zero) break;
+            // --- Commit results; store each node's best-yaw depth buffer so the NEXT
+            //     (deeper) level can subtract it as an ancestor. ---
+            for (size_t li = 0; li < n; ++li) {
+                rrt_star::Node* node = batch_nodes[idxs[li]];
+                node->gain = batch_results[li].first;
+                node->point[3] = batch_results[li].second;
+                node->depth_buffer.assign(depth_fused.begin() + (size_t)li * per,
+                                          depth_fused.begin() + (size_t)(li + 1) * per);
+
+                segment_evaluator.computeScore(node, lambda);
+
+                if (node->score > best_score_) {
+                    best_score_ = node->score;
+                    best_node = node;
+                }
+
+                visualize_edge(node, ns);
+                visualize_node(node->point, ns);
+
+                if (node->gain > g_zero) {
+                    cacheNode(node);
+                }
+            }
         }
 
         if (j > N_termination) {
@@ -644,23 +769,25 @@ void AEPlanner::localPlannerGPU() {
         }
     }
 
-    // PRINT BENCHMARK REPORT
+    // PRINT BENCHMARK REPORT: batched fused/split vs per-candidate v4 vs CPU (same nodes)
     if (total_nodes_evaluated > 0) {
-        double speedup = total_time_cpu_calc / (total_time_gpu_calc > 0 ? total_time_gpu_calc : 0.001);
-        ROS_INFO_THROTTLE(1.0,
-            "\n=== GPU vs CPU EFFICIENCY REPORT (Same Nodes) ===\n"
-            "Nodes Evaluated : %d\n"
-            "Total CPU Time  : %8.3f ms\n"
-            "Total GPU Time  : %8.3f ms\n"
-            "Avg CPU / Node  : %8.4f ms\n"
-            "Avg GPU / Node  : %8.4f ms\n"
-            "SPEEDUP FACTOR  : %8.2f x\n"
-            "=================================================",
+        double n = (double)total_nodes_evaluated;
+        double denom = (total_time_split > 0 ? total_time_split : 0.001);
+        ROS_INFO(
+            "\n=== MARGINAL GAIN BENCHMARK: FUSED vs SPLIT vs V4 vs CPU (Same Nodes) ===\n"
+            "Nodes Evaluated    : %d\n"
+            "Fused (batch GPU)  : %9.3f ms total | %8.4f ms/node\n"
+            "Split (batch GPU)  : %9.3f ms total | %8.4f ms/node\n"
+            "V4    (per-cand GPU): %9.3f ms total | %8.4f ms/node\n"
+            "CPU   (per-cand)   : %9.3f ms total | %8.4f ms/node\n"
+            "Speedups (vs split): fused %.2fx | v4 %.2fx | cpu %.2fx\n"
+            "========================================================================",
             total_nodes_evaluated,
-            total_time_cpu_calc, total_time_gpu_calc,
-            total_time_cpu_calc / total_nodes_evaluated,
-            total_time_gpu_calc / total_nodes_evaluated,
-            speedup
+            total_time_fused, total_time_fused / n,
+            total_time_split, total_time_split / n,
+            total_time_v4,    total_time_v4    / n,
+            total_time_cpu,   total_time_cpu   / n,
+            total_time_fused / denom, total_time_v4 / denom, total_time_cpu / denom
         );
     }
 
@@ -1014,6 +1141,7 @@ void AEPlanner::localPlanner() {
         std::vector<float> depth_buf_v1 = new_node->depth_buffer;
         std::vector<float> depth_buf_v2 = new_node->depth_buffer;
         std::vector<float> depth_buf_v3 = new_node->depth_buffer;
+        std::vector<float> depth_buf_v4 = new_node->depth_buffer;
 
         // --- DECLARE RESULTS OUTSIDE THE TRACKING BLOCK ---
         std::pair<double, double> res_cpu = {0.0, 0.0};
@@ -1021,6 +1149,7 @@ void AEPlanner::localPlanner() {
         std::pair<double, double> res_gpu_marg = {0.0, 0.0};
         std::pair<double, double> res_gpu_marg_v2 = {0.0, 0.0};
         std::pair<double, double> res_gpu_marg_v3 = {0.0, 0.0};
+        std::pair<double, double> res_gpu_marg_v4 = {0.0, 0.0};
 
         // --- 0. STATIC TRACKERS ---
         static int nodes_evaluated = 0;
@@ -1102,6 +1231,14 @@ void AEPlanner::localPlanner() {
             anc_depth_flat, depth_buf_v3);
         auto end_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
 
+        // v4: same ancestor chain as v3, but the marcher traverses skip spans.
+        auto start_gpu_marg_v4 = std::chrono::high_resolution_clock::now();
+        res_gpu_marg_v4 = segment_evaluator.computeMarginalGainGPU_v4(
+            new_node->point.x(), new_node->point.y(), new_node->point.z(),
+            anc_positions, anc_yaws, anc_R_flat,
+            anc_depth_flat, depth_buf_v4);
+        auto end_gpu_marg_v4 = std::chrono::high_resolution_clock::now();
+
         // ==========================================================
         // 1.5 PHYSICAL SANITY CHECK (Marginal Gain <= Absolute Gain)
         // ==========================================================
@@ -1144,6 +1281,9 @@ void AEPlanner::localPlanner() {
         if (res_gpu_marg_v3.first > absolute_baseline + EPSILON) {
             log_anomaly("GPU_Marg_V3", res_gpu_marg_v3.first);
         }
+        if (res_gpu_marg_v4.first > absolute_baseline + EPSILON) {
+            log_anomaly("GPU_Marg_V4", res_gpu_marg_v4.first);
+        }
 
         // ==========================================================
         // 2. ONLY DO THE LOGGING AND ACCUMULATION UNDER THE LIMIT
@@ -1154,6 +1294,7 @@ void AEPlanner::localPlanner() {
             double ms_gpu_marg  = std::chrono::duration<double, std::milli>(end_gpu_marg - start_gpu_marg).count();
             double ms_gpu_marg_v2 = std::chrono::duration<double, std::milli>(end_gpu_marg_v2 - start_gpu_marg_v2).count();
             double ms_gpu_marg_v3 = std::chrono::duration<double, std::milli>(end_gpu_marg_v3 - start_gpu_marg_v3).count();
+            double ms_gpu_marg_v4 = std::chrono::duration<double, std::milli>(end_gpu_marg_v4 - start_gpu_marg_v4).count();
 
             ROS_INFO(
                 "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
@@ -1162,12 +1303,14 @@ void AEPlanner::localPlanner() {
                 "3. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
                 "4. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
                 "5. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "6. GPU (Marg_v4): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
                 "---------------------------------------",
                 res_cpu.first,      res_cpu.second,      ms_cpu,
                 res_cpu_hash.first, res_cpu_hash.second, ms_cpu_hash, (ms_cpu / (ms_cpu_hash + 1e-5)),
                 res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
                 res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
-                res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5))
+                res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5)),
+                res_gpu_marg_v4.first, res_gpu_marg_v4.second, ms_gpu_marg_v4, (ms_cpu / (ms_gpu_marg_v4 + 1e-5))
             );
 
             // Accumulate Execution Times
@@ -1683,6 +1826,9 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
     ROS_INFO_ONCE("[AEPlanner]: main timer spinning");
 
     if (!set_variables) {
+        // Give the TF tree a moment to populate; on a fast start the
+        // body->camera transform may not be available yet.
+        ros::Duration(0.5).sleep();
         GetTransformation();
         ROS_INFO("[AEPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
         ROS_INFO("[AEPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);

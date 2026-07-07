@@ -8,6 +8,16 @@
 #include <rrt_construction/gpu_raycast_math.cuh>
 #include <rrt_construction/gpu_raycast_launch.h>
 
+// Candidates per tile for the split launcher's interval scratch (bounds device
+// memory; lower it if VRAM is tight, raise it to cut per-chunk launch overhead).
+#define SPLIT_CHUNK 128
+
+// Output depth-buffer slots for the batched path. generate_depth_buffer writes
+// into (candidate % BATCH_DEPTH_SLOTS), bounding output memory to slots*per so a
+// 500k-candidate sweep fits. The batched depth output is benchmark-only (not read
+// back); the live per-candidate v3/v4 path is unaffected.
+#define BATCH_DEPTH_SLOTS 4096
+
 // ============================================================================
 //  gpu_raycaster.cu
 //
@@ -464,6 +474,172 @@ __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __r
 }
 
 // ============================================================================
+//  Batched marginal gain: a whole wavefront in one grid (blockIdx = candidate).
+//  Two architectures share this data view; only the kernel structure differs.
+// ============================================================================
+
+// ---- Option 1: fused. One block per candidate; each ray does check-then-march
+// (v4 traverse march: it walks the observed-free spans instead of jumping them).
+__global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* __restrict__ positions,
+                                                   AncestorBatchDev ab, GainResults out,
+                                                   KernelParams params, int depth_slots) {
+    __shared__ float s_yaw_gains[THETA_BINS];
+    int candidate = blockIdx.x;
+    int ray_id = threadIdx.x;
+    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    __syncthreads();
+
+    AncestorSet ancestors = ancestors_for(ab, candidate);
+
+    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
+    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rays_per_candidate = THETA_BINS * rows_in_fov;
+
+    for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
+        int theta_idx = idx % THETA_BINS;
+        int phi_idx   = idx / THETA_BINS;
+        float theta = -CUDART_PI_F + theta_idx * params.dtheta;
+        float phi   = params.phi_start + phi_idx * params.dphi;
+        if (phi > params.phi_end) continue;
+
+        float sin_phi = sinf(phi);
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
+        float3 cam_pos = positions[candidate];
+
+        // Merge observed-free spans across every ancestor, in voxel units.
+        const int MAX_SEGS = 32;
+        float2 skip_m[MAX_SEGS];
+        int skip_count = 0;
+        float status = 1.0f;
+        Ray ray = {cam_pos, ray_dir};
+        SkipBuffer skip_out = {skip_m, &skip_count, MAX_SEGS, &status};
+        compute_multi_segment_skip_distance(ancestors, ray, params, skip_out);
+
+        float2 skip_vox[MAX_SEGS];
+        for (int i = 0; i < skip_count; ++i)
+            skip_vox[i] = make_float2(skip_m[i].x / params.voxel_size, skip_m[i].y / params.voxel_size);
+
+        float final_depth;
+        MarchRay mray = {cam_pos, ray_dir, sin_phi};
+        SkipSet skips = {skip_vox, skip_count};
+        float ray_gain = march_marginal_gain_traverse(m, mray, skips, params, &final_depth);
+        if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
+    }
+    __syncthreads();
+
+    __shared__ float s_best_yaw;
+    if (ray_id == 0) {
+        float max_gain;
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        out.gain[candidate] = max_gain;
+        out.yaw[candidate]  = center;
+        s_best_yaw = center;
+    }
+    __syncthreads();
+
+    int buffer_rays = ab.cam.p_width * ab.cam.p_height;
+    CameraPose pose = {positions[candidate], s_best_yaw};
+    generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
+}
+
+// ---- Option 2, stage A: parent-buffer checks only. Each ray writes its merged
+// skip intervals (voxel units) + count to global scratch. `max_segs` bounds the
+// per-ray slice. Rays outside the FOV band write count 0.
+// `cand_base` is the global index of this chunk's first candidate; the scratch is
+// indexed by the LOCAL block so a fixed buffer is reused across chunks.
+__global__ void marginal_skips_stage(const float3* __restrict__ positions, AncestorBatchDev ab,
+                                     int cand_base, KernelParams params, float2* __restrict__ skips_out,
+                                     int* __restrict__ counts_out, int max_segs) {
+    int candidate = cand_base + blockIdx.x;
+    int local = blockIdx.x;
+    AncestorSet ancestors = ancestors_for(ab, candidate);
+
+    int rows_in_fov = max(1, (int)(params.fov_p_rad / params.dphi));
+    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    float3 cam_pos = positions[candidate];
+
+    for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
+        long ray_slot = (long)local * rays_per_candidate + idx;
+        int theta_idx = idx % THETA_BINS;
+        int phi_idx   = idx / THETA_BINS;
+        float phi   = params.phi_start + phi_idx * params.dphi;
+        if (phi > params.phi_end) { counts_out[ray_slot] = 0; continue; }
+        float theta = -CUDART_PI_F + theta_idx * params.dtheta;
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
+
+        const int MAX_SEGS = 32;
+        float2 skip_m[MAX_SEGS];
+        int skip_count = 0;
+        float status = 1.0f;
+        Ray ray = {cam_pos, ray_dir};
+        SkipBuffer skip_out = {skip_m, &skip_count, MAX_SEGS, &status};
+        compute_multi_segment_skip_distance(ancestors, ray, params, skip_out);
+
+        int n = min(skip_count, max_segs);
+        float2* dst = skips_out + ray_slot * max_segs;
+        for (int i = 0; i < n; ++i) {
+            dst[i] = make_float2(skip_m[i].x / params.voxel_size,
+                                 skip_m[i].y / params.voxel_size);
+        }
+        counts_out[ray_slot] = n;
+    }
+}
+
+// ---- Option 2, stage B: raycasting only. Reads the merged skip intervals stage
+// A left in global memory and marches (v4 traverse march, matching the fused kernel).
+__global__ void marginal_march_stage(MapContext m, const float3* __restrict__ positions,
+                                     AncestorBatchDev ab, int cand_base, GainResults out,
+                                     KernelParams params, const float2* __restrict__ skips_in,
+                                     const int* __restrict__ counts_in, int max_segs, int depth_slots) {
+    __shared__ float s_yaw_gains[THETA_BINS];
+    int candidate = cand_base + blockIdx.x;
+    int local = blockIdx.x;
+    int ray_id = threadIdx.x;
+    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    __syncthreads();
+
+    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
+    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    float3 cam_pos = positions[candidate];
+
+    for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
+        int theta_idx = idx % THETA_BINS;
+        int phi_idx   = idx / THETA_BINS;
+        float phi   = params.phi_start + phi_idx * params.dphi;
+        if (phi > params.phi_end) continue;
+        float theta = -CUDART_PI_F + theta_idx * params.dtheta;
+        float sin_phi = sinf(phi);
+        float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
+
+        long ray_slot = (long)local * rays_per_candidate + idx;
+        SkipSet skips = {skips_in + ray_slot * max_segs, counts_in[ray_slot]};
+
+        float final_depth;
+        MarchRay mray = {cam_pos, ray_dir, sin_phi};
+        float ray_gain = march_marginal_gain_traverse(m, mray, skips, params, &final_depth);
+        if (ray_gain > 0.0f) atomicAdd(&s_yaw_gains[theta_idx], ray_gain);
+    }
+    __syncthreads();
+
+    __shared__ float s_best_yaw;
+    if (ray_id == 0) {
+        float max_gain;
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        out.gain[candidate] = max_gain;
+        out.yaw[candidate]  = center;
+        s_best_yaw = center;
+    }
+    __syncthreads();
+
+    int buffer_rays = ab.cam.p_width * ab.cam.p_height;
+    CameraPose pose = {positions[candidate], s_best_yaw};
+    generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
+}
+
+// ============================================================================
 //  Launchers (extern "C" ABI -- consumed by gain_evaluator.cpp).
 // ============================================================================
 
@@ -838,6 +1014,144 @@ extern "C" void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAnce
     cudaDeviceSynchronize();
 
     teardown_multi_ancestor_marginal(d_cand_pos, ancestors, res, cam, out);
+}
+
+// ---- Shared device-memory setup/teardown for the two batched launchers -----
+// (BatchDeviceMem and AncestorBatchDev are defined in gpu_raycast_math.cuh.)
+
+// Upload the candidate batch + CSR ancestor chains + output buffers, and build
+// the device-side AncestorBatchDev view. Identical work for fused and split, so
+// the only thing the timed region measures is the kernel structure itself.
+static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cands,
+                                    const GpuAncestorBatch& anc, const KernelParams& params,
+                                    const gpuray::ParentCameraConfig& cam,
+                                    MapContext* m, BatchDeviceMem* mem, GainResults* out) {
+    int nc = cands.count;
+    int total = anc.total;
+    size_t per = (size_t)cam.p_width * cam.p_height;
+    int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
+    int rays = THETA_BINS * rows_in_fov;
+    int depth_slots = min(nc, BATCH_DEPTH_SLOTS);
+
+    float3* h_cand = new float3[nc];
+    for (int i = 0; i < nc; ++i) h_cand[i] = make_float3(cands.x[i], cands.y[i], cands.z[i]);
+    cudaMalloc(&mem->d_cand, nc * sizeof(float3));
+    cudaMemcpy(mem->d_cand, h_cand, nc * sizeof(float3), cudaMemcpyHostToDevice);
+    delete[] h_cand;
+
+    cudaMalloc(&mem->d_off, (nc + 1) * sizeof(int));
+    cudaMalloc(&mem->d_pos, total * sizeof(float3));
+    cudaMalloc(&mem->d_yaw, total * sizeof(float));
+    cudaMalloc(&mem->d_R,   total * 3 * sizeof(float3));
+    cudaMemcpy(mem->d_off, anc.offsets, (nc + 1) * sizeof(int),            cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_pos, anc.pos,     (size_t)total * 3 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_yaw, anc.yaw,     total * sizeof(float),             cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_R,   anc.R,       (size_t)total * 9 * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Depth: shared pool (num_nodes buffers + per-slot index) or contiguous slots.
+    if (anc.depth_idx) {
+        size_t pool = (size_t)anc.num_nodes * per;
+        cudaMalloc(&mem->d_depth, pool * sizeof(float));
+        cudaMemcpy(mem->d_depth, anc.depth, pool * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMalloc(&mem->d_depth_idx, total * sizeof(int));
+        cudaMemcpy(mem->d_depth_idx, anc.depth_idx, total * sizeof(int), cudaMemcpyHostToDevice);
+    } else {
+        cudaMalloc(&mem->d_depth, (size_t)total * per * sizeof(float));
+        cudaMemcpy(mem->d_depth, anc.depth, (size_t)total * per * sizeof(float), cudaMemcpyHostToDevice);
+        mem->d_depth_idx = nullptr;
+    }
+
+    cudaMalloc(&mem->d_gain,      nc * sizeof(float));
+    cudaMalloc(&mem->d_yaw_out,   nc * sizeof(float));
+    cudaMalloc(&mem->d_depth_buf, (size_t)depth_slots * per * sizeof(float));
+
+    mem->rays = rays; mem->nc = nc; mem->depth_slots = depth_slots; mem->per = per;
+
+    *m = context_of(map);
+    // depth_all (per-ray planar depth) is unused by the batch marginal path.
+    *out = GainResults{mem->d_gain, mem->d_yaw_out, nullptr, mem->d_depth_buf};
+    AncestorBatchDev ab = {mem->d_off, mem->d_pos, mem->d_yaw, mem->d_depth,
+                           mem->d_R, (int)per, cam, mem->d_depth_idx};
+    return ab;
+}
+
+static void teardown_batch(const BatchDeviceMem& mem, GpuResult out) {
+    cudaMemcpy(out.gain, mem.d_gain,    mem.nc * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw,  mem.d_yaw_out, mem.nc * sizeof(float), cudaMemcpyDeviceToHost);
+    if (out.depths != nullptr) {   // bounded scratch; the benchmark path passes null
+        cudaMemcpy(out.depths, mem.d_depth_buf,
+                   (size_t)mem.depth_slots * mem.per * sizeof(float), cudaMemcpyDeviceToHost);
+    }
+    cudaFree(mem.d_cand); cudaFree(mem.d_off);   cudaFree(mem.d_pos);    cudaFree(mem.d_yaw);
+    cudaFree(mem.d_R);    cudaFree(mem.d_depth);
+    if (mem.d_depth_idx) cudaFree(mem.d_depth_idx);
+    cudaFree(mem.d_gain); cudaFree(mem.d_yaw_out); cudaFree(mem.d_depth_buf);
+}
+
+// Option 1 (fused): one kernel, grid = candidates, threads = rays.
+extern "C" void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
+                                                 GpuAncestorBatch anc, GpuResult out,
+                                                 GpuSensor cfg, float* kernel_ms) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m; BatchDeviceMem mem; GainResults res;
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res);
+
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    cudaEventRecord(t0);
+    evaluate_marginal_gain_batch_fused<<<mem.nc, min(mem.rays, MAX_THREADS_PER_BLOCK)>>>(
+        m, mem.d_cand, ab, res, params, mem.depth_slots);
+    cudaEventRecord(t1);
+    cudaEventSynchronize(t1);
+    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) printf("CUDA fused batch error: %s\n", cudaGetErrorString(err));
+
+    teardown_batch(mem, out);
+}
+
+// Option 2 (split): stage A writes merged skip intervals to global memory, stage
+// B reads them back and marches. The interval scratch is the price of the split.
+extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
+                                                 GpuAncestorBatch anc, GpuResult out,
+                                                 GpuSensor cfg, float* kernel_ms) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m; BatchDeviceMem mem; GainResults res;
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res);
+
+    // The interval scratch is bounded to one chunk of candidates and reused across
+    // chunks, so wide wavefronts don't blow up device memory (a real cost of the
+    // split: it MUST tile, whereas the fused kernel launches the whole grid once).
+    const int max_segs = 32;                       // merged capacity per ray in scratch
+    const int chunk = min(mem.nc, SPLIT_CHUNK);
+    size_t nslots = (size_t)chunk * mem.rays;
+    float2* d_skips; int* d_counts;
+    cudaMalloc(&d_skips,  nslots * max_segs * sizeof(float2));
+    cudaMalloc(&d_counts, nslots * sizeof(int));
+
+    int threads = min(mem.rays, MAX_THREADS_PER_BLOCK);
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    cudaEventRecord(t0);
+    for (int c0 = 0; c0 < mem.nc; c0 += chunk) {
+        int blocks = min(chunk, mem.nc - c0);
+        marginal_skips_stage<<<blocks, threads>>>(mem.d_cand, ab, c0, params, d_skips, d_counts, max_segs);
+        marginal_march_stage<<<blocks, threads>>>(m, mem.d_cand, ab, c0, res, params, d_skips, d_counts, max_segs, mem.depth_slots);
+    }
+    cudaEventRecord(t1);
+    cudaEventSynchronize(t1);
+    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) printf("CUDA split batch error: %s\n", cudaGetErrorString(err));
+
+    cudaFree(d_skips); cudaFree(d_counts);
+    teardown_batch(mem, out);
 }
 
 // ============================================================================

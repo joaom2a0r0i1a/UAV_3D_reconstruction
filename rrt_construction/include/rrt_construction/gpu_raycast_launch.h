@@ -66,6 +66,26 @@ typedef struct {
     float* depth;   // count*p_width*p_height, or null
 } GpuAncestors;
 
+// A whole wavefront of candidates, each with its own ancestor chain, in CSR form:
+// candidate c owns ancestors [offsets[c], offsets[c+1]) in the flattened arrays.
+// `total` == offsets[num_candidates]. Depth buffers are packed per=p_width*p_height
+// floats per ancestor. All host pointers; the launcher uploads them.
+// `depth_idx` (optional) turns `depth` into a shared pool of `num_nodes` buffers:
+// ancestor slot i reads pool[depth_idx[i]] instead of contiguous slot i. This keeps
+// device memory O(num_nodes*per) instead of O(total*per) for large wavefronts.
+// Leave depth_idx null (num_nodes ignored) for the contiguous layout.
+typedef struct {
+    int          num_candidates;
+    const int*   offsets;   // [num_candidates+1] prefix sum of per-candidate ancestor counts
+    int          total;     // total ancestors across the batch
+    const float* pos;       // [3*total]  (x,y,z per ancestor)
+    const float* yaw;       // [total]
+    const float* R;         // [9*total]  (row-major rows per ancestor)
+    const float* depth;     // [total*per] contiguous, or [num_nodes*per] pool if depth_idx set
+    const int*   depth_idx; // [total] pool index per ancestor slot, or null (contiguous)
+    int          num_nodes; // pool size when depth_idx set
+} GpuAncestorBatch;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -86,6 +106,22 @@ void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ances
                                     GpuResult out, GpuSensor cfg);
 void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
                                     GpuResult out, GpuSensor cfg);
+
+// --- Batched marginal-gain launchers (whole wavefront in one call) ----------
+// Two architectures over identical inputs, for head-to-head profiling (both use
+// the v4 traverse march):
+//   fused = Option 1: one kernel per candidate does check-then-march per ray.
+//   split = Option 2: kernel A writes merged skip intervals to global memory,
+//           kernel B reads them back and marches.
+// map.d_map must already be a DEVICE grid. out.gain/out.yaw are [num_candidates];
+// out.depths (or null) is [num_candidates * p_width * p_height]. If kernel_ms is
+// non-null it receives the on-device kernel time (ms), excluding host alloc/copy.
+void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
+                                      GpuAncestorBatch anc, GpuResult out,
+                                      GpuSensor cfg, float* kernel_ms);
+void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
+                                      GpuAncestorBatch anc, GpuResult out,
+                                      GpuSensor cfg, float* kernel_ms);
 
 // --- Thin device-memory wrappers (host owns the cached map buffer) ----------
 void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size);

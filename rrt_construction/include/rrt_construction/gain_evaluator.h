@@ -106,6 +106,26 @@ class GainEvaluator {
   // observed-free spans instead of jumping them (safer, no DDA reseat).
   std::pair<double, double> computeMarginalGainGPU_v4(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
 
+  // Depth-image pixel count (p_width*p_height) shared by every ancestor buffer.
+  int depthImagePixels() const {
+    int w = (int)std::ceil((2.0 * r_max_ * std::tan(fov_y_rad_ * 0.5)) / dr_);
+    int h = (int)std::ceil((2.0 * r_max_ * std::tan(fov_p_rad_ * 0.5)) / dr_);
+    return w * h;
+  }
+
+  // Batched multi-ancestor marginal gain over a whole wavefront (v4 traverse math).
+  // Ancestors are CSR-flattened: candidate c owns slots [offsets[c], offsets[c+1]).
+  // anc_depth is contiguous (total*per), padded with -1 for unready/root ancestors.
+  // use_split selects Option 2 (split kernels) over Option 1 (fused). Returns per-
+  // candidate {gain, yaw}; fills out_depth (num_candidates*per) with each candidate's
+  // generated depth buffer; kernel_ms receives the device kernel time (ms).
+  std::vector<std::pair<double, double>> computeMarginalGainBatchGPU(
+      const std::vector<float>& cand_x, const std::vector<float>& cand_y, const std::vector<float>& cand_z,
+      const std::vector<int>& offsets, const std::vector<float>& anc_pos,
+      const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
+      const std::vector<float>& anc_depth, bool use_split,
+      std::vector<float>& out_depth, float& kernel_ms);
+
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
   std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node);

@@ -3,6 +3,7 @@ logs/
 build/
 bin/
 lib/
+data/
 
 # Ignore Visual Studio Code configuration files
 .vscode/

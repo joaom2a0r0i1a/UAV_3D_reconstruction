@@ -714,6 +714,44 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v4(const double 
     return { (double)results_gain, (double)results_yaw };
 }
 
+std::vector<std::pair<double, double>> GainEvaluator::computeMarginalGainBatchGPU(
+    const std::vector<float>& cand_x, const std::vector<float>& cand_y, const std::vector<float>& cand_z,
+    const std::vector<int>& offsets, const std::vector<float>& anc_pos,
+    const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
+    const std::vector<float>& anc_depth, bool use_split,
+    std::vector<float>& out_depth, float& kernel_ms) {
+
+    kernel_ms = 0.0f;
+    if (d_map_ == nullptr) {
+        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
+        return {};
+    }
+    int nc = (int)cand_x.size();
+    if (nc == 0) return {};
+
+    int total = offsets[nc];
+    size_t per = (size_t)depthImagePixels();
+    std::vector<float> gains(nc, 0.0f), yaws(nc, 0.0f);
+    out_depth.assign((size_t)nc * per, 0.0f);
+
+    // depth_idx = null -> contiguous per-slot depth (one real buffer per ancestor).
+    GpuCandidates cands = {(float*)cand_x.data(), (float*)cand_y.data(), (float*)cand_z.data(), nc};
+    GpuAncestorBatch anc = {nc, offsets.data(), total,
+                            anc_pos.data(), anc_yaw.data(), anc_R.data(), anc_depth.data(),
+                            nullptr, 0};
+    GpuResult out = {gains.data(), yaws.data(), out_depth.data()};
+
+    float ms = 0.0f;
+    if (use_split) launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms);
+    else           launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms);
+    kernel_ms = ms;
+
+    std::vector<std::pair<double, double>> results;
+    results.reserve(nc);
+    for (int i = 0; i < nc; ++i) results.emplace_back((double)gains[i], (double)yaws[i]);
+    return results;
+}
+
 std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R) {
     // 1. Setup Parameters (Exact match to GPU Wrapper)
     float dr = (float)dr_;

@@ -121,13 +121,17 @@ struct ParentFrame {
 };
 
 // The full ancestor chain of a candidate (multi-ancestor marginal kernel v3).
+// `depth_idx` (optional, trailing) turns `depth` into a SHARED pool: ancestor i's
+// buffer is pool[depth_idx[i]] instead of the contiguous slot i. Left null by the
+// per-candidate v3/v4 path (contiguous); set by the pooled batch path.
 struct AncestorSet {
     const float3*           positions;   // [num]
     const float*            yaws;        // [num] (parity only; unused in math)
-    const float*            depth;       // [num * p_width * p_height]
+    const float*            depth;       // [num*per] (contiguous) or pool base (pooled)
     const float3*           R_rows;      // [num * 3] (R0,R1,R2 per ancestor)
     int                     num;
     gpuray::ParentCameraConfig cam;         // shared geometry across ancestors
+    const int*              depth_idx;   // null -> contiguous; else pool index per ancestor
 };
 
 // Per-candidate output buffers.
@@ -136,6 +140,40 @@ struct GainResults {
     float* yaw;         // [num_candidates]
     float* depth_all;   // scratch: one planar depth per cast ray
     float* depth;       // final view depth buffer (p_width * p_height per candidate)
+};
+
+// Device view of a whole wavefront's ancestor chains in CSR form: candidate c
+// owns ancestors [offsets[c], offsets[c+1]) in the flattened device arrays.
+// `per` = p_width*p_height depths per ancestor. Sliced per block by ancestors_for().
+struct AncestorBatchDev {
+    const int*    offsets;   // [num_candidates+1]
+    const float3* pos;       // [total]
+    const float*  yaw;       // [total]
+    const float*  depth;     // [total*per] (contiguous) or [num_nodes*per] pool (pooled)
+    const float3* R;         // [total*3]
+    int           per;
+    gpuray::ParentCameraConfig cam;
+    const int*    depth_idx; // null -> contiguous depth; else pool index per ancestor slot
+};
+
+// Host-side bookkeeping for a batched launch: every device allocation plus the
+// derived launch dimensions. Lives here (not in the .cu) so no struct is defined
+// in a translation unit; used only by the extern "C" launchers.
+struct BatchDeviceMem {
+    float3* d_cand;
+    int*    d_off;
+    float3* d_pos;
+    float*  d_yaw;
+    float3* d_R;
+    float*  d_depth;
+    int*    d_depth_idx;   // pooled depth index (null when contiguous)
+    float*  d_gain;
+    float*  d_yaw_out;
+    float*  d_depth_buf;   // bounded output scratch (depth_slots * per)
+    int     rays;          // rays per candidate
+    int     nc;
+    int     depth_slots;   // number of output depth-buffer slots (bounds memory)
+    size_t  per;           // p_width*p_height
 };
 
 // A candidate ray (world frame).
@@ -432,9 +470,31 @@ __device__ inline ParentFrame ancestor_frame(const AncestorSet& a, int i) {
     ParentFrame p;
     p.pos   = a.positions[i];
     p.R     = {a.R_rows[i * 3 + 0], a.R_rows[i * 3 + 1], a.R_rows[i * 3 + 2]};
-    p.depth = a.depth + (size_t)i * a.cam.p_width * a.cam.p_height;
+    size_t di = a.depth_idx ? (size_t)a.depth_idx[i] : (size_t)i;
+    p.depth = a.depth + di * a.cam.p_width * a.cam.p_height;
     p.cam   = a.cam;
     return p;
+}
+
+// Slice one candidate's AncestorSet out of the batched CSR view. Pooled depth
+// (ab.depth_idx set) keeps `depth` at the pool base and slices the index array;
+// contiguous depth offsets `depth` by base*per as before.
+__device__ inline AncestorSet ancestors_for(const AncestorBatchDev& ab, int candidate) {
+    int base = ab.offsets[candidate];
+    AncestorSet s;
+    s.positions = ab.pos + base;
+    s.yaws      = ab.yaw + base;
+    s.R_rows    = ab.R + (size_t)base * 3;
+    s.num       = ab.offsets[candidate + 1] - base;
+    s.cam       = ab.cam;
+    if (ab.depth_idx) {
+        s.depth     = ab.depth;
+        s.depth_idx = ab.depth_idx + base;
+    } else {
+        s.depth     = ab.depth + (size_t)base * ab.per;
+        s.depth_idx = nullptr;
+    }
+    return s;
 }
 
 // Liang-Barsky clip of segment a->b to `box`. Returns false if fully outside;
