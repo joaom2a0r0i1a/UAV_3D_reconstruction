@@ -72,7 +72,6 @@ public:
     void GetTransformation();
 
     void AEP();
-    void localPlannerGPUBenchmark();
     void localPlannerGPU();
     void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);

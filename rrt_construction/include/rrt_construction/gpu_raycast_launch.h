@@ -4,6 +4,13 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// Angular sample count = floor(span/step) with a snap-tolerance so an intended integer
+// (58deg/2deg=29) survives float rounding while 27.7 still floors to 27. One CPU+GPU def.
+static inline int angular_bins(float span, float step) {
+    int n = (int)(span / step + 1e-3f);
+    return n > 0 ? n : 1;
+}
+
 // ============================================================================
 //  GPU launcher ABI -- implemented in gpu_raycaster.cu, consumed by host code.
 //

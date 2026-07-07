@@ -67,6 +67,9 @@ struct KernelParams {
 
     float phi_start;
     float phi_end;
+
+    int rows_in_fov;      // vertical (phi) sample rows  = angular_bins(fov_p, dphi)
+    int sectors_in_fov;   // best-yaw window width (theta) = angular_bins(fov_y, dtheta)
 };
 
 namespace gpuray {
@@ -767,7 +770,10 @@ __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ra
     for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
         uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
         if (val == V_OCCUPIED) { *out_depth = d.t * p.voxel_size; break; }
-        if (val == V_UNKNOWN)  ray_gain += ray_segment_gain(d.t, gpuray::dda3_t_exit(d), ray.sin_phi, p);
+        if (val == V_UNKNOWN) {
+            float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);   // cap last voxel at range (match CPU + v3/v4)
+            if (t_exit > d.t) ray_gain += ray_segment_gain(d.t, t_exit, ray.sin_phi, p);
+        }
         gpuray::dda3_step(d);
     }
     return ray_gain;
@@ -798,7 +804,7 @@ __device__ inline float march_marginal_gain_single(const MapContext& m, const Ma
 
         uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
         if (val == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-        if (val == V_UNKNOWN)  ray_gain += ray_segment_gain(d.t, gpuray::dda3_t_exit(d), ray.sin_phi, p);
+        if (val == V_UNKNOWN)  ray_gain += ray_segment_gain(d.t, fminf(gpuray::dda3_t_exit(d), max_t), ray.sin_phi, p);  // cap at range
         gpuray::dda3_step(d);
     }
     *out_final_depth = final_depth;
@@ -824,7 +830,7 @@ __device__ inline float march_marginal_gain_suppress(const MapContext& m, const 
             bool parent_sees_free = (current_skip_idx < skips.count &&
                                      d.t >= skips.intervals[current_skip_idx].x &&
                                      d.t <  skips.intervals[current_skip_idx].y);
-            if (!parent_sees_free) ray_gain += ray_segment_gain(d.t, gpuray::dda3_t_exit(d), ray.sin_phi, p);
+            if (!parent_sees_free) ray_gain += ray_segment_gain(d.t, fminf(gpuray::dda3_t_exit(d), max_t), ray.sin_phi, p);  // cap at range
         }
         gpuray::dda3_step(d);
     }
@@ -878,14 +884,8 @@ __device__ inline float march_marginal_gain(const MapContext& m, const MarchRay&
     return ray_gain;
 }
 
-// Multi-ancestor marginal march, traversal variant (v4): same result as v3 in the
-// common case, but it NEVER reseats the DDA. It walks every voxel and simply omits
-// the gain of any segment that lies inside an observed-free span (traversed, not
-// counted). It keeps v3's two clamps (cap at range, no bleed into the next span),
-// so the counted t-range matches v3 wherever the ray is unobstructed. Because it
-// steps through skipped voxels instead of jumping them, an OCCUPIED voxel found
-// inside a span still terminates the ray -- exactly how v2 relates to v1. This is
-// the safer path: reseating past a span assumes it is empty, traversal re-checks it.
+// v4 marginal march: like v3 but never reseats the DDA -- walks every voxel, omits gain in
+// observed-free spans, and (unlike v3's jump) still stops on OCCUPIED inside a span.
 __device__ inline float march_marginal_gain_traverse(const MapContext& m, const MarchRay& ray,
                                                      SkipSet skips, const KernelParams& p,
                                                      float* out_final_depth) {

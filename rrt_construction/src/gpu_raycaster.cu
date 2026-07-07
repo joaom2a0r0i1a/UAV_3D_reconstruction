@@ -55,6 +55,10 @@ static KernelParams make_kernel_params(float voxel_size, float gain_range,
     float phi_center = (CUDART_PI_F * 0.5f) + params.camera_pitch;
     params.phi_start = phi_center - (params.fov_p_rad * 0.5f);
     params.phi_end   = phi_center + (params.fov_p_rad * 0.5f);
+
+    // Single source of truth for the sample counts (shared with the CPU sweeps).
+    params.rows_in_fov    = angular_bins(params.fov_p_rad, params.dphi);
+    params.sectors_in_fov = angular_bins(params.fov_y_rad, params.dtheta);
     return params;
 }
 
@@ -87,7 +91,7 @@ __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
     if (tid < THETA_BINS) s_yaw_gains[tid] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov = max(1, (int)ceilf(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays_total  = THETA_BINS * rows_in_fov;
 
     for (int idx = tid; idx < rays_total; idx += blockDim.x) {
@@ -108,7 +112,7 @@ __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
     __syncthreads();
 
     if (tid == 0) {
-        int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+        int sectors_in_fov = params.sectors_in_fov;
         float max_gain;
         int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
         *result_gain = max_gain;
@@ -127,7 +131,7 @@ __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ po
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov = max(1, (int)ceilf(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -148,7 +152,7 @@ __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ po
     __syncthreads();
 
     if (ray_id == 0) {
-        int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+        int sectors_in_fov = params.sectors_in_fov;
         float max_gain;
         int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
         results_gain[candidate] = max_gain;
@@ -170,7 +174,7 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov = max(1, (int)ceilf(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -192,7 +196,7 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
     __syncthreads();
 
     if (ray_id == 0) {
-        int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+        int sectors_in_fov = params.sectors_in_fov;
         float max_gain;
         int best_start_idx = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
         results_gain[candidate] = max_gain;
@@ -226,8 +230,8 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
-    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rows_in_fov    = params.rows_in_fov;
+    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -284,8 +288,8 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
-    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rows_in_fov    = params.rows_in_fov;
+    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -349,8 +353,8 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
-    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rows_in_fov    = params.rows_in_fov;
+    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -417,8 +421,8 @@ __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __r
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
-    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rows_in_fov    = params.rows_in_fov;
+    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -491,8 +495,8 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
 
     AncestorSet ancestors = ancestors_for(ab, candidate);
 
-    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
-    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rows_in_fov    = params.rows_in_fov;
+    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -543,11 +547,8 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
     generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
 }
 
-// ---- Option 2, stage A: parent-buffer checks only. Each ray writes its merged
-// skip intervals (voxel units) + count to global scratch. `max_segs` bounds the
-// per-ray slice. Rays outside the FOV band write count 0.
-// `cand_base` is the global index of this chunk's first candidate; the scratch is
-// indexed by the LOCAL block so a fixed buffer is reused across chunks.
+// Option 2, stage A: each ray writes its merged skip intervals (voxel units) + count to
+// global scratch, indexed by LOCAL block (`cand_base` = this chunk's first candidate).
 __global__ void marginal_skips_stage(const float3* __restrict__ positions, AncestorBatchDev ab,
                                      int cand_base, KernelParams params, float2* __restrict__ skips_out,
                                      int* __restrict__ counts_out, int max_segs) {
@@ -555,7 +556,7 @@ __global__ void marginal_skips_stage(const float3* __restrict__ positions, Ances
     int local = blockIdx.x;
     AncestorSet ancestors = ancestors_for(ab, candidate);
 
-    int rows_in_fov = max(1, (int)(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     float3 cam_pos = positions[candidate];
 
@@ -599,8 +600,8 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
     if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
-    int rows_in_fov    = max(1, (int)(params.fov_p_rad / params.dphi));
-    int sectors_in_fov = max(1, (int)(params.fov_y_rad / params.dtheta));
+    int rows_in_fov    = params.rows_in_fov;
+    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     float3 cam_pos = positions[candidate];
 
@@ -674,7 +675,7 @@ extern "C" void launch_gain_kernel_single(GpuMap map, GpuVec3 cand,
     cudaMalloc(&d_res_gain, sizeof(float));
     cudaMalloc(&d_res_yaw, sizeof(float));
 
-    int rows = max(1, (int)ceilf(params.fov_p_rad / params.dphi));
+    int rows = params.rows_in_fov;
     int total_rays = THETA_BINS * rows;
 
     MapContext m = context_of(map);
@@ -759,8 +760,8 @@ extern "C" void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands,
                                               GpuResult out, GpuSensor cfg) {
     KernelParams params = params_of(cfg);
 
-    int window_width  = floor(params.fov_y_rad / params.dtheta);
-    int window_height = floor(params.fov_p_rad / params.dphi);
+    int window_width  = params.sectors_in_fov;
+    int window_height = params.rows_in_fov;
     int rays_per_candidate = THETA_BINS * window_height;
 
     size_t buffer_size_all = (size_t)cands.count * rays_per_candidate * sizeof(float);
@@ -804,7 +805,7 @@ static int setup_single_parent_marginal(
     const KernelParams& params, const gpuray::ParentCameraConfig& cam,
     MapContext* m, float3** d_cand_pos, ParentFrame* parent, GainResults* out) {
 
-    int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     size_t buffer_size_all = (size_t)rays_per_candidate * sizeof(float);
     size_t buffer_size = (size_t)cam.p_width * cam.p_height * sizeof(float);
@@ -911,7 +912,7 @@ static int setup_multi_ancestor_marginal(
     MapContext* m, float3** d_cand_pos, AncestorSet* ancestors, GainResults* out) {
 
     int n = ancestors_in.count;
-    int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     size_t buffer_size_all = (size_t)rays_per_candidate * sizeof(float);
     size_t buffer_size = (size_t)cam.p_width * cam.p_height * sizeof(float);
@@ -1019,9 +1020,8 @@ extern "C" void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAnce
 // ---- Shared device-memory setup/teardown for the two batched launchers -----
 // (BatchDeviceMem and AncestorBatchDev are defined in gpu_raycast_math.cuh.)
 
-// Upload the candidate batch + CSR ancestor chains + output buffers, and build
-// the device-side AncestorBatchDev view. Identical work for fused and split, so
-// the only thing the timed region measures is the kernel structure itself.
+// Upload the candidate batch + CSR ancestor chains + output buffers and build the
+// AncestorBatchDev view (identical for fused/split, so only the kernel is timed).
 static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cands,
                                     const GpuAncestorBatch& anc, const KernelParams& params,
                                     const gpuray::ParentCameraConfig& cam,
@@ -1029,7 +1029,7 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
     int nc = cands.count;
     int total = anc.total;
     size_t per = (size_t)cam.p_width * cam.p_height;
-    int rows_in_fov = max(1, (int)floor(params.fov_p_rad / params.dphi));
+    int rows_in_fov = params.rows_in_fov;
     int rays = THETA_BINS * rows_in_fov;
     int depth_slots = min(nc, BATCH_DEPTH_SLOTS);
 
@@ -1124,9 +1124,8 @@ extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands
     MapContext m; BatchDeviceMem mem; GainResults res;
     AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res);
 
-    // The interval scratch is bounded to one chunk of candidates and reused across
-    // chunks, so wide wavefronts don't blow up device memory (a real cost of the
-    // split: it MUST tile, whereas the fused kernel launches the whole grid once).
+    // Interval scratch is bounded to one chunk and reused across chunks (the split MUST
+    // tile so wide wavefronts don't blow up device memory; the fused kernel doesn't).
     const int max_segs = 32;                       // merged capacity per ray in scratch
     const int chunk = min(mem.nc, SPLIT_CHUNK);
     size_t nslots = (size_t)chunk * mem.rays;

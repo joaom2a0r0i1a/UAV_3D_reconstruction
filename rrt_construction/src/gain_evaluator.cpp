@@ -916,7 +916,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
     for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
         float theta = -M_PI + (t_idx * dtheta_rad);
 
-        for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+        for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
             
             float sin_phi = sin(phi);
             float dir_x = cos(theta) * sin_phi;
@@ -978,6 +978,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
 
                     if (!parent_saw_it) {
                       float t_exit = std::min({tMaxX, tMaxY, tMaxZ});
+                      if (t_exit > max_t) t_exit = max_t;   // cap last voxel at sensor range (match GPU FIX1)
                       float dt = t_exit - t;
                       float dr = dt * voxel_size_;
 
@@ -1011,7 +1012,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
     // --- D. Sliding Window (Select Best Yaw) ---
     float max_gain = 0.0f;
     int best_idx = 0;
-    int sectors = (int)(fov_y_rad_ / dtheta_rad);
+    int sectors = angular_bins(fov_y_rad_, dtheta_rad);
     if (sectors < 1) sectors = 1;
 
     for (int i = 0; i < theta_bins; ++i) {
@@ -1090,7 +1091,7 @@ void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, 
     // We iterate using the same step size as the Gain Evaluator to ensure 1:1 matching
     
     for (float theta = theta_start; theta < theta_end; theta += dtheta_rad) {
-      for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+      for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
         float sin_phi = sin(phi);
         float dir_x = cos(theta) * sin_phi;
         float dir_y = sin(theta) * sin_phi;
@@ -1172,7 +1173,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
   for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
     float theta = -M_PI + (t_idx * dtheta_rad);
 
-    for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
       float sin_phi = sin(phi);
       float dir_x = cos(theta) * sin_phi;
       float dir_y = sin(theta) * sin_phi;
@@ -1234,6 +1235,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
             break;
           } else if (val == 2) {
             float t_exit = std::min({tMaxX, tMaxY, tMaxZ});
+            if (t_exit > max_t) t_exit = max_t;   // cap last voxel at sensor range (match GPU FIX1)
             float dt = t_exit - t;
             float dr = dt * voxel_size_;
 
@@ -1270,7 +1272,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
   int best_idx = 0;
 
   // How many 10-degree bins fit in the FOV?
-  int sectors = (int)(fov_y_rad_ / dtheta_rad);
+  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
   if (sectors < 1) sectors = 1;
 
   for (int i = 0; i < theta_bins; ++i) {
@@ -1320,7 +1322,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<ui
     float theta = -M_PI + (t_idx * dtheta_rad);
 
     // Iterate Phi (Elevation)
-    for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
       // Direction Vectors
       float sin_phi = sin(phi);
       float dir_x = cos(theta) * sin_phi;
@@ -1400,7 +1402,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<ui
   int best_idx = 0;
 
   // How many 10-degree bins fit in the FOV?
-  int sectors = (int)(fov_y_rad_ / dtheta_rad);
+  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
   if (sectors < 1) sectors = 1;
 
   for (int i = 0; i < theta_bins; ++i) {
@@ -1447,7 +1449,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<
     // Original Raycasting Loop 
   for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
     float theta = -M_PI + (t_idx * dtheta_rad);
-    for (float phi = phi_start; phi < phi_end; phi += dphi_rad) {
+    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
       // Direction Vectors
       float sin_phi = sin(phi);
       float dir_x = cos(theta) * sin_phi;
@@ -1510,7 +1512,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<
   int best_idx = 0;
 
   // How many 10-degree bins fit in the FOV?
-  int sectors = (int)(fov_y_rad_ / dtheta_rad);
+  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
   if (sectors < 1) sectors = 1;
 
   for (int i = 0; i < theta_bins; ++i) {

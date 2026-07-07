@@ -19,7 +19,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 ## --------------------------------------------------------------
 
 #add_compile_options("-g")
-#add_compile_options("-O3")
+add_compile_options("-O3")
 #add_compile_options("-O0")
 
 set(CATKIN_DEPENDENCIES
