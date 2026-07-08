@@ -76,6 +76,18 @@ public:
     void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);
 
+    // Generation-ordered batched marginal-gain eval; sets node->gain/yaw/depth_buffer for each node.
+    void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes);
+
+    // Evaluate node gains per the configured (marginal_gain, eval_compute); sets node->gain and yaw.
+    void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
+    // Benchmark: time all methods + per-node v2-vs-cpuhash on the same nodes; accumulate into bench_* members.
+    void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
+    // World<-camera rotation rows (row-major, 9 floats) for an ancestor yaw (matches the GPU kernel).
+    std::vector<float> parentCamRows(float yaw);
+    // GPU single-parent marginal (v2) using the node's immediate parent's stored depth buffer.
+    double computeV2SingleParent(rrt_star::Node* node);
+
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
     bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node);
     void getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goals, rrt_star::Node*& best_global_node);
@@ -160,6 +172,18 @@ private:
     // RRT* Parameters
     int N_min_nodes;
     bool goto_global_planning;
+    std::string global_selection;   // goal pick: "cost" (nearest), "gain" (most info), or "score" (gain vs distance)
+
+    // Gain-evaluation options (shared by local + global planner)
+    bool marginal_gain;             // true: marginal gain (path sum in global); false: absolute gain
+    std::string eval_compute;       // "gpu" (batched) or "cpu" (sequential)
+    bool marginal_split;            // marginal+gpu: false = fused kernel, true = split kernel
+    bool benchmark_mode;            // also time all methods + per-node v2-vs-cpuhash, report local+global
+
+    // Benchmark accumulators (reset each AEP cycle; cover local + global)
+    double bench_ms_fused, bench_ms_split, bench_ms_mcpu, bench_ms_agpu, bench_ms_acpu;
+    double bench_v2_err_sum, bench_v2_err_max;   // GPU single-parent (v2) vs CPU hash ground truth
+    int    bench_nodes;
 
     // Timer Parameters
     double timer_main_rate;

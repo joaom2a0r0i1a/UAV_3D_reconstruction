@@ -44,6 +44,13 @@ local_planning:
 
 global_planning:
   N_min_nodes: 300
+  selection: "score"       # goal pick: "cost" (nearest), "gain" (most info), "score" (gain discounted by distance)
+
+evaluation:
+  marginal_gain: true      # true: marginal gain (frontier = path sum in global); false: absolute gain (original AEP)
+  compute: "gpu"           # "gpu" (batched; absolute batches the whole tree) or "cpu" (sequential; marginal=hash)
+  marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
+  benchmark: false         # time fused/split/marginal-cpu/absolute-gpu/absolute-cpu + per-node v2-vs-cpuhash, over local+global
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"
