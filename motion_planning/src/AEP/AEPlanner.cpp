@@ -28,6 +28,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("local_planning/step_size", step_size);
     param_loader.loadParam("local_planning/tolerance", tolerance);
     param_loader.loadParam("local_planning/g_zero", g_zero);
+    param_loader.loadParam("local_planning/rrt_star", local_rrt_star, false);
 
     // RRT* Tree (global Planning)
     param_loader.loadParam("global_planning/N_min_nodes", N_min_nodes);
@@ -263,8 +264,6 @@ void AEPlanner::localPlannerGPU() {
             if (benchmark_mode) benchmarkGains(branch_candidates);
             for (rrt_star::Node* node : branch_candidates) {
                 segment_evaluator.computeScore(node, lambda);
-                if (!benchmark_mode) ROS_INFO("[Node] gain=%.3f score_contribution=%.3f score=%.3f",
-                                              node->gain, node->gain * exp(-lambda * node->cost), node->score);
                 if (node->score > best_score_) {
                     best_score_ = node->score;
                     best_node = node;
@@ -290,6 +289,7 @@ void AEPlanner::localPlannerGPU() {
 
         if (collision_id_counter_ > 10000 * j) {
             if (previous_node) {
+                cacheHighGainNodes();   // don't lose frontier candidates found before backtracking
                 ROS_INFO("[AEPlanner]: Backtracking...");
                 next_best_node = previous_node.get();
                 best_branch.clear();
@@ -326,11 +326,24 @@ void AEPlanner::localPlannerGPU() {
                 k--; continue;
             }
 
-            segment_evaluator.computeCost(new_node.get());
             new_node->gain = 0.0;
             new_node->score = 0.0;
 
-            rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
+            // RRT keeps the steer parent (nearest). RRT* picks the min-cost parent among neighbours and
+            // rewires; batched GPU eval (after the whole build) makes this safe -- rewire updates node->cost
+            // and propagateCost fixes the moved subtree, so gains/scores below see the final tree.
+            rrt_star::Node* added_node;
+            if (local_rrt_star) {
+                std::vector<rrt_star::Node*> nearby;
+                RRTStar.findNearbyKD(new_node.get(), radius, nearby);
+                if (nearby.empty()) nearby.push_back(nearest_node);   // guarantee a valid parent
+                RRTStar.chooseParent(new_node.get(), nearby);         // sets parent + cost
+                added_node = RRTStar.addKDTreeNode(std::move(new_node));
+                RRTStar.rewire(added_node, nearby, radius);           // updates cost on any re-parented node
+            } else {
+                segment_evaluator.computeCost(new_node.get());        // cost = parent->cost + edge
+                added_node = RRTStar.addKDTreeNode(std::move(new_node));
+            }
 
             batch_nodes.push_back(added_node);
             j++;
@@ -338,26 +351,34 @@ void AEPlanner::localPlannerGPU() {
 
         if (batch_nodes.empty()) continue;
 
-        // Evaluate the batch with the configured method (marginal-gpu is generation-ordered internally).
-        evaluateGains(batch_nodes);
-        if (benchmark_mode) benchmarkGains(batch_nodes);
+        // score_nodes: nodes to rescore + re-pick best from. gain_nodes: nodes to re-raycast the gain.
+        // RRT never rewires, so both are just the new batch. RRT* rewires older nodes, so rescore the
+        // whole tree (costs changed); marginal gain also changes with ancestry, absolute does not.
+        std::vector<rrt_star::Node*> score_nodes = batch_nodes;
+        std::vector<rrt_star::Node*> gain_nodes  = batch_nodes;
+        if (local_rrt_star) {
+            score_nodes = collectTreeNodes();
+            sortByDepth(score_nodes);                            // ancestors first (cumulative score)
+            best_score_ = 0.0; best_node = nullptr;
+            if (marginal_gain) gain_nodes = score_nodes;
+        }
 
-        for (rrt_star::Node* node : batch_nodes) {
+        evaluateGains(gain_nodes);
+        if (benchmark_mode) benchmarkGains(gain_nodes);
+
+        for (rrt_star::Node* node : score_nodes) {
             segment_evaluator.computeScore(node, lambda);
-            if (!benchmark_mode) ROS_INFO("[Node] gain=%.3f score_contribution=%.3f score=%.3f",
-                                          node->gain, node->gain * exp(-lambda * node->cost), node->score);
             if (node->score > best_score_) {
                 best_score_ = node->score;
                 best_node = node;
             }
             visualize_edge(node, ns);
             visualize_node(node->point, ns);
-            if (node->gain > g_zero) {
-                cacheNode(node);
-            }
         }
 
         if (j >= N_termination) {
+             logTreeNodes();
+             cacheHighGainNodes();   // cache the final tree's frontier candidates before clearing
              ROS_INFO("[AEPlanner]: Going to Global Planning");
              RRTStar.clearKDTree();
              best_branch.clear();
@@ -366,6 +387,9 @@ void AEPlanner::localPlannerGPU() {
              return;
         }
     }
+
+    logTreeNodes();
+    cacheHighGainNodes();   // cache frontier candidates once over the final tree (gains are settled)
 
     // FINALIZE
     if (best_node) {
@@ -1152,6 +1176,35 @@ double AEPlanner::computeV2SingleParent(rrt_star::Node* node) {
     return r.first;
 }
 
+// Order nodes shallow-first so cumulative scoring sees each parent before its children.
+void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) {
+    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
+    std::stable_sort(nodes.begin(), nodes.end(),
+                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
+}
+
+std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() {
+    std::vector<rrt_star::Node*> nodes;
+    const auto& all = RRTStar.getNodes();
+    nodes.reserve(all.size());
+    for (const auto& up : all) if (up->parent) nodes.push_back(up.get());   // skip root (no parent)
+    return nodes;
+}
+
+void AEPlanner::cacheHighGainNodes() {
+    for (const auto& up : RRTStar.getNodes())
+        if (up->parent && up->gain > g_zero) cacheNode(up.get());
+}
+
+// Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
+void AEPlanner::logTreeNodes() {
+    if (benchmark_mode) return;
+    for (const auto& up : RRTStar.getNodes())
+        if (up->parent)
+            ROS_INFO("[Node] gain=%.3f score_contribution=%.3f score=%.3f",
+                     up->gain, up->gain * exp(-lambda * up->cost), up->score);
+}
+
 void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
     if (nodes.empty()) return;
     const size_t n = nodes.size();
@@ -1291,12 +1344,16 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
             ++m;
         }
 
-        // Marginal (path sums) and absolute-gpu batch the whole tree; absolute-cpu only the frontiers.
-        // Eval runs after the whole batch's rewiring, so gains match the final tree within a batch.
-        // (Cross-batch caveat: a later batch's rewire can re-parent an already-evaluated node, leaving
-        // its marginal gain stale vs its new chain -- only matters when the loop iterates >1 time.)
-        evaluateGains((marginal_gain || eval_compute == "gpu") ? batch_new : batch_frontier);
-        if (benchmark_mode) benchmarkGains(batch_new, "global");
+        // The global tree is always RRT*, so marginal path sums need the whole tree recomputed each batch
+        // (rewire restales ancestries). Absolute is position-only: gpu evaluates the new batch, cpu the
+        // frontier nodes only.
+        std::vector<rrt_star::Node*> gain_nodes;
+        if (marginal_gain)              gain_nodes = collectTreeNodes();
+        else if (eval_compute == "gpu") gain_nodes = batch_new;
+        else                            gain_nodes = batch_frontier;
+
+        evaluateGains(gain_nodes);
+        if (benchmark_mode) benchmarkGains(gain_nodes, "global");
 
         all_global_goals.clear();
         for (rrt_star::Node* f : frontier_nodes) {

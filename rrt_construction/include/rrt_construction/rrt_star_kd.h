@@ -87,6 +87,9 @@ public:
 
     void clearKDTree();
 
+    // Read-only view of every node the tree owns (index 0 is the root). Non-owning use only.
+    inline const std::vector<std::unique_ptr<Node>>& getNodes() const { return tree_data_.data; }
+
     void initializeKDTreeWithNodes(std::vector<std::unique_ptr<Node>>& nodes);
 
     Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z);

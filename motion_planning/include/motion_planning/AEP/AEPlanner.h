@@ -87,6 +87,14 @@ public:
     std::vector<float> parentCamRows(float yaw);
     // GPU single-parent marginal (v2) using the node's immediate parent's stored depth buffer.
     double computeV2SingleParent(rrt_star::Node* node);
+    // Non-owning observers to every non-root node currently in the tree.
+    std::vector<rrt_star::Node*> collectTreeNodes();
+    // Order nodes shallow-first (parents before children) for cumulative scoring.
+    void sortByDepth(std::vector<rrt_star::Node*>& nodes);
+    // Publish every high-gain node (gain > g_zero) as a global-frontier candidate.
+    void cacheHighGainNodes();
+    // Log per-node score over the final tree once (avoids per-batch re-logging).
+    void logTreeNodes();
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
     bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node);
@@ -168,6 +176,7 @@ private:
     double tolerance;
     int num_yaw_samples;
     double g_zero;
+    bool local_rrt_star;   // false = RRT (nearest parent); true = RRT* (choose-parent + rewire) in batched local planner
 
     // RRT* Parameters
     int N_min_nodes;
