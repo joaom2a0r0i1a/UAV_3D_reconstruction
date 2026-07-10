@@ -543,7 +543,7 @@ void KinoAEPMultiPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& Globa
 bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, kino_rrt_star::Trajectory* trajectory) {
     // Initialize KD Tree
     goals_tree.clearKDTreePoints();
-    for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
+    for (size_t i = 0; i < GlobalFrontiers.size(); ++i) {
         goals_tree.addKDTreePoint(GlobalFrontiers[i]);
     }
 
