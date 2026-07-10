@@ -143,6 +143,7 @@ struct GainResults {
     float* yaw;         // [num_candidates]
     float* depth_all;   // scratch: one planar depth per cast ray
     float* depth;       // final view depth buffer (p_width * p_height per candidate)
+    const float* fixed_yaw;  // [num_candidates] fixed yaw per candidate, or null -> optimize yaw
 };
 
 // Device view of a whole wavefront's ancestor chains in CSR form: candidate c
@@ -173,6 +174,7 @@ struct BatchDeviceMem {
     float*  d_gain;
     float*  d_yaw_out;
     float*  d_depth_buf;   // bounded output scratch (depth_slots * per)
+    float*  d_fixed_yaw;   // per-candidate fixed yaw (null when optimizing yaw)
     int     rays;          // rays per candidate
     int     nc;
     int     depth_slots;   // number of output depth-buffer slots (bounds memory)
@@ -400,6 +402,22 @@ __device__ inline float yaw_window_center_angle(int best_start_idx, float dtheta
     float center_angle = (-CUDART_PI_F + best_start_idx * dtheta) + (fov_y_rad * 0.5f);
     if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
     return center_angle;
+}
+
+// Start bin of the FOV window centred on `yaw` (rad) -- integer inverse of yaw_window_center_angle.
+__device__ inline int window_start_bin_at_yaw(float yaw, float dtheta, float fov_y_rad, int theta_bins) {
+    int start = (int)floorf((yaw - 0.5f * fov_y_rad + CUDART_PI_F) / dtheta + 0.5f);
+    start %= theta_bins; if (start < 0) start += theta_bins;   // positive modulo (wraps at +-pi)
+    return start;
+}
+
+// Sum the FOV window centred on `yaw` from the per-sector histogram (fixed-yaw analog of best window).
+__device__ inline float window_gain_at_yaw(const float* s_yaw_gains, int theta_bins, int sectors_in_fov,
+                                            float dtheta, float fov_y_rad, float yaw) {
+    int start = window_start_bin_at_yaw(yaw, dtheta, fov_y_rad, theta_bins);
+    float g = 0.0f;
+    for (int k = 0; k < sectors_in_fov; ++k) g += s_yaw_gains[(start + k) % theta_bins];
+    return g;
 }
 
 // --- Skip-interval set operations (multi-ancestor occlusion) ---

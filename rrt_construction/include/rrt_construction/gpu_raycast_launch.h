@@ -130,6 +130,22 @@ void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
                                       GpuSensor cfg, float* kernel_ms);
 
+// --- Fixed-yaw variants (NBVP): evaluate the FOV window at fixed_yaws[i] (per candidate)
+// instead of optimizing yaw. out.yaw returns the input yaw. fixed_yaws is a host array
+// [num_candidates] (scalar for v2). Same map/gain semantics as the optimize-yaw launchers.
+void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
+                                    GpuSensor cfg, const float* fixed_yaws);
+void launch_marginal_gain_kernel_v2_fixed(GpuMap map, GpuVec3 cand, GpuParent parent,
+                                          GpuResult out, GpuSensor cfg, float fixed_yaw);
+void launch_marginal_gain_batch_fused_fixed(GpuMap map, GpuCandidates cands,
+                                            GpuAncestorBatch anc, GpuResult out,
+                                            GpuSensor cfg, float* kernel_ms,
+                                            const float* fixed_yaws);
+void launch_marginal_gain_batch_split_fixed(GpuMap map, GpuCandidates cands,
+                                            GpuAncestorBatch anc, GpuResult out,
+                                            GpuSensor cfg, float* kernel_ms,
+                                            const float* fixed_yaws);
+
 // --- Thin device-memory wrappers (host owns the cached map buffer) ----------
 void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size);
 void wrapper_cuda_free(void* dev_ptr);

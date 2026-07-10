@@ -452,7 +452,7 @@ std::pair<double, double> GainEvaluator::computeGainGPU(const std::vector<double
     return { (double)results_gain[0], (double)results_yaw[0] };
 }
 
-std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z) {
+std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws) {
     // 0. Safety Check
     if (d_map_ == nullptr) {
         ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
@@ -480,7 +480,8 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     // 3. Launch Kernel
     GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
     GpuResult out = {results_gain.data(), results_yaw.data(), nullptr};
-    launch_gain_kernel_batch(gpuMap(), cands, out, gpuSensor());
+    if (fixed_yaws) launch_gain_kernel_batch_fixed(gpuMap(), cands, out, gpuSensor(), fixed_yaws->data());
+    else            launch_gain_kernel_batch(gpuMap(), cands, out, gpuSensor());
 
     /*const float DTHETA_RAD = 2.0f * M_PI / 180.0f;
     const float DPHI_RAD   = 2.0f * M_PI / 180.0f;
@@ -566,7 +567,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU(const double pos
     return { (double)results_gain, (double)results_yaw };
 }
 
-std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
+std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
     // 0. Safety Check
     if (d_map_ == nullptr) {
         ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
@@ -597,7 +598,8 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v2(const double 
     GpuParent parent = {{(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()},
                         (float)parent_yaw, parent_R.data(), (float*)parent_depth.data()};
     GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    launch_marginal_gain_kernel_v2(gpuMap(), cand, parent, out, gpuSensor());
+    if (std::isnan(fixed_yaw)) launch_marginal_gain_kernel_v2(gpuMap(), cand, parent, out, gpuSensor());
+    else launch_marginal_gain_kernel_v2_fixed(gpuMap(), cand, parent, out, gpuSensor(), (float)fixed_yaw);
 
     // 3. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.
@@ -719,7 +721,7 @@ std::vector<std::pair<double, double>> GainEvaluator::computeMarginalGainBatchGP
     const std::vector<int>& offsets, const std::vector<float>& anc_pos,
     const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
     const std::vector<float>& anc_depth, bool use_split,
-    std::vector<float>& out_depth, float& kernel_ms) {
+    std::vector<float>& out_depth, float& kernel_ms, const std::vector<float>* fixed_yaws) {
 
     kernel_ms = 0.0f;
     if (d_map_ == nullptr) {
@@ -742,8 +744,14 @@ std::vector<std::pair<double, double>> GainEvaluator::computeMarginalGainBatchGP
     GpuResult out = {gains.data(), yaws.data(), out_depth.data()};
 
     float ms = 0.0f;
-    if (use_split) launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms);
-    else           launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms);
+    const float* fy = fixed_yaws ? fixed_yaws->data() : nullptr;
+    if (fy) {
+        if (use_split) launch_marginal_gain_batch_split_fixed(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
+        else           launch_marginal_gain_batch_fused_fixed(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
+    } else {
+        if (use_split) launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms);
+        else           launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms);
+    }
     kernel_ms = ms;
 
     std::vector<std::pair<double, double>> results;
@@ -873,7 +881,14 @@ std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& p
   return cpu_buffer;
 }
 
-std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node) {
+// Start bin of the FOV window centred on `yaw` (rad) -- matches gpuray::window_start_bin_at_yaw
+// exactly (same float math) so CPU and GPU fixed-yaw gains are bit-comparable.
+static int cpu_window_start_bin(double yaw, float fov_y_rad, float dtheta_rad, int theta_bins) {
+    int start = (int)std::floor(((float)yaw - 0.5f * fov_y_rad + (float)M_PI) / dtheta_rad + 0.5f);
+    return ((start % theta_bins) + theta_bins) % theta_bins;
+}
+
+std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw) {
     // --- A. Inherit History ---
     // Start with the set of unknown voxels the parent has already cleared.
     /*if (candidate_node->parent) {
@@ -1009,27 +1024,28 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
         }
     }
 
-    // --- D. Sliding Window (Select Best Yaw) ---
-    float max_gain = 0.0f;
-    int best_idx = 0;
+    // --- D. Yaw window: fixed yaw (NBVP) sums the window at that yaw; else slide for the best window. ---
     int sectors = angular_bins(fov_y_rad_, dtheta_rad);
     if (sectors < 1) sectors = 1;
 
-    for (int i = 0; i < theta_bins; ++i) {
-      float current_window = 0.0f;
-      for (int k = 0; k < sectors; ++k) {
-        int idx = (i + k) % theta_bins;
-        current_window += yaw_gains[idx];
-      }
-      if (current_window > max_gain) {
-        max_gain = current_window;
-        best_idx = i;
+    float max_gain = 0.0f;
+    int best_idx = 0;
+    if (!std::isnan(fixed_yaw)) {
+      best_idx = cpu_window_start_bin(fixed_yaw, fov_y_rad_, dtheta_rad, theta_bins);
+      for (int k = 0; k < sectors; ++k) max_gain += yaw_gains[(best_idx + k) % theta_bins];
+    } else {
+      for (int i = 0; i < theta_bins; ++i) {
+        float current_window = 0.0f;
+        for (int k = 0; k < sectors; ++k) current_window += yaw_gains[(i + k) % theta_bins];
+        if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
       }
     }
 
-    float start_angle = -M_PI + (best_idx * dtheta_rad);
-    float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
-    if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+    float center_angle = fixed_yaw;   // fixed-yaw returns the input yaw
+    if (std::isnan(fixed_yaw)) {
+      center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
+      if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+    }
 
     // --- E. COMMIT HISTORY (Update Map) ---
     // Now we take the voxels from the *chosen* sectors and commit them to the node's history.
@@ -1150,7 +1166,7 @@ void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, 
     }
 }
 
-std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose, double fixed_yaw) {
   // 1. Setup Constants
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
@@ -1267,34 +1283,27 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
     }
   }
 
-  // 4. Sliding Window Optimization (Yaw Selection)
-  float max_gain = 0.0f;
-  int best_idx = 0;
-
-  // How many 10-degree bins fit in the FOV?
+  // 4. Yaw window: fixed yaw (NBVP) sums the window at that yaw; else slide for the best window (AEP).
   int sectors = angular_bins(fov_y_rad_, dtheta_rad);
   if (sectors < 1) sectors = 1;
 
-  for (int i = 0; i < theta_bins; ++i) {
-      float current_window = 0.0f;
-      for (int k = 0; k < sectors; ++k) {
-          int idx = (i + k) % theta_bins;
-          current_window += yaw_gains[idx];
-      }
-
-      if (current_window > max_gain) {
-          max_gain = current_window;
-          best_idx = i;
-      }
+  if (!std::isnan(fixed_yaw)) {
+      int start = cpu_window_start_bin(fixed_yaw, fov_y_rad_, dtheta_rad, theta_bins);
+      float win = 0.0f;
+      for (int k = 0; k < sectors; ++k) win += yaw_gains[(start + k) % theta_bins];
+      return std::make_pair((double)win, fixed_yaw);
   }
 
-  // Calculate Best Yaw Angle
-  float start_angle = -M_PI + (best_idx * dtheta_rad);
-  float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
+  float max_gain = 0.0f;
+  int best_idx = 0;
+  for (int i = 0; i < theta_bins; ++i) {
+      float current_window = 0.0f;
+      for (int k = 0; k < sectors; ++k) current_window += yaw_gains[(i + k) % theta_bins];
+      if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
+  }
 
-  // Normalize -PI to PI
+  float center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
   if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-
   return std::make_pair((double)max_gain, (double)center_angle);
 }
 

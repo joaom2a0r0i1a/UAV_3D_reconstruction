@@ -92,13 +92,14 @@ class GainEvaluator {
   std::pair<double, double> computeGainGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z);
 
   // Compute gain for a batch of poses
-  std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z);
+  // fixed_yaws (optional, [num_candidates]): evaluate the FOV window at each yaw instead of optimizing.
+  std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr);
 
   std::pair<double, double> computeSingleGainGPU(const double pos_x, const double pos_y, const double pos_z);
 
   std::pair<double, double> computeMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
 
-  std::pair<double, double> computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+  std::pair<double, double> computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
 
   std::pair<double, double> computeMarginalGainGPU_v3(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
 
@@ -124,16 +125,17 @@ class GainEvaluator {
       const std::vector<int>& offsets, const std::vector<float>& anc_pos,
       const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
       const std::vector<float>& anc_depth, bool use_split,
-      std::vector<float>& out_depth, float& kernel_ms);
+      std::vector<float>& out_depth, float& kernel_ms, const std::vector<float>* fixed_yaws = nullptr);
 
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
-  std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node);
+  // fixed_yaw (optional): evaluate the FOV window at that yaw instead of optimizing.
+  std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw = NAN);
 
   void populateParentHistory(const std::vector<uint8_t>& flat_map, rrt_star::Node* node);
 
   // [Validation] CPU calculation using Flat Map Data
-  std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose, double fixed_yaw = NAN);
 
   // [Validation] CPU calculation using DDA algorithm
   std::pair<double, double> computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);

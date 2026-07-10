@@ -76,6 +76,24 @@ static gpuray::ParentCameraConfig derive_camera_config(float gain_range, float v
     return cam;
 }
 
+// Pick the FOV window from the per-sector histogram: the caller's fixed yaw (when
+// fixed_yaw != null) or the best window. Writes the window gain and its centre yaw.
+__device__ inline void pick_yaw_window(const float* s_yaw_gains, const KernelParams& params,
+                                       const float* fixed_yaw, int candidate,
+                                       float* out_gain, float* out_center) {
+    if (fixed_yaw) {
+        float c = fixed_yaw[candidate];
+        *out_center = c;
+        *out_gain   = gpuray::window_gain_at_yaw(s_yaw_gains, THETA_BINS, params.sectors_in_fov,
+                                                 params.dtheta, params.fov_y_rad, c);
+    } else {
+        float mg;
+        int best   = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, params.sectors_in_fov, &mg);
+        *out_center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        *out_gain   = mg;
+    }
+}
+
 // ============================================================================
 //  Kernels: AEP information gain (no parent occlusion).
 // ============================================================================
@@ -124,7 +142,8 @@ __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
 __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ positions,
                                     float* __restrict__ results_gain,
                                     float* __restrict__ results_yaw,
-                                    KernelParams params) {
+                                    KernelParams params,
+                                    const float* __restrict__ fixed_yaw = nullptr) {
     __shared__ float s_yaw_gains[THETA_BINS];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
@@ -152,11 +171,10 @@ __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ po
     __syncthreads();
 
     if (ray_id == 0) {
-        int sectors_in_fov = params.sectors_in_fov;
-        float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        float max_gain, center;
+        pick_yaw_window(s_yaw_gains, params, fixed_yaw, candidate, &max_gain, &center);
         results_gain[candidate] = max_gain;
-        results_yaw[candidate]  = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        results_yaw[candidate]  = center;
     }
 }
 
@@ -231,7 +249,6 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
-    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -264,9 +281,8 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
 
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
-        float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        float max_gain, center;
+        pick_yaw_window(s_yaw_gains, params, out.fixed_yaw, candidate, &max_gain, &center);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -289,7 +305,6 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
-    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -329,9 +344,8 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
 
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
-        float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        float max_gain, center;
+        pick_yaw_window(s_yaw_gains, params, out.fixed_yaw, candidate, &max_gain, &center);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -496,7 +510,6 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
     AncestorSet ancestors = ancestors_for(ab, candidate);
 
     int rows_in_fov    = params.rows_in_fov;
-    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
@@ -533,9 +546,8 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
 
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
-        float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        float max_gain, center;
+        pick_yaw_window(s_yaw_gains, params, out.fixed_yaw, candidate, &max_gain, &center);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -601,7 +613,6 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
-    int sectors_in_fov = params.sectors_in_fov;
     int rays_per_candidate = THETA_BINS * rows_in_fov;
     float3 cam_pos = positions[candidate];
 
@@ -626,9 +637,8 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
 
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
-        float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
-        float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
+        float max_gain, center;
+        pick_yaw_window(s_yaw_gains, params, out.fixed_yaw, candidate, &max_gain, &center);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
         s_best_yaw = center;
@@ -754,6 +764,34 @@ extern "C" void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands,
     cudaFree(d_positions);
     cudaFree(d_results_gain);
     cudaFree(d_results_yaw);
+}
+
+// Fixed-yaw absolute batch: gain of the FOV window at fixed_yaws[i]; out.yaw = input yaw.
+extern "C" void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands,
+                                              GpuResult out, GpuSensor cfg,
+                                              const float* fixed_yaws) {
+    KernelParams params = params_of(cfg);
+    size_t res_size = cands.count * sizeof(float);
+
+    float3* d_positions = upload_candidates(cands);
+    float *d_results_gain, *d_results_yaw, *d_fixed_yaw;
+    cudaMalloc(&d_results_gain, res_size);
+    cudaMalloc(&d_results_yaw, res_size);
+    cudaMalloc(&d_fixed_yaw, res_size);
+    cudaMemcpy(d_fixed_yaw, fixed_yaws, res_size, cudaMemcpyHostToDevice);
+
+    MapContext m = context_of(map);
+    evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
+        m, d_positions, d_results_gain, d_results_yaw, params, d_fixed_yaw);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(out.gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(out.yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_positions);
+    cudaFree(d_results_gain);
+    cudaFree(d_results_yaw);
+    cudaFree(d_fixed_yaw);
 }
 
 extern "C" void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands,
@@ -903,6 +941,32 @@ extern "C" void launch_marginal_gain_kernel_v2(GpuMap map, GpuVec3 cand, GpuPare
     teardown_single_parent_marginal(d_cand_pos, parent, res, cam, out);
 }
 
+// Fixed-yaw v2: single-parent marginal gain at `fixed_yaw` (out.yaw = fixed_yaw).
+extern "C" void launch_marginal_gain_kernel_v2_fixed(GpuMap map, GpuVec3 cand, GpuParent parent_in,
+                                                     GpuResult out, GpuSensor cfg, float fixed_yaw) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m;
+    float3* d_cand_pos;
+    ParentFrame parent;
+    GainResults res;
+    int rays = setup_single_parent_marginal(map, cand, parent_in, params, cam,
+                                            &m, &d_cand_pos, &parent, &res);
+
+    float* d_fixed_yaw;
+    cudaMalloc(&d_fixed_yaw, sizeof(float));
+    cudaMemcpy(d_fixed_yaw, &fixed_yaw, sizeof(float), cudaMemcpyHostToDevice);
+    res.fixed_yaw = d_fixed_yaw;
+
+    evaluate_marginal_gain_kernel_v2<<<1, min(rays, MAX_THREADS_PER_BLOCK)>>>(
+        m, d_cand_pos, parent, res, params);
+    cudaDeviceSynchronize();
+
+    cudaFree(d_fixed_yaw);
+    teardown_single_parent_marginal(d_cand_pos, parent, res, cam, out);
+}
+
 // Shared setup for the multi-ancestor marginal launchers (v3 and v4): allocate
 // device buffers, upload the candidate + flattened ancestor chain, and assemble
 // the kernel argument structs. Returns the rays-per-candidate launch width.
@@ -1025,7 +1089,8 @@ extern "C" void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAnce
 static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cands,
                                     const GpuAncestorBatch& anc, const KernelParams& params,
                                     const gpuray::ParentCameraConfig& cam,
-                                    MapContext* m, BatchDeviceMem* mem, GainResults* out) {
+                                    MapContext* m, BatchDeviceMem* mem, GainResults* out,
+                                    const float* fixed_yaws = nullptr) {
     int nc = cands.count;
     int total = anc.total;
     size_t per = (size_t)cam.p_width * cam.p_height;
@@ -1065,11 +1130,20 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
     cudaMalloc(&mem->d_yaw_out,   nc * sizeof(float));
     cudaMalloc(&mem->d_depth_buf, (size_t)depth_slots * per * sizeof(float));
 
+    // Per-candidate fixed yaw (null -> optimize yaw, the AEP path).
+    if (fixed_yaws) {
+        cudaMalloc(&mem->d_fixed_yaw, nc * sizeof(float));
+        cudaMemcpy(mem->d_fixed_yaw, fixed_yaws, nc * sizeof(float), cudaMemcpyHostToDevice);
+    } else {
+        mem->d_fixed_yaw = nullptr;
+    }
+
     mem->rays = rays; mem->nc = nc; mem->depth_slots = depth_slots; mem->per = per;
 
     *m = context_of(map);
     // depth_all (per-ray planar depth) is unused by the batch marginal path.
     *out = GainResults{mem->d_gain, mem->d_yaw_out, nullptr, mem->d_depth_buf};
+    out->fixed_yaw = mem->d_fixed_yaw;
     AncestorBatchDev ab = {mem->d_off, mem->d_pos, mem->d_yaw, mem->d_depth,
                            mem->d_R, (int)per, cam, mem->d_depth_idx};
     return ab;
@@ -1086,6 +1160,7 @@ static void teardown_batch(const BatchDeviceMem& mem, GpuResult out) {
     cudaFree(mem.d_R);    cudaFree(mem.d_depth);
     if (mem.d_depth_idx) cudaFree(mem.d_depth_idx);
     cudaFree(mem.d_gain); cudaFree(mem.d_yaw_out); cudaFree(mem.d_depth_buf);
+    if (mem.d_fixed_yaw) cudaFree(mem.d_fixed_yaw);
 }
 
 // Option 1 (fused): one kernel, grid = candidates, threads = rays.
@@ -1148,6 +1223,70 @@ extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) printf("CUDA split batch error: %s\n", cudaGetErrorString(err));
+
+    cudaFree(d_skips); cudaFree(d_counts);
+    teardown_batch(mem, out);
+}
+
+// Fixed-yaw variants: same kernels, but each candidate's window is taken at fixed_yaws[i]
+// (via GainResults.fixed_yaw) instead of the best window. out.yaw returns the input yaw.
+extern "C" void launch_marginal_gain_batch_fused_fixed(GpuMap map, GpuCandidates cands,
+                                                       GpuAncestorBatch anc, GpuResult out,
+                                                       GpuSensor cfg, float* kernel_ms,
+                                                       const float* fixed_yaws) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m; BatchDeviceMem mem; GainResults res;
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
+
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    cudaEventRecord(t0);
+    evaluate_marginal_gain_batch_fused<<<mem.nc, min(mem.rays, MAX_THREADS_PER_BLOCK)>>>(
+        m, mem.d_cand, ab, res, params, mem.depth_slots);
+    cudaEventRecord(t1);
+    cudaEventSynchronize(t1);
+    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) printf("CUDA fused batch (fixed) error: %s\n", cudaGetErrorString(err));
+
+    teardown_batch(mem, out);
+}
+
+extern "C" void launch_marginal_gain_batch_split_fixed(GpuMap map, GpuCandidates cands,
+                                                       GpuAncestorBatch anc, GpuResult out,
+                                                       GpuSensor cfg, float* kernel_ms,
+                                                       const float* fixed_yaws) {
+    KernelParams params = params_of(cfg);
+    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
+
+    MapContext m; BatchDeviceMem mem; GainResults res;
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
+
+    const int max_segs = 32;
+    const int chunk = min(mem.nc, SPLIT_CHUNK);
+    size_t nslots = (size_t)chunk * mem.rays;
+    float2* d_skips; int* d_counts;
+    cudaMalloc(&d_skips,  nslots * max_segs * sizeof(float2));
+    cudaMalloc(&d_counts, nslots * sizeof(int));
+
+    int threads = min(mem.rays, MAX_THREADS_PER_BLOCK);
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    cudaEventRecord(t0);
+    for (int c0 = 0; c0 < mem.nc; c0 += chunk) {
+        int blocks = min(chunk, mem.nc - c0);
+        marginal_skips_stage<<<blocks, threads>>>(mem.d_cand, ab, c0, params, d_skips, d_counts, max_segs);
+        marginal_march_stage<<<blocks, threads>>>(m, mem.d_cand, ab, c0, res, params, d_skips, d_counts, max_segs, mem.depth_slots);
+    }
+    cudaEventRecord(t1);
+    cudaEventSynchronize(t1);
+    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) printf("CUDA split batch (fixed) error: %s\n", cudaGetErrorString(err));
 
     cudaFree(d_skips); cudaFree(d_counts);
     teardown_batch(mem, out);
