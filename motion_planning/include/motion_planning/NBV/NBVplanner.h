@@ -36,6 +36,11 @@
 #include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/gain_evaluator.h>
 
+#include <map>
+#include <chrono>
+#include <algorithm>
+#include <cmath>
+
 typedef enum
 {
   STATE_IDLE,
@@ -59,7 +64,17 @@ public:
     void GetTransformation();
 
     void NBV();
-    
+
+    // Fixed-yaw gain evaluation (duplicated from AEP; NBVP keeps each node's random yaw).
+    void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes);
+    void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
+    void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "nbvp");
+    std::vector<float> parentCamRows(float yaw);
+    double computeV2SingleParent(rrt_star::Node* node);
+    std::vector<rrt_star::Node*> collectTreeNodes();
+    void sortByDepth(std::vector<rrt_star::Node*>& nodes);
+    void logTreeNodes();
+
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
@@ -129,6 +144,23 @@ private:
     double step_size;
     double tolerance;
     int num_yaw_samples;
+    bool local_rrt_star;   // false = RRT (nearest parent); true = RRT* (choose-parent + rewire)
+
+    // Gain-evaluation options (fixed-yaw)
+    bool marginal_gain;
+    std::string eval_compute;   // "gpu" or "cpu"
+    bool marginal_split;
+    bool benchmark_mode;
+
+    // Benchmark accumulators (reset each NBV cycle)
+    double bench_ms_fused, bench_ms_split, bench_ms_mcpu, bench_ms_agpu, bench_ms_acpu;
+    double bench_v2_err_sum, bench_v2_err_max;
+    int    bench_nodes;
+
+    // GPU map cache (for gpu / flat-map fixed-yaw eval)
+    std::vector<uint8_t> flat_map_;
+    Eigen::Vector3d map_origin_;
+    Eigen::Vector3i map_dim_;
 
     // Timer Parameters
     double timer_main_rate;

@@ -40,6 +40,13 @@ rrt:
   radius: 2.0 # [m]
   step_size: 2.0 # [m]
   tolerance: 0.5 # [m]
+  rrt_star: false          # false = RRT (nearest parent); true = RRT* (choose-parent + rewire)
+
+evaluation:                # fixed-yaw gain (NBVP keeps each node's random sampled yaw)
+  marginal_gain: false     # true: marginal gain; false: absolute gain
+  compute: "cpu"           # "gpu" (batched) or "cpu" (sequential; flat-map, marginal=hash)
+  marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
+  benchmark: false         # time fused/split/marginal-cpu/absolute-gpu/absolute-cpu + per-node v2-vs-cpuhash
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"

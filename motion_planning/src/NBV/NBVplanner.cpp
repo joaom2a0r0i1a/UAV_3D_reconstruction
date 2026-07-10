@@ -30,6 +30,12 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("rrt/radius", radius);
     param_loader.loadParam("rrt/step_size", step_size);
     param_loader.loadParam("rrt/tolerance", tolerance);
+    param_loader.loadParam("rrt/rrt_star", local_rrt_star, false);
+
+    param_loader.loadParam("evaluation/marginal_gain", marginal_gain, false);
+    param_loader.loadParam("evaluation/compute", eval_compute, std::string("cpu"));
+    param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
+    param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -146,9 +152,193 @@ void NBVPlanner::GetTransformation() {
     segment_evaluator.setCameraExtrinsics(T_C_B);
 }
 
+std::vector<float> NBVPlanner::parentCamRows(float yaw) {
+    const float pitch = 10.0f * M_PI / 180.0f;
+    float cos_y = cosf(yaw), sin_y = sinf(yaw);
+    float cos_p = cosf(pitch), sin_p = sinf(pitch);
+    return { sin_y,          -cos_y,          0.0f,
+             -sin_p * cos_y, -sin_p * sin_y, -cos_p,
+              cos_p * cos_y,  cos_p * sin_y, -sin_p };
+}
+
+// Batched multi-ancestor marginal gain at each node's FIXED yaw (generation-ordered).
+void NBVPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes) {
+    if (nodes.empty()) return;
+    const int per = segment_evaluator.depthImagePixels();
+
+    std::map<int, std::vector<size_t>> levels;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        int depth = 0;
+        for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent) ++depth;
+        levels[depth].push_back(i);
+    }
+
+    for (const auto& level : levels) {
+        const std::vector<size_t>& idxs = level.second;
+        const size_t n = idxs.size();
+
+        std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n), fixed_yaws(n);
+        std::vector<int>   anc_offsets(1, 0);
+        std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
+        for (size_t li = 0; li < n; ++li) {
+            rrt_star::Node* nd = nodes[idxs[li]];
+            cand_x_f[li] = (float)nd->point.x();
+            cand_y_f[li] = (float)nd->point.y();
+            cand_z_f[li] = (float)nd->point.z();
+            fixed_yaws[li] = (float)nd->point[3];        // evaluate at the node's own random yaw
+            for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
+                std::vector<float> R_flat = parentCamRows((float)a->point[3]);
+                anc_pos.push_back((float)a->point.x());
+                anc_pos.push_back((float)a->point.y());
+                anc_pos.push_back((float)a->point.z());
+                anc_yaw.push_back((float)a->point[3]);
+                anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
+                if ((int)a->depth_buffer.size() == per)
+                    anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+                else
+                    anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+            }
+            anc_offsets.push_back((int)(anc_pos.size() / 3));
+        }
+
+        std::vector<float> depth_out;
+        float ms = 0.0f;
+        auto results = segment_evaluator.computeMarginalGainBatchGPU(
+            cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
+            marginal_split, depth_out, ms, &fixed_yaws);
+
+        for (size_t li = 0; li < n; ++li) {
+            rrt_star::Node* node = nodes[idxs[li]];
+            node->gain = results[li].first;              // yaw stays fixed
+            node->depth_buffer.assign(depth_out.begin() + (size_t)li * per,
+                                      depth_out.begin() + (size_t)(li + 1) * per);
+        }
+    }
+}
+
+// Evaluate node gains per (marginal_gain, eval_compute), always at each node's fixed yaw.
+void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
+    if (nodes.empty()) return;
+    const bool gpu = (eval_compute == "gpu");
+
+    if (marginal_gain && gpu) {
+        evaluateMarginalGainsBatched(nodes);
+    } else if (!marginal_gain && gpu) {
+        std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
+        std::vector<float> fixed_yaws(nodes.size());
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z();
+            fixed_yaws[i] = (float)nodes[i]->point[3];
+        }
+        auto res = segment_evaluator.computeGainBatchGPU(x, y, z, &fixed_yaws);
+        for (size_t i = 0; i < nodes.size(); ++i) nodes[i]->gain = res[i].first;   // yaw fixed
+    } else {
+        for (rrt_star::Node* nd : nodes) {
+            std::pair<double, double> r;
+            if (marginal_gain) {
+                if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
+                r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]);
+            } else {
+                eth_mav_msgs::EigenTrajectoryPoint pose;
+                pose.position_W = nd->point.head(3);
+                r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose, nd->point[3]);
+            }
+            nd->gain = r.first;   // yaw fixed
+        }
+    }
+}
+
+double NBVPlanner::computeV2SingleParent(rrt_star::Node* node) {
+    const int per = segment_evaluator.depthImagePixels();
+    rrt_star::Node* p = node->parent;
+    double p_yaw = p ? p->point[3] : 0.0;
+    std::vector<float> R = parentCamRows((float)p_yaw);
+    Eigen::Vector3d p_pos = p ? p->point.head(3) : node->point.head(3);
+    std::vector<float> p_depth;
+    if (p && (int)p->depth_buffer.size() == per) p_depth = p->depth_buffer;
+    else p_depth.assign((size_t)per, -1.0f);
+    std::vector<float> out;
+    auto r = segment_evaluator.computeMarginalGainGPU_v2(
+        node->point.x(), node->point.y(), node->point.z(), p_pos, p_yaw, R, p_depth, out, node->point[3]);
+    return r.first;
+}
+
+// Order nodes shallow-first so cumulative scoring sees each parent before its children.
+void NBVPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) {
+    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
+    std::stable_sort(nodes.begin(), nodes.end(),
+                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
+}
+
+std::vector<rrt_star::Node*> NBVPlanner::collectTreeNodes() {
+    std::vector<rrt_star::Node*> nodes;
+    const auto& all = RRTStar.getNodes();
+    nodes.reserve(all.size());
+    for (const auto& up : all) if (up->parent) nodes.push_back(up.get());   // skip root
+    return nodes;
+}
+
+// Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
+void NBVPlanner::logTreeNodes() {
+    if (benchmark_mode) return;
+    for (const auto& up : RRTStar.getNodes())
+        if (up->parent)
+            ROS_INFO("[Node] gain=%.3f score_contribution=%.3f score=%.3f",
+                     up->gain, up->gain * exp(-lambda * up->cost), up->score);
+}
+
+// Benchmark: time all methods + per-node v2-vs-cpuhash (all fixed-yaw) on the same nodes.
+void NBVPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
+    if (nodes.empty()) return;
+    const size_t n = nodes.size();
+
+    std::vector<double> save_gain(n);
+    for (size_t i = 0; i < n; ++i) save_gain[i] = nodes[i]->gain;
+    const bool save_marg = marginal_gain; const std::string save_comp = eval_compute; const bool save_split = marginal_split;
+
+    auto timed = [&](bool marg, const std::string& comp, bool split) -> double {
+        marginal_gain = marg; eval_compute = comp; marginal_split = split;
+        auto t0 = std::chrono::high_resolution_clock::now();
+        evaluateGains(nodes);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    };
+
+    double t_fused = timed(true,  "gpu", false); std::vector<double> g_fused(n); for (size_t i = 0; i < n; ++i) g_fused[i] = nodes[i]->gain;
+    double t_split = timed(true,  "gpu", true);  std::vector<double> g_split(n); for (size_t i = 0; i < n; ++i) g_split[i] = nodes[i]->gain;
+    double t_mcpu  = timed(true,  "cpu", false);
+    double t_agpu  = timed(false, "gpu", false); std::vector<double> g_agpu(n);  for (size_t i = 0; i < n; ++i) g_agpu[i]  = nodes[i]->gain;
+    double t_acpu  = timed(false, "cpu", false); std::vector<double> g_acpu(n);  for (size_t i = 0; i < n; ++i) g_acpu[i]  = nodes[i]->gain;
+
+    bench_ms_fused += t_fused; bench_ms_split += t_split; bench_ms_mcpu += t_mcpu; bench_ms_agpu += t_agpu; bench_ms_acpu += t_acpu;
+    bench_nodes += (int)n;
+
+    marginal_gain = save_marg; eval_compute = save_comp; marginal_split = save_split;
+    for (size_t i = 0; i < n; ++i) nodes[i]->gain = save_gain[i];
+
+    // Per-node: GPU single-parent (v2) vs CPU single-parent hash (ground truth), both at the node's fixed yaw.
+    for (size_t i = 0; i < n; ++i) {
+        rrt_star::Node* nd = nodes[i];
+        double v2 = computeV2SingleParent(nd);
+        double sg = nd->gain;
+        if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
+        double hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]).first;
+        nd->gain = sg;
+        double err = std::fabs(v2 - hash);
+        bench_v2_err_sum += err; if (err > bench_v2_err_max) bench_v2_err_max = err;
+        ROS_INFO("[BENCH][%s] fused=%7.3f split=%7.3f | v2(gpu1p)=%7.3f hash(cpu1p)=%7.3f err=%.4f | absG=%7.3f absC=%7.3f",
+                 phase, g_fused[i], g_split[i], v2, hash, err, g_agpu[i], g_acpu[i]);
+    }
+}
+
 void NBVPlanner::NBV() {
     best_score_ = 0;
     rrt_star::Node* best_node = nullptr;
+    if (benchmark_mode) {
+        bench_ms_fused = bench_ms_split = bench_ms_mcpu = bench_ms_agpu = bench_ms_acpu = 0.0;
+        bench_v2_err_sum = bench_v2_err_max = 0.0; bench_nodes = 0;
+    }
+    auto tree_t0 = std::chrono::high_resolution_clock::now();
 
     std::unique_ptr<rrt_star::Node> root;
     if (current_waypoint_) {
@@ -158,30 +348,63 @@ void NBVPlanner::NBV() {
     } else {
         root = std::make_unique<rrt_star::Node>(pose);
     }
-    trajectory_point.position_W = root->point.head(3);
-    trajectory_point.setFromYaw(root->point[3]);
-    double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point);
-    root->gain = result;
     root->cost = 0;
-    root->score = root->gain;
 
     RRTStar.clearKDTree();
     rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
-
-    if (root_ptr->score > best_score_) {
-        best_score_ = root_ptr->score;
-        best_node = root_ptr;
-    }
-
     clearMarkers();
 
-    bool isFirstIteration = true;
-    int j = 1; // initialized at one because of the root node
+    // Cache the map (needed for the fixed-yaw gpu + cpu-flatmap eval).
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
+
+    // Root gain at its fixed yaw; NBVP scores the root by its own gain. Clear its depth buffer so
+    // children don't subtract the root's view (matches AEP, where the root is never evaluated).
+    { std::vector<rrt_star::Node*> only_root = {root_ptr}; evaluateGains(only_root); }
+    root_ptr->depth_buffer.clear();
+    root_ptr->score = root_ptr->gain;
+    best_score_ = root_ptr->score;
+    best_node = root_ptr;
+    visualize_node(root_ptr->point, ns);
+
+    int j = 1;
+
+    // PHASE A: re-add the previous best branch as a fixed chain (each node keeps its cached yaw).
+    if (prev_best_branch.size() > 2) {
+        std::vector<rrt_star::Node*> branch_candidates;
+        for (size_t i = 2; i < prev_best_branch.size(); ++i) {
+            const Eigen::Vector4d& node_position = prev_best_branch[i];
+            rrt_star::Node* nearest_node_best = nullptr;
+            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
+            auto new_node_best = std::make_unique<rrt_star::Node>(node_position);
+            new_node_best->parent = nearest_node_best;
+            segment_evaluator.computeCost(new_node_best.get());
+            rrt_star::Node* added = RRTStar.addKDTreeNode(std::move(new_node_best));
+            branch_candidates.push_back(added);
+        }
+        if (!branch_candidates.empty()) {
+            evaluateGains(branch_candidates);
+            if (benchmark_mode) benchmarkGains(branch_candidates);
+            for (rrt_star::Node* node : branch_candidates) {
+                segment_evaluator.computeScore(node, lambda);
+                if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
+                visualize_node(node->point, ns); visualize_edge(node, ns);
+            }
+            j += (int)branch_candidates.size();
+        }
+    }
+    prev_best_branch.clear();
+    best_branch.clear();
+
+    // PHASE B: batched RRT/RRT* expansion with fixed-yaw gain.
+    const int BATCH_SIZE = 2 * N_max;
     collision_id_counter_ = 0;
+    bool terminated = false;
+
     while (j < N_max || best_score_ == 0.0) {
-        // Backtrack
         if (collision_id_counter_ > 10000 * j) {
             if (previous_node) {
+                logTreeNodes();
                 ROS_INFO("[NBVPlanner]: Backtracking to [%f, %f, %f]", previous_node->point[0], previous_node->point[1], previous_node->point[2]);
                 next_best_node = previous_node.get();
                 best_branch.clear();
@@ -193,119 +416,111 @@ void NBVPlanner::NBV() {
             }
         }
 
-        for (size_t i = 1; i < prev_best_branch.size(); ++i) {
-            if (isFirstIteration) {
-                isFirstIteration = false;
-                continue; // Skip first iteration (root)
+        int nodes_needed = (j < N_max) ? (N_max - j) : (N_termination - j);
+        int cap = std::min(BATCH_SIZE, nodes_needed);
+        if (cap <= 0) break;
+
+        std::vector<rrt_star::Node*> batch_nodes;
+        for (int k = 0; k < cap && j <= N_termination; ++k) {
+            Eigen::Vector4d rand_point_yaw;
+            RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
+            Eigen::Vector3d rand_point = rand_point_yaw.head(3) + root_ptr->point.head(3);
+
+            rrt_star::Node* nearest_node = nullptr;
+            RRTStar.findNearestKD(rand_point, nearest_node);
+            std::unique_ptr<rrt_star::Node> new_node;
+            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
+
+            if (new_node->point[0] > max_x || new_node->point[0] < min_x ||
+                new_node->point[1] < min_y || new_node->point[1] > max_y ||
+                new_node->point[2] < min_z || new_node->point[2] > max_z) { k--; continue; }
+
+            std::vector<rrt_star::Node*> seg = {new_node.get()};
+            if (!isPathCollisionFree(seg)) { collision_id_counter_++; k--; continue; }
+
+            new_node->point[3] = rand_point_yaw[3];   // NBVP: fixed random yaw (never optimized)
+            new_node->gain = 0.0; new_node->score = 0.0;
+
+            rrt_star::Node* added_node;
+            if (local_rrt_star) {
+                std::vector<rrt_star::Node*> nearby;
+                RRTStar.findNearbyKD(new_node.get(), radius, nearby);
+                if (nearby.empty()) nearby.push_back(nearest_node);
+                RRTStar.chooseParent(new_node.get(), nearby);
+                added_node = RRTStar.addKDTreeNode(std::move(new_node));
+                RRTStar.rewire(added_node, nearby, radius);
+            } else {
+                segment_evaluator.computeCost(new_node.get());
+                added_node = RRTStar.addKDTreeNode(std::move(new_node));
             }
-
-            const Eigen::Vector4d& node_position = prev_best_branch[i];
-
-            rrt_star::Node* nearest_node_best = nullptr;
-            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
-
-            std::unique_ptr<rrt_star::Node> new_node_best = std::make_unique<rrt_star::Node>(node_position);
-            new_node_best->parent = nearest_node_best;
-
-            trajectory_point.position_W = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-
-            double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point);
-            new_node_best->gain = result_best;
-
-            segment_evaluator.computeCost(new_node_best.get());
-            segment_evaluator.computeScore(new_node_best.get(), lambda);
-
-            if (new_node_best->score > best_score_) {
-                best_score_ = new_node_best->score;
-                best_node = new_node_best.get();
-            }
-
-            ROS_INFO("[NBVPlanner]: Best Score BB: %f", new_node_best->score);
-
-            rrt_star::Node* added_node_best = RRTStar.addKDTreeNode(std::move(new_node_best));
-            visualize_node(added_node_best->point, ns);
-            visualize_edge(added_node_best, ns);
-
-            ++j;
+            batch_nodes.push_back(added_node);
+            j++;
         }
 
-        if (j >= N_max && best_score_ > 0) {
-            break;
+        if (batch_nodes.empty()) continue;
+
+        // Fixed yaw is tree-independent, so RRT scores only the new batch. RRT* rewires -> rescore the
+        // whole tree (costs changed); recompute marginal gains too (ancestry changed), absolute does not.
+        std::vector<rrt_star::Node*> score_nodes = batch_nodes;
+        std::vector<rrt_star::Node*> gain_nodes  = batch_nodes;
+        if (local_rrt_star) {
+            score_nodes = collectTreeNodes();
+            sortByDepth(score_nodes);
+            best_score_ = root_ptr->score; best_node = root_ptr;
+            if (marginal_gain) gain_nodes = score_nodes;
         }
 
-        prev_best_branch.clear();
+        evaluateGains(gain_nodes);
+        if (benchmark_mode) benchmarkGains(gain_nodes);
 
-        Eigen::Vector4d rand_point_yaw;
-        Eigen::Vector3d rand_point;
-        RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
-        rand_point = rand_point_yaw.head(3);
-        rand_point += root_ptr->point.head(3);
-
-        rrt_star::Node* nearest_node = nullptr;
-        RRTStar.findNearestKD(rand_point, nearest_node);
-
-        std::unique_ptr<rrt_star::Node> new_node;
-        RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
-
-        if (new_node->point[0] > max_x || new_node->point[0] < min_x || new_node->point[1] < min_y || new_node->point[1] > max_y || new_node->point[2] < min_z || new_node->point[2] > max_z) {
-            continue;
+        for (rrt_star::Node* node : score_nodes) {
+            segment_evaluator.computeScore(node, lambda);
+            if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
+            visualize_node(node->point, ns); visualize_edge(node, ns);
         }
 
-        // Collision Check
-        std::vector<rrt_star::Node*> trajectory_segment;
-        trajectory_segment.push_back(new_node.get());
-
-        bool success_collision = isPathCollisionFree(trajectory_segment);
-
-        if (!success_collision) {
-            trajectory_segment.clear();
-            collision_id_counter_++;
-            continue;
-        }
-
-        trajectory_segment.clear();
-
-        new_node->point[3] = rand_point_yaw[3];
-        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-        trajectory_point_gain.position_W = new_node->point.head(3);
-        trajectory_point_gain.setFromYaw(new_node->point[3]);
-        double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain);
-        new_node->gain = result;
-
-        segment_evaluator.computeCost(new_node.get());
-        segment_evaluator.computeScore(new_node.get(), lambda);
-
-        if (new_node->score > best_score_) {
-            best_score_ = new_node->score;
-            best_node = new_node.get();
-        }
-
-        ROS_INFO("[NBVPlanner]: Best Score: %f", new_node->score);
-
-        rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
-        visualize_node(added_node->point, ns);
-        visualize_edge(added_node, ns);
-
-        if (j > N_termination) {
-            ROS_INFO("[NBVPlanner]: RH-NBVP Terminated");
-            RRTStar.clearKDTree();
-            best_branch.clear();
-            clearMarkers();
-            changeState(STATE_STOPPED);
-            break;
-        }
-
-        ++j;
-
+        if (j >= N_termination) { terminated = true; break; }
     }
+
+    logTreeNodes();
+
+    if (benchmark_mode && bench_nodes > 0) {
+        double bn = (double)bench_nodes;
+        ROS_INFO("\n=== NBVP GAIN BENCHMARK (fixed yaw, %d nodes) ===\n"
+                 "marginal-gpu-fused : %9.3f ms | %7.4f ms/node\n"
+                 "marginal-gpu-split : %9.3f ms | %7.4f ms/node\n"
+                 "marginal-cpu-hash  : %9.3f ms | %7.4f ms/node\n"
+                 "absolute-gpu       : %9.3f ms | %7.4f ms/node\n"
+                 "absolute-cpu       : %9.3f ms | %7.4f ms/node\n"
+                 "v2(gpu 1-parent) vs cpu-hash: mean err %.4f | max err %.4f\n"
+                 "==================================================",
+                 bench_nodes,
+                 bench_ms_fused, bench_ms_fused/bn, bench_ms_split, bench_ms_split/bn,
+                 bench_ms_mcpu, bench_ms_mcpu/bn, bench_ms_agpu, bench_ms_agpu/bn,
+                 bench_ms_acpu, bench_ms_acpu/bn, bench_v2_err_sum/bn, bench_v2_err_max);
+    }
+
+    if (terminated) {
+        ROS_INFO("[NBVPlanner]: RH-NBVP Terminated");
+        RRTStar.clearKDTree();
+        best_branch.clear();
+        clearMarkers();
+        changeState(STATE_STOPPED);
+        return;
+    }
+
+    if (!benchmark_mode && best_node) {
+        double tree_ms = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - tree_t0).count();
+        ROS_INFO("[NBVPlanner]: Chosen node [%.2f, %.2f, %.2f] score=%.3f gain=%.3f | tree computed in %.1f ms",
+                 best_node->point[0], best_node->point[1], best_node->point[2], best_node->score, best_node->gain, tree_ms);
+    }
+
     if (best_node) {
         next_best_node = best_node;
         RRTStar.backtrackPathNode(best_node, best_branch, next_best_node);
         visualize_path(best_node, ns);
         prev_best_branch = best_branch;
     }
-
 }
 
 double NBVPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) {
