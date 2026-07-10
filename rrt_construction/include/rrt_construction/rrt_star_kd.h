@@ -114,6 +114,8 @@ public:
 
     void findNearbyKD(Node* point, double radius, std::vector<Node*>& nearbyNodes);
 
+    void findNearbyKDRadius(const Node* point, double radius, std::vector<Node*>& nearbyNodes);
+
     void chooseParent(Node* point, const std::vector<Node*>& nearbyNodes);
 
     //void rewire(std::vector<std::unique_ptr<Node>>& tree, Node* new_node, const std::vector<Node*>& nearby_nodes, double radius);

@@ -171,6 +171,17 @@ void rrt_star::findNearbyKD(Node* point, double radius, std::vector<Node*>& near
     }
 }
 
+void rrt_star::findNearbyKDRadius(const Node* point, double radius, std::vector<Node*>& nearbyNodes) {
+    nearbyNodes.clear();
+    const double query_pt[3] = {point->point.x(), point->point.y(), point->point.z()};
+    // L2_Simple gives squared distances; RadiusResultSet collects every hit (no cap) across sub-indices.
+    std::vector<nanoflann::ResultItem<size_t, double>> matches;
+    nanoflann::RadiusResultSet<double, size_t> resultSet(radius * radius, matches);
+    kdtree_->findNeighbors(resultSet, query_pt, nanoflann::SearchParameters());
+    nearbyNodes.reserve(matches.size());
+    for (const auto& m : matches) nearbyNodes.push_back(tree_data_.data[m.first].get());
+}
+
 void rrt_star::chooseParent(Node* new_node, const std::vector<Node*>& nearbyNodes) {
     double minCost = std::numeric_limits<double>::infinity();
     Node* parent = nullptr;

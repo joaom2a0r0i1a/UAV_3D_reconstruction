@@ -60,6 +60,7 @@ camera:
   height: 720
   min_distance: 0.2 # [m]
   max_distance: 5 # [m]
+  pitch: 10.0 # [deg] downward camera pitch (matches the front_pitched sensor)
 
 path:
   uav_radius: 1.5 # [m]

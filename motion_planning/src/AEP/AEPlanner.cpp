@@ -38,6 +38,8 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("evaluation/compute", eval_compute, std::string("gpu"));
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
     param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
+    param_loader.loadParam("evaluation/ancestor_cull_mode", ancestor_cull_mode, 0);
+    param_loader.loadParam("evaluation/ancestor_cull_kd", ancestor_cull_kd, false);   // false=walk, true=whole-tree KD
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -45,6 +47,8 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("camera/height", resolution_y);
     param_loader.loadParam("camera/min_distance", min_distance);
     param_loader.loadParam("camera/max_distance", max_distance);
+    param_loader.loadParam("camera/pitch", camera_pitch_deg, 10.0);
+    camera_pitch = camera_pitch_deg * M_PI / 180.0;
 
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
@@ -446,7 +450,7 @@ void AEPlanner::localPlanner() {
     flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
     segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
 
-    float camera_pitch_rad = 10.0f * M_PI / 180.0f;
+    float camera_pitch_rad = (float)camera_pitch;
 
     //Eigen::Matrix3f R_CB = T_C_B.getRotation().toImplementation().toRotationMatrix().cast<float>();
 
@@ -1073,7 +1077,7 @@ void AEPlanner::localPlanner() {
 }
 
 std::vector<float> AEPlanner::parentCamRows(float yaw) {
-    const float pitch = 10.0f * M_PI / 180.0f;
+    const float pitch = (float)camera_pitch;
     float cos_y = cosf(yaw), sin_y = sinf(yaw);
     float cos_p = cosf(pitch), sin_p = sinf(pitch);
     return { sin_y,          -cos_y,          0.0f,
@@ -1081,10 +1085,72 @@ std::vector<float> AEPlanner::parentCamRows(float yaw) {
               cos_p * cos_y,  cos_p * sin_y, -sin_p };
 }
 
+// Ancestor cull test (walked over the chain): broad-phase distance (centres within 2*max_distance) then
+// narrow-phase sphere(cand,max_distance)-vs-view-pyramid SAT (mode 1 = horizontal planes, 2 = + vertical).
+// Culls only on a proven separating plane, so it never wrongly culls. Axes match parentCamRows; pitch 10 deg.
+bool AEPlanner::ancestorMayOverlap(const rrt_star::Node* cand, const rrt_star::Node* anc, int mode) const {
+    const double r = max_distance;                       // candidate sphere radius
+    const double vx = cand->point.x() - anc->point.x();  // apex(ancestor) -> candidate
+    const double vy = cand->point.y() - anc->point.y();
+    const double vz = cand->point.z() - anc->point.z();
+    if (vx * vx + vy * vy + vz * vz > (2.0 * r) * (2.0 * r)) return false;   // broad phase: beyond reach
+    const double pitch = camera_pitch;                   // camera pitch (matches parentCamRows)
+    const double cy = std::cos((double)anc->point[3]), sy = std::sin((double)anc->point[3]);
+    const double cp = std::cos(pitch), sp = std::sin(pitch);
+    const double Rt[3] = { sy, -cy, 0.0 };               // camera Right  (row0)
+    const double Fw[3] = { cp * cy, cp * sy, -sp };      // camera Forward (row2, optical axis)
+    const double hh = 0.5 * horizontal_fov, ch = std::cos(hh), sh = std::sin(hh);   // horizontal side planes
+    if (( ch * Rt[0] - sh * Fw[0]) * vx + ( ch * Rt[1] - sh * Fw[1]) * vy + ( ch * Rt[2] - sh * Fw[2]) * vz > r) return false; // right
+    if ((-ch * Rt[0] - sh * Fw[0]) * vx + (-ch * Rt[1] - sh * Fw[1]) * vy + (-ch * Rt[2] - sh * Fw[2]) * vz > r) return false; // left
+    if (mode == 2) {                                     // vertical side planes; Up = -row1 (row1 = Down)
+        const double Up[3] = { sp * cy, sp * sy, cp };
+        const double hv = 0.5 * vertical_fov, cv = std::cos(hv), sv = std::sin(hv);
+        if (( cv * Up[0] - sv * Fw[0]) * vx + ( cv * Up[1] - sv * Fw[1]) * vy + ( cv * Up[2] - sv * Fw[2]) * vz > r) return false; // top
+        if ((-cv * Up[0] - sv * Fw[0]) * vx + (-cv * Up[1] - sv * Fw[1]) * vy + (-cv * Up[2] - sv * Fw[2]) * vz > r) return false; // bottom
+    }
+    return true;                                         // no separating plane -> keep
+}
+
+// Preorder Euler tour from root (in = entry time, out = max entry time in subtree) so `a` is an ancestor of `d` iff in[a] <= in[d] <= out[a]; iterative to survive deep trees. Only used by the optional KD path.
+void AEPlanner::computeEulerLabels() {
+    euler_in_.clear();
+    euler_out_.clear();
+    const auto& all = RRTStar.getNodes();
+    if (all.empty()) return;
+    euler_in_.reserve(all.size() * 2);
+    euler_out_.reserve(all.size() * 2);
+    std::vector<std::pair<rrt_star::Node*, bool>> stk;   // (node, children-already-pushed?)
+    stk.emplace_back(all[0].get(), false);
+    int t = 0;
+    while (!stk.empty()) {
+        rrt_star::Node* v = stk.back().first;
+        const bool expanded = stk.back().second;
+        stk.pop_back();
+        if (!expanded) {
+            euler_in_[v] = t++;
+            stk.emplace_back(v, true);
+            for (rrt_star::Node* c : v->children) stk.emplace_back(c, false);
+        } else {
+            int m = euler_in_[v];
+            for (rrt_star::Node* c : v->children) { int co = euler_out_[c]; if (co > m) m = co; }
+            euler_out_[v] = m;
+        }
+    }
+}
+
+bool AEPlanner::isAncestorEuler(const rrt_star::Node* a, const rrt_star::Node* d) const {
+    auto ia = euler_in_.find(a);  if (ia == euler_in_.end()) return false;
+    auto id = euler_in_.find(d);  if (id == euler_in_.end()) return false;
+    auto oa = euler_out_.find(a); if (oa == euler_out_.end()) return false;
+    return ia->second <= id->second && id->second <= oa->second;
+}
+
 void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes) {
     if (nodes.empty()) return;
     const int per = segment_evaluator.depthImagePixels();
     bench_kernel_ms_ = 0.0;   // accumulate the CUDA-event device time across all generation levels
+
+    if (ancestor_cull_mode != 0 && ancestor_cull_kd) computeEulerLabels();   // only the optional KD path needs it
 
     // Bucket by tree depth so each ancestor is evaluated (its depth buffer stored) before its descendants.
     std::map<int, std::vector<size_t>> levels;
@@ -1106,7 +1172,9 @@ void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>&
             cand_x_f[li] = (float)nd->point.x();
             cand_y_f[li] = (float)nd->point.y();
             cand_z_f[li] = (float)nd->point.z();
-            for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
+
+            // Append one ancestor's pose + depth buffer to the flattened kernel input.
+            auto push_anc = [&](rrt_star::Node* a) {
                 std::vector<float> R_flat = parentCamRows((float)a->point[3]);
                 anc_pos.push_back((float)a->point.x());
                 anc_pos.push_back((float)a->point.y());
@@ -1117,6 +1185,23 @@ void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>&
                     anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
                 else
                     anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+            };
+
+            if (ancestor_cull_mode == 0 || !ancestor_cull_kd) {
+                // Default: walk the parent chain (depth is small in the bushy tree), cull each ancestor.
+                for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent)
+                    if (ancestor_cull_mode == 0 || ancestorMayOverlap(nd, a, ancestor_cull_mode)) push_anc(a);
+            } else {
+                // Optional whole-tree KD path: radius query -> O(1) Euler ancestor filter -> SAT. Sort
+                // deepest-first (descending euler_in) to match the walk's accumulation order (stable gains).
+                RRTStar.findNearbyKDRadius(nd, 2.0 * max_distance, cull_near_);
+                std::vector<rrt_star::Node*> anc;
+                for (rrt_star::Node* a : cull_near_)
+                    if (a != nd && isAncestorEuler(a, nd) && ancestorMayOverlap(nd, a, ancestor_cull_mode))
+                        anc.push_back(a);
+                std::sort(anc.begin(), anc.end(),
+                          [&](rrt_star::Node* x, rrt_star::Node* y) { return euler_in_.at(x) > euler_in_.at(y); });
+                for (rrt_star::Node* a : anc) push_anc(a);
             }
             anc_offsets.push_back((int)(anc_pos.size() / 3));
         }
@@ -1311,6 +1396,28 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     double t_split_host = timed(true, "gpu", true);  double t_split_dev = bench_kernel_ms_;
     std::vector<double> g_split(n); for (size_t i = 0; i < n; ++i) g_split[i] = nodes[i]->gain;
 
+    // Item 1 validation: g_fused (mode 0) is the no-cull reference; re-eval fused under 2D/3D on the same tree, report max|dgain| + timing + walk-vs-radius set diff, then restore depth buffers.
+    if (ancestor_cull_mode == 0) {
+        std::vector<std::vector<float>> save_db(n);
+        for (size_t i = 0; i < n; ++i) save_db[i] = nodes[i]->depth_buffer;
+        for (int m = 1; m <= 2; ++m) {
+            ancestor_cull_mode = m;
+            double t_cull = timed(true, "gpu", false);                 // fused marginal under mode m
+            double gmax = 0.0;
+            for (size_t i = 0; i < n; ++i) gmax = std::max(gmax, std::fabs(nodes[i]->gain - g_fused[i]));
+            long kept = 0, cons = 0;
+            for (size_t i = 0; i < n; ++i)
+                for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent) {
+                    ++cons; if (ancestorMayOverlap(nodes[i], a, m)) ++kept;
+                }
+            ROS_WARN("[CULL-CHECK] phase=%s mode=%s n=%zu max|dgain|=%.3e host_ms(off/on)=%.3f/%.3f kept=%ld/%ld (%.1f%%)",
+                     phase, (m == 1 ? "2D" : "3D"), n, gmax, t_fused_host, t_cull,
+                     kept, cons, cons ? 100.0 * (double)kept / (double)cons : 100.0);
+        }
+        ancestor_cull_mode = 0;
+        for (size_t i = 0; i < n; ++i) nodes[i]->depth_buffer = save_db[i];
+    }
+
     bench_ms_fused += t_fused_host; bench_ms_split += t_split_host; bench_ms_mcpu += t_mcpu;
     bench_ms_agpu += t_agpu; bench_ms_acpu += t_acpu; bench_ms_v2 += t_v2; bench_ms_v4 += t_v4;
     bench_nodes += (int)n;
@@ -1332,7 +1439,7 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
                << t_acpu << "," << t_mcpu << "\n";
     }
     std::ofstream gf = open_csv("benchmark_gains.csv",
-        "Phase,NodeIdx,Ancestors,g_fused,g_split,g_abs_gpu,g_abs_cpu,hash_cpu1p,v2_gpu1p,v4_multi");
+        "Phase,NodeIdx,Ancestors,g_fused,g_split,g_abs_gpu,g_abs_cpu,hash_cpu1p,v2_gpu1p,v4_multi,AncKept");
 
     // Restore gain/yaw + config (leave depth buffers as the split pass set them).
     marginal_gain = save_marg; eval_compute = save_comp; marginal_split = save_split;
@@ -1343,7 +1450,16 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     // gain study can relate "gain shaved by marginalization" to tree-depth overlap.
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
-        int anc = 0; for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++anc;
+        // AncKept diagnostic: of all ancestors (Ancestors), how many are within broad-phase reach (2*max_distance).
+        int anc = 0, anc_kept = 0;
+        const double cull_r2 = (2.0 * max_distance) * (2.0 * max_distance);
+        for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
+            ++anc;
+            double dx = a->point.x() - nd->point.x();
+            double dy = a->point.y() - nd->point.y();
+            double dz = a->point.z() - nd->point.z();
+            if (dx * dx + dy * dy + dz * dz <= cull_r2) ++anc_kept;
+        }
         double v2 = computeV2SingleParent(nd);
         double v4 = computeV4MultiAncestor(nd);   // before hash's populateParentHistory
         double sg = nd->gain, sy = nd->point[3];   // hash overwrites gain/yaw; restore right after
@@ -1354,7 +1470,7 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
         bench_v2_err_sum += err; if (err > bench_v2_err_max) bench_v2_err_max = err;
         if (gf.is_open())
             gf << phase << "," << i << "," << anc << "," << g_fused[i] << "," << g_split[i] << "," << g_agpu[i]
-               << "," << g_acpu[i] << "," << hash << "," << v2 << "," << v4 << "\n";
+               << "," << g_acpu[i] << "," << hash << "," << v2 << "," << v4 << "," << anc_kept << "\n";
     }
 }
 
