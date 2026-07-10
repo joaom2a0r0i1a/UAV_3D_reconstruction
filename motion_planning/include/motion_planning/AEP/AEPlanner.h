@@ -87,12 +87,19 @@ public:
     std::vector<float> parentCamRows(float yaw);
     // GPU single-parent marginal (v2) using the node's immediate parent's stored depth buffer.
     double computeV2SingleParent(rrt_star::Node* node);
+    // GPU multi-ancestor marginal (v4, per-node non-batched) over the node's full ancestor chain.
+    double computeV4MultiAncestor(rrt_star::Node* node);
     // Non-owning observers to every non-root node currently in the tree.
     std::vector<rrt_star::Node*> collectTreeNodes();
     // Order nodes shallow-first (parents before children) for cumulative scoring.
     void sortByDepth(std::vector<rrt_star::Node*>& nodes);
-    // Publish every high-gain node (gain > g_zero) as a global-frontier candidate.
+    // Publish every node whose ABSOLUTE gain > g_zero as a global-frontier candidate. Uses absolute
+    // (not marginal) gain so a spot with new space is still cached when an ancestor already covers it.
     void cacheHighGainNodes();
+    // Absolute (own-view) gain + best yaw per node, without touching node->gain/yaw (marginal scoring
+    // stays intact). Fills out_gain/out_yaw. For the frontier g_zero decision only.
+    void computeAbsoluteGainsInto(const std::vector<rrt_star::Node*>& nodes,
+                                  std::vector<double>& out_gain, std::vector<double>& out_yaw);
     // Log per-node score over the final tree once (avoids per-batch re-logging).
     void logTreeNodes();
 
@@ -100,7 +107,7 @@ public:
     bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node);
     void getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goals, rrt_star::Node*& best_global_node);
 
-    void cacheNode(rrt_star::Node* Node);
+    void cacheNode(rrt_star::Node* Node, double gain, double yaw);
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
@@ -191,8 +198,10 @@ private:
 
     // Benchmark accumulators (reset each AEP cycle; cover local + global)
     double bench_ms_fused, bench_ms_split, bench_ms_mcpu, bench_ms_agpu, bench_ms_acpu;
+    double bench_ms_v2, bench_ms_v4;             // per-node (non-batched) GPU single-parent / multi-ancestor
     double bench_v2_err_sum, bench_v2_err_max;   // GPU single-parent (v2) vs CPU hash ground truth
     int    bench_nodes;
+    double bench_kernel_ms_ = 0.0;               // device (CUDA-event) ms of the last marginal-batched evaluateGains
 
     // Timer Parameters
     double timer_main_rate;

@@ -7,10 +7,25 @@
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
+  <!-- Experiment sweep overrides. Defaults MUST match AEPlanner.yaml so that
+       normal (non-swept) launches are unaffected. run_experiments.sh sets the
+       AEP_* env vars per config; unset env => yaml defaults are reproduced. -->
+  <arg name="rrt_star"       default="$(optenv AEP_RRT_STAR false)" />
+  <arg name="marginal_gain"  default="$(optenv AEP_MARGINAL_GAIN true)" />
+  <arg name="compute"        default="$(optenv AEP_COMPUTE gpu)" />
+  <arg name="marginal_split" default="$(optenv AEP_MARGINAL_SPLIT false)" />
+  <arg name="benchmark"      default="$(optenv AEP_BENCHMARK false)" />
+
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning" type="AEP" name="planner_node" output="screen">
       <rosparam file="$(find rrt_construction)/config/GainConfig.yaml" />
       <rosparam file="$(find motion_planning)/config/AEPlanner.yaml" />
+      <!-- Sweep overrides applied AFTER the yaml load so they win. -->
+      <param name="local_planning/rrt_star"   value="$(arg rrt_star)" />
+      <param name="evaluation/marginal_gain"  value="$(arg marginal_gain)" />
+      <param name="evaluation/compute"        value="$(arg compute)" />
+      <param name="evaluation/marginal_split" value="$(arg marginal_split)" />
+      <param name="evaluation/benchmark"      value="$(arg benchmark)" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />

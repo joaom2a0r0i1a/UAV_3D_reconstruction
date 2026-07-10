@@ -162,6 +162,7 @@ void AEPlanner::GetTransformation() {
 void AEPlanner::AEP() {
     if (benchmark_mode) {
         bench_ms_fused = bench_ms_split = bench_ms_mcpu = bench_ms_agpu = bench_ms_acpu = 0.0;
+        bench_ms_v2 = bench_ms_v4 = 0.0;
         bench_v2_err_sum = bench_v2_err_max = 0.0; bench_nodes = 0;
     }
 
@@ -197,12 +198,15 @@ void AEPlanner::AEP() {
                  "marginal-cpu-hash  : %9.3f ms | %7.4f ms/node\n"
                  "absolute-gpu       : %9.3f ms | %7.4f ms/node\n"
                  "absolute-cpu       : %9.3f ms | %7.4f ms/node\n"
+                 "v2(gpu 1-parent)   : %9.3f ms | %7.4f ms/node\n"
+                 "v4(gpu multi-anc)  : %9.3f ms | %7.4f ms/node\n"
                  "v2(gpu 1-parent) vs cpu-hash: mean err %.4f | max err %.4f\n"
                  "==================================================",
                  bench_nodes,
                  bench_ms_fused, bench_ms_fused / n, bench_ms_split, bench_ms_split / n,
                  bench_ms_mcpu, bench_ms_mcpu / n, bench_ms_agpu, bench_ms_agpu / n,
-                 bench_ms_acpu, bench_ms_acpu / n, bench_v2_err_sum / n, bench_v2_err_max);
+                 bench_ms_acpu, bench_ms_acpu / n, bench_ms_v2, bench_ms_v2 / n,
+                 bench_ms_v4, bench_ms_v4 / n, bench_v2_err_sum / n, bench_v2_err_max);
     }
 }
 
@@ -1043,7 +1047,7 @@ void AEPlanner::localPlanner() {
         visualize_edge(added_node, ns);
 
         if (added_node->gain > g_zero) {
-            cacheNode(added_node);
+            cacheNode(added_node, added_node->gain, added_node->point[3]);   // legacy path: gain is absolute
         }
 
         if (j > N_termination) {
@@ -1080,6 +1084,7 @@ std::vector<float> AEPlanner::parentCamRows(float yaw) {
 void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes) {
     if (nodes.empty()) return;
     const int per = segment_evaluator.depthImagePixels();
+    bench_kernel_ms_ = 0.0;   // accumulate the CUDA-event device time across all generation levels
 
     // Bucket by tree depth so each ancestor is evaluated (its depth buffer stored) before its descendants.
     std::map<int, std::vector<size_t>> levels;
@@ -1121,6 +1126,7 @@ void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>&
         auto results = segment_evaluator.computeMarginalGainBatchGPU(
             cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
             marginal_split, depth_out, ms);
+        bench_kernel_ms_ += ms;   // device (CUDA-event) kernel time for this level
 
         for (size_t li = 0; li < n; ++li) {
             rrt_star::Node* node = nodes[idxs[li]];
@@ -1176,6 +1182,32 @@ double AEPlanner::computeV2SingleParent(rrt_star::Node* node) {
     return r.first;
 }
 
+// Per-node (non-batched) GPU multi-ancestor marginal gain. Mirrors the v2 helper's
+// body-position + parentCamRows convention, but walks the full ancestor chain so the
+// result is directly comparable, per node, to the batched fused/split methods.
+double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node) {
+    const int per = segment_evaluator.depthImagePixels();
+    std::vector<Eigen::Vector3d> anc_positions;
+    std::vector<double>          anc_yaws;
+    std::vector<float>           anc_R_flat;      // 9 floats per ancestor
+    std::vector<float>           anc_depth_flat;  // 'per' floats per ancestor
+    for (rrt_star::Node* a = node->parent; a != nullptr; a = a->parent) {
+        anc_positions.push_back(a->point.head(3));
+        anc_yaws.push_back(a->point[3]);
+        std::vector<float> R = parentCamRows((float)a->point[3]);
+        anc_R_flat.insert(anc_R_flat.end(), R.begin(), R.end());
+        if ((int)a->depth_buffer.size() == per)
+            anc_depth_flat.insert(anc_depth_flat.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+        else
+            anc_depth_flat.insert(anc_depth_flat.end(), (size_t)per, -1.0f);  // root/unevaluated -> unknown
+    }
+    std::vector<float> out;
+    auto r = segment_evaluator.computeMarginalGainGPU_v4(
+        node->point.x(), node->point.y(), node->point.z(),
+        anc_positions, anc_yaws, anc_R_flat, anc_depth_flat, out);
+    return r.first;
+}
+
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
 void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) {
     auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
@@ -1191,9 +1223,41 @@ std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() {
     return nodes;
 }
 
+// Absolute (own-view) gain + best yaw per node, without disturbing node->gain/yaw. In absolute mode the
+// node's gain already IS this; in marginal mode we re-raycast each node ignoring ancestors.
+void AEPlanner::computeAbsoluteGainsInto(const std::vector<rrt_star::Node*>& nodes,
+                                         std::vector<double>& out_gain, std::vector<double>& out_yaw) {
+    out_gain.assign(nodes.size(), 0.0);
+    out_yaw.assign(nodes.size(), 0.0);
+    if (nodes.empty()) return;
+
+    if (!marginal_gain) {
+        for (size_t i = 0; i < nodes.size(); ++i) { out_gain[i] = nodes[i]->gain; out_yaw[i] = nodes[i]->point[3]; }
+    } else if (eval_compute == "gpu") {
+        std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
+        for (size_t i = 0; i < nodes.size(); ++i) { x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z(); }
+        auto res = segment_evaluator.computeGainBatchGPU(x, y, z);   // absolute (no fixed yaw, no ancestors)
+        for (size_t i = 0; i < nodes.size(); ++i) { out_gain[i] = res[i].first; out_yaw[i] = res[i].second; }
+    } else {
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            eth_mav_msgs::EigenTrajectoryPoint p; p.position_W = nodes[i]->point.head(3);
+            auto r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, p);
+            out_gain[i] = r.first; out_yaw[i] = r.second;
+        }
+    }
+}
+
 void AEPlanner::cacheHighGainNodes() {
-    for (const auto& up : RRTStar.getNodes())
-        if (up->parent && up->gain > g_zero) cacheNode(up.get());
+    std::vector<rrt_star::Node*> tree = collectTreeNodes();
+    if (tree.empty()) return;
+
+    // Cache a frontier when its OWN view still sees new space (absolute gain > g_zero), even if marginal
+    // gain is ~0 because an ancestor covers it. Otherwise marginal mode hides real frontiers near the end
+    // and the planner never terminates. Cache the absolute gain/yaw so the frontier server keeps them.
+    std::vector<double> abs_gain, abs_yaw;
+    computeAbsoluteGainsInto(tree, abs_gain, abs_yaw);
+    for (size_t i = 0; i < tree.size(); ++i)
+        if (abs_gain[i] > g_zero) cacheNode(tree[i], abs_gain[i], abs_yaw[i]);
 }
 
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
@@ -1209,12 +1273,14 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     if (nodes.empty()) return;
     const size_t n = nodes.size();
 
-    // Save real gain/yaw. Depth buffers are intentionally NOT restored: the split pass leaves them
-    // as valid marginal-gpu buffers, which v2 (below) and the next batch's ancestors then rely on.
+    // Save real gain/yaw so the planner is undisturbed. Depth buffers are left as the FINAL (split)
+    // timed pass sets them -- the next real batch's ancestors rely on those valid marginal buffers.
     std::vector<double> save_gain(n), save_yaw(n);
     for (size_t i = 0; i < n; ++i) { save_gain[i] = nodes[i]->gain; save_yaw[i] = nodes[i]->point[3]; }
     const bool save_marg = marginal_gain; const std::string save_comp = eval_compute; const bool save_split = marginal_split;
 
+    // Single-shot host wall-clock of one evaluateGains(nodes) under a given config. One sample per
+    // batch is enough -- the distribution comes from the many batches (each many nodes) over a run.
     auto timed = [&](bool marg, const std::string& comp, bool split) -> double {
         marginal_gain = marg; eval_compute = comp; marginal_split = split;
         auto t0 = std::chrono::high_resolution_clock::now();
@@ -1223,33 +1289,72 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     };
 
-    double t_fused = timed(true,  "gpu", false); std::vector<double> g_fused(n); for (size_t i = 0; i < n; ++i) g_fused[i] = nodes[i]->gain;
-    double t_split = timed(true,  "gpu", true);  std::vector<double> g_split(n); for (size_t i = 0; i < n; ++i) g_split[i] = nodes[i]->gain;
-    double t_mcpu  = timed(true,  "cpu", false);   // timing only; the clean same-parent value is recomputed below
-    double t_agpu  = timed(false, "gpu", false); std::vector<double> g_agpu(n);  for (size_t i = 0; i < n; ++i) g_agpu[i]  = nodes[i]->gain;
-    double t_acpu  = timed(false, "cpu", false); std::vector<double> g_acpu(n);  for (size_t i = 0; i < n; ++i) g_acpu[i]  = nodes[i]->gain;
+    // ---- COLD-FAIR ORDER: single-node GPU methods FIRST (so they never inherit a candidate depth
+    //      buffer a batched pass just rendered), THEN the batched kernels (fused, split last). ----
+    auto v2_0 = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < n; ++i) computeV2SingleParent(nodes[i]);
+    auto v2_1 = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < n; ++i) computeV4MultiAncestor(nodes[i]);
+    auto v4_1 = std::chrono::high_resolution_clock::now();
+    double t_v2 = std::chrono::duration<double, std::milli>(v2_1 - v2_0).count();
+    double t_v4 = std::chrono::duration<double, std::milli>(v4_1 - v2_1).count();
 
-    bench_ms_fused += t_fused; bench_ms_split += t_split; bench_ms_mcpu += t_mcpu; bench_ms_agpu += t_agpu; bench_ms_acpu += t_acpu;
+    // CPU references for the gain study (absolute + marginal hash) and absolute-GPU.
+    double t_acpu = timed(false, "cpu", false); std::vector<double> g_acpu(n); for (size_t i = 0; i < n; ++i) g_acpu[i] = nodes[i]->gain;
+    double t_mcpu = timed(true,  "cpu", false); // CPU-hash marginal (value recomputed cleanly below)
+    double t_agpu = timed(false, "gpu", false); std::vector<double> g_agpu(n); for (size_t i = 0; i < n; ++i) g_agpu[i] = nodes[i]->gain;
+
+    // Batched kernels LAST. Capture BOTH host time and the CUDA-event DEVICE time (bench_kernel_ms_,
+    // accumulated inside evaluateMarginalGainsBatched). Split runs last -> leaves correct depth buffers.
+    double t_fused_host = timed(true, "gpu", false); double t_fused_dev = bench_kernel_ms_;
+    std::vector<double> g_fused(n); for (size_t i = 0; i < n; ++i) g_fused[i] = nodes[i]->gain;
+    double t_split_host = timed(true, "gpu", true);  double t_split_dev = bench_kernel_ms_;
+    std::vector<double> g_split(n); for (size_t i = 0; i < n; ++i) g_split[i] = nodes[i]->gain;
+
+    bench_ms_fused += t_fused_host; bench_ms_split += t_split_host; bench_ms_mcpu += t_mcpu;
+    bench_ms_agpu += t_agpu; bench_ms_acpu += t_acpu; bench_ms_v2 += t_v2; bench_ms_v4 += t_v4;
     bench_nodes += (int)n;
+
+    // Append one timing row per batch. Header written only when the file is new so
+    // that appends across planning iterations (and across runs) stay tidy.
+    auto open_csv = [](const std::string& path, const std::string& header) -> std::ofstream {
+        bool exists = std::ifstream(path).good();
+        std::ofstream f(path, std::ios::app);
+        if (!exists && f.is_open()) f << header << "\n";
+        return f;
+    };
+    {
+        std::ofstream tf = open_csv("benchmark_timing.csv",
+            "Phase,Nodes,v2_ms,v4_ms,fused_host_ms,split_host_ms,fused_dev_ms,split_dev_ms,abs_gpu_ms,abs_cpu_ms,cpu_hash_ms");
+        if (tf.is_open())
+            tf << phase << "," << n << "," << t_v2 << "," << t_v4 << "," << t_fused_host << ","
+               << t_split_host << "," << t_fused_dev << "," << t_split_dev << "," << t_agpu << ","
+               << t_acpu << "," << t_mcpu << "\n";
+    }
+    std::ofstream gf = open_csv("benchmark_gains.csv",
+        "Phase,NodeIdx,Ancestors,g_fused,g_split,g_abs_gpu,g_abs_cpu,hash_cpu1p,v2_gpu1p,v4_multi");
 
     // Restore gain/yaw + config (leave depth buffers as the split pass set them).
     marginal_gain = save_marg; eval_compute = save_comp; marginal_split = save_split;
     for (size_t i = 0; i < n; ++i) { nodes[i]->gain = save_gain[i]; nodes[i]->point[3] = save_yaw[i]; }
 
     // Per-node result check: GPU single-parent (v2) vs CPU single-parent hash (ground truth), both
-    // against the SAME parent view (parent at its restored best yaw). The multi-parent methods
-    // (fused/split) have NO CPU ground truth -- which is why the GPU method exists.
+    // against the SAME parent view (parent at its restored best yaw). Also log ancestor count so the
+    // gain study can relate "gain shaved by marginalization" to tree-depth overlap.
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
+        int anc = 0; for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++anc;
         double v2 = computeV2SingleParent(nd);
+        double v4 = computeV4MultiAncestor(nd);   // before hash's populateParentHistory
         double sg = nd->gain, sy = nd->point[3];   // hash overwrites gain/yaw; restore right after
         if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
         double hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd).first;
         nd->gain = sg; nd->point[3] = sy;
         double err = std::fabs(v2 - hash);
         bench_v2_err_sum += err; if (err > bench_v2_err_max) bench_v2_err_max = err;
-        ROS_INFO("[BENCH][%s] fused=%7.3f split=%7.3f | v2(gpu1p)=%7.3f hash(cpu1p)=%7.3f err=%.4f | absG=%7.3f absC=%7.3f",
-                 phase, g_fused[i], g_split[i], v2, hash, err, g_agpu[i], g_acpu[i]);
+        if (gf.is_open())
+            gf << phase << "," << i << "," << anc << "," << g_fused[i] << "," << g_split[i] << "," << g_agpu[i]
+               << "," << g_acpu[i] << "," << hash << "," << v2 << "," << v4 << "\n";
     }
 }
 
@@ -1288,12 +1393,14 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
     int m = 0;
     const int GLOBAL_BATCH = 2 * N_min_nodes;   // scale the batch with the node budget (add only up to the limit)
 
-    // A frontier's global gain: sum of marginal gains along its path, or the absolute gain at the node.
+    // A frontier's global gain is its ABSOLUTE (own-view) gain, recomputed at the node. The marginal
+    // path-sum can fall below threshold for a still-informative cached frontier (its path crosses
+    // already-observed space), so a real goal would never qualify and AEP would never terminate.
+    std::unordered_map<rrt_star::Node*, double> frontier_abs_gain;   // absolute gain per frontier node
     auto global_gain = [&](rrt_star::Node* f) -> double {
-        if (!marginal_gain) return f->gain;
-        double s = 0.0;
-        for (rrt_star::Node* a = f; a != nullptr; a = a->parent) s += a->gain;
-        return s;
+        if (!marginal_gain) return f->gain;   // absolute mode: node gain already is the own-view gain
+        auto it = frontier_abs_gain.find(f);
+        return (it != frontier_abs_gain.end()) ? it->second : 0.0;
     };
 
     while (m < N_min_nodes || all_global_goals.empty()) {
@@ -1355,14 +1462,22 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         evaluateGains(gain_nodes);
         if (benchmark_mode) benchmarkGains(gain_nodes, "global");
 
+        // Recompute the absolute gain of each new frontier node once (position-only, so rewire-safe).
+        // This is the "recompute the gain in the cached nodes" that lets a real frontier still qualify.
+        if (marginal_gain && !batch_frontier.empty()) {
+            std::vector<double> fg, fy;
+            computeAbsoluteGainsInto(batch_frontier, fg, fy);
+            for (size_t i = 0; i < batch_frontier.size(); ++i) frontier_abs_gain[batch_frontier[i]] = fg[i];
+        }
+
         all_global_goals.clear();
         for (rrt_star::Node* f : frontier_nodes) {
             if (global_gain(f) >= 0.1) all_global_goals.push_back(f);
         }
     }
 
-    // Commit gain + score on the chosen goals (all gains read before overwriting, so a goal that is
-    // an ancestor of another goal can't corrupt its path sum). score = gain discounted by path cost.
+    // Commit gain + score on the chosen goals. global_gain now reads the per-node absolute gain map,
+    // so overwriting node->gain here can't corrupt another goal's value. score = gain discounted by cost.
     std::vector<double> goal_gains(all_global_goals.size());
     for (size_t i = 0; i < all_global_goals.size(); ++i) goal_gains[i] = global_gain(all_global_goals[i]);
     for (size_t i = 0; i < all_global_goals.size(); ++i) {
@@ -1399,7 +1514,8 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
 bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node) {
     // Frontier proximity only; the gain of the reaching nodes is computed in a batch by the caller.
     goals_tree.clearKDTreePoints();
-    for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
+    if (GlobalFrontiers.empty()) return false;
+    for (size_t i = 0; i < GlobalFrontiers.size(); ++i) {
         goals_tree.addKDTreePoint(GlobalFrontiers[i]);
     }
 
@@ -1451,16 +1567,16 @@ void AEPlanner::getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goa
     visualize_path(best_global_node, ns);
 }
 
-void AEPlanner::cacheNode(rrt_star::Node* Node) {
+void AEPlanner::cacheNode(rrt_star::Node* Node, double gain, double yaw) {
     if (!Node) {
         return;
     }
     cache_nodes::Node cached_node;
-    cached_node.gain = Node->gain;
+    cached_node.gain = gain;   // absolute gain, so the frontier server (threshold g_zero) keeps this node
     cached_node.position.x = Node->point[0];
     cached_node.position.y = Node->point[1];
     cached_node.position.z = Node->point[2];
-    cached_node.yaw = Node->point[3];
+    cached_node.yaw = yaw;
     pub_node.publish(cached_node);
 }
 
