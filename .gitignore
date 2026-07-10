@@ -9,3 +9,6 @@ data/
 .vscode/
 .catkin_tools/
 .claude/
+# Loose markdown notes/handoffs (READMEs stay tracked)
+*.md
+!README.md
