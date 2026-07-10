@@ -238,6 +238,30 @@ class EvalPlotting(object):
                               ignore_errors=True)
             self.eval_log_file.close()
 
+    def _resolve_series_dirs(self, target_dir):
+        # 1. Explicit override via '~series_labels' (comma-separated string or rosparam list).
+        param = rospy.get_param('~series_labels', '')
+        if isinstance(param, str):
+            labels = [s.strip() for s in param.split(',') if s.strip()]
+        elif isinstance(param, (list, tuple)):
+            labels = [str(s).strip() for s in param if str(s).strip()]
+        else:
+            labels = []
+        if labels:
+            return labels
+        # 2. Auto-discover: subfolders of target_dir that contain >=1 timestamped run.
+        ts_re = re.compile(r'\d{8}_\d{6}')
+        exclude = {"multi_series_evaluation", "series_evaluation", "tmp_bags", "graphs"}
+        found = []
+        for name in sorted(os.listdir(target_dir)):
+            path = os.path.join(target_dir, name)
+            if not os.path.isdir(path) or name in exclude:
+                continue
+            if any(ts_re.match(o) and os.path.isdir(os.path.join(path, o))
+                   for o in os.listdir(path)):
+                found.append(name)
+        return found
+
     def evaluate_multi_series(self, target_dir):
         rospy.loginfo("Evaluating experiment series at '%s'", target_dir)
 
@@ -250,19 +274,24 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        #series_dir = ["nbv", "aep", "knbv", "kaep"]
-        series_dir = ["RH-NBVP", "AEP", "KRH-NBVP", "KAEP"]
-        #series_dir = ["JS - RH-NBVP", "JS - AEP", "JS - KRH-NBVP", "JS - KAEP"]
-        #series_dir = ["SS - RH-NBVP", "SS - AEP", "SS - KRH-NBVP", "SS - KAEP"]
-        #series_dir = ["RH-NBVP/JS", "RH-NBVP/SS", "AEP/JS", "AEP/SS", "Kinodynamic RH-NBVP (ours)/JS", "Kinodynamic RH-NBVP (ours)/SS", "Kinodynamic AEP (ours)/JS", "Kinodynamic AEP (ours)/SS"]
+        # Method folders to compare. Order defines legend/color order.
+        #   1. explicit list via the '~series_labels' param (comma-separated or rosparam list), else
+        #   2. auto-discovered: every subfolder of target_dir holding >=1 timestamped run.
+        # Legacy hardcoded sets kept for reference:
+        #series_dir = ["RH-NBVP", "AEP", "KRH-NBVP", "KAEP"]
         #series_dir = ["Cost", "Gain", "Score"]
-        #series_dir = ["Distance", "Time"]
-        #series_dir = ["Connected", "Disconnected"]
-        colors = ['r', 'y', 'b', 'g']
-        #colors = ['c', 'm', 'tab:pink', 'tab:gray']
-        #colors = ['r', 'y', 'b', 'g', 'c', 'm', 'tab:pink', 'tab:gray']
-        #colors = ['r', 'y', 'b']
-        #colors = ['r', 'y']
+        series_dir = self._resolve_series_dirs(target_dir)
+        if not series_dir:
+            rospy.logwarn("No method folders found under '%s' for multi_series eval.", target_dir)
+            return
+        rospy.loginfo("multi_series methods: %s", series_dir)
+        # Distinct colors for any number of methods (fixed palette first, colormap fallback).
+        base_colors = ['r', 'y', 'b', 'g', 'c', 'm', 'tab:pink', 'tab:gray']
+        if len(series_dir) <= len(base_colors):
+            colors = base_colors[:len(series_dir)]
+        else:
+            cmap = plt.get_cmap('tab20')
+            colors = [cmap(i % 20) for i in range(len(series_dir))]
         for idx, series in enumerate(series_dir):
             dir_expression = re.compile(r'\d{8}_\d{6}')
             subdirs = [
@@ -428,9 +457,12 @@ class EvalPlotting(object):
                 #axes[0, 1].set_ylim(0, 1)
                 axes[0, 1].set_ylim(0, 100)
 
-                interp_function = interp1d(unknown, x)
-                std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'], x)
-                std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'], x)
+                # bounds_error=False so a milestone a (high-variance) series never
+                # reaches (e.g. RH-NBVP's upper std band at 95%) yields nan instead
+                # of aborting the whole multi-series comparison.
+                interp_function = interp1d(unknown, x, bounds_error=False, fill_value=np.nan)
+                std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'], x, bounds_error=False, fill_value=np.nan)
+                std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'], x, bounds_error=False, fill_value=np.nan)
                 y_value_25 = 75
                 y_value_50 = 50
                 y_value_95 = 5
@@ -438,8 +470,12 @@ class EvalPlotting(object):
                 x_std_value_25 = np.max([np.fabs(x_value_25 - std_interp_function_1(y_value_25)), np.fabs(x_value_25 - std_interp_function_2(y_value_25))]) 
                 x_value_50 = interp_function(y_value_50)
                 x_std_value_50 = np.max([np.fabs(x_value_50 - std_interp_function_1(y_value_50)), np.fabs(x_value_50 - std_interp_function_2(y_value_50))]) 
+                y_value_75 = 25
+                x_value_75 = interp_function(y_value_75)
+                x_std_value_75 = np.max([np.fabs(x_value_75 - std_interp_function_1(y_value_75)), np.fabs(x_value_75 - std_interp_function_2(y_value_75))])
                 print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes.")
                 print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes.")
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_75}% is time = {x_value_75:.2f} +/- {x_std_value_75:.2f} minutes.")
                 if series != "RH-NBVP" and series != "JS - RH-NBVP" and series != "SS - RH-NBVP":
                     x_value_95 = interp_function(y_value_95)
                     x_std_value_95 = np.max([np.fabs(x_value_95 - std_interp_function_1(y_value_95)), np.fabs(x_value_95 - std_interp_function_2(y_value_95))]) 
@@ -458,9 +494,9 @@ class EvalPlotting(object):
                 axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
                 axes[0, 1].set_ylim(0, 100)
 
-                interp_function = interp1d(unknown, x)
-                std_interp_function_1 = interp1d(unknown - std_deviations, x)
-                std_interp_function_2 = interp1d(unknown + std_deviations, x)
+                interp_function = interp1d(unknown, x, bounds_error=False, fill_value=np.nan)
+                std_interp_function_1 = interp1d(unknown - std_deviations, x, bounds_error=False, fill_value=np.nan)
+                std_interp_function_2 = interp1d(unknown + std_deviations, x, bounds_error=False, fill_value=np.nan)
                 y_value_25 = 75
                 y_value_50 = 50
                 y_value_95 = 5

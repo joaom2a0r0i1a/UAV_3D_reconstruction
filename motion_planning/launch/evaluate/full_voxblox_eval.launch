@@ -4,6 +4,9 @@
   <arg name="gt_file_path" default="$(find motion_planning)/data/gt_school_processed.ply"/>
   <arg name="experiment_config" default="School.yaml"/>
   <arg name="method" default="all"/>
+  <!-- Comma-separated method folders to compare in multi_series mode
+       (e.g. "GPU_abs_RRT,GPU_marg_RRT"). Empty => auto-discover under target_directory. -->
+  <arg name="series_labels" default=""/>
 
   <!-- what to evaluate -->
   <arg name="multi_series" default="false"/>
@@ -27,6 +30,7 @@
   <node name="eval_plotting_node" pkg="motion_planning" type="eval_plotting_node.py" output="screen" required="true">
     <param name="target_directory" value="$(arg target_directory)" />
     <param name="method" value="$(arg method)" />
+    <param name="series_labels" value="$(arg series_labels)" />
     <param name="ns_eval_voxblox_node" value="/eval_voxblox_node" />
     <param name="evaluate" value="$(arg evaluate)" />
     <param name="evaluate_volume" value="$(arg evaluate_volume)" />
