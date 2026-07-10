@@ -4,21 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Angular sample count = floor(span/step) with a snap-tolerance so an intended integer
-// (58deg/2deg=29) survives float rounding while 27.7 still floors to 27. One CPU+GPU def.
+// Angular sample count = floor(span/step + snap-tolerance); one shared CPU+GPU definition.
 static inline int angular_bins(float span, float step) {
     int n = (int)(span / step + 1e-3f);
     return n > 0 ? n : 1;
 }
 
-// ============================================================================
-//  GPU launcher ABI -- implemented in gpu_raycaster.cu, consumed by host code.
-//
-//  Launcher arguments are grouped into small POD structs so each entry point
-//  stays within the JPL 5-argument limit and shares one definition across the
-//  .cu / .cpp boundary. Every struct is a plain C layout and is safe to pass
-//  by value across extern "C".
-// ============================================================================
+
+/* GPU LAUNCHER ABI (impl in gpu_raycaster.cu; args bundled into POD structs, passed by value across extern "C") */
 
 // World-space point (host mirror of CUDA float3).
 typedef struct {
@@ -73,14 +66,7 @@ typedef struct {
     float* depth;   // count*p_width*p_height, or null
 } GpuAncestors;
 
-// A whole wavefront of candidates, each with its own ancestor chain, in CSR form:
-// candidate c owns ancestors [offsets[c], offsets[c+1]) in the flattened arrays.
-// `total` == offsets[num_candidates]. Depth buffers are packed per=p_width*p_height
-// floats per ancestor. All host pointers; the launcher uploads them.
-// `depth_idx` (optional) turns `depth` into a shared pool of `num_nodes` buffers:
-// ancestor slot i reads pool[depth_idx[i]] instead of contiguous slot i. This keeps
-// device memory O(num_nodes*per) instead of O(total*per) for large wavefronts.
-// Leave depth_idx null (num_nodes ignored) for the contiguous layout.
+// Wavefront in CSR form: candidate c owns ancestors [offsets[c], offsets[c+1]); depth_idx (opt) pools depth to O(num_nodes*per).
 typedef struct {
     int          num_candidates;
     const int*   offsets;   // [num_candidates+1] prefix sum of per-candidate ancestor counts
@@ -97,14 +83,15 @@ typedef struct {
 extern "C" {
 #endif
 
-// --- Expected-information-gain launchers ------------------------------------
+
+/* EXPECTED-INFORMATION-GAIN LAUNCHERS */
 void launch_gain_kernel_single(GpuMap map, GpuVec3 cand, GpuResult out, GpuSensor cfg);
 void launch_gain_kernel(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
 void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
 void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
 
-// --- Marginal-gain launchers (v3 is the live path; v1/v2 are legacy) --------
-// v4 mirrors v3 but traverses the observed-free spans instead of jumping them.
+
+/* MARGINAL-GAIN LAUNCHERS (v3 live; v1/v2 legacy; v4 = v3 but traverses spans instead of jumping) */
 void launch_marginal_gain_kernel(GpuMap map, GpuVec3 cand, GpuParent parent,
                                  GpuResult out, GpuSensor cfg);
 void launch_marginal_gain_kernel_v2(GpuMap map, GpuVec3 cand, GpuParent parent,
@@ -114,39 +101,26 @@ void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ances
 void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
                                     GpuResult out, GpuSensor cfg);
 
-// --- Batched marginal-gain launchers (whole wavefront in one call) ----------
-// Two architectures over identical inputs, for head-to-head profiling (both use
-// the v4 traverse march):
-//   fused = Option 1: one kernel per candidate does check-then-march per ray.
-//   split = Option 2: kernel A writes merged skip intervals to global memory,
-//           kernel B reads them back and marches.
-// map.d_map must already be a DEVICE grid. out.gain/out.yaw are [num_candidates];
-// out.depths (or null) is [num_candidates * p_width * p_height]. If kernel_ms is
-// non-null it receives the on-device kernel time (ms), excluding host alloc/copy.
+
+/* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both v4 march; kernel_ms=device ms; fixed_yaws=NBVP per-candidate or null=AEP) */
 void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
-                                      GpuSensor cfg, float* kernel_ms);
+                                      GpuSensor cfg, float* kernel_ms,
+                                      const float* fixed_yaws);
 void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
-                                      GpuSensor cfg, float* kernel_ms);
+                                      GpuSensor cfg, float* kernel_ms,
+                                      const float* fixed_yaws);
 
-// --- Fixed-yaw variants (NBVP): evaluate the FOV window at fixed_yaws[i] (per candidate)
-// instead of optimizing yaw. out.yaw returns the input yaw. fixed_yaws is a host array
-// [num_candidates] (scalar for v2). Same map/gain semantics as the optimize-yaw launchers.
+
+/* FIXED-YAW VARIANTS (NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
 void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
                                     GpuSensor cfg, const float* fixed_yaws);
 void launch_marginal_gain_kernel_v2_fixed(GpuMap map, GpuVec3 cand, GpuParent parent,
                                           GpuResult out, GpuSensor cfg, float fixed_yaw);
-void launch_marginal_gain_batch_fused_fixed(GpuMap map, GpuCandidates cands,
-                                            GpuAncestorBatch anc, GpuResult out,
-                                            GpuSensor cfg, float* kernel_ms,
-                                            const float* fixed_yaws);
-void launch_marginal_gain_batch_split_fixed(GpuMap map, GpuCandidates cands,
-                                            GpuAncestorBatch anc, GpuResult out,
-                                            GpuSensor cfg, float* kernel_ms,
-                                            const float* fixed_yaws);
 
-// --- Thin device-memory wrappers (host owns the cached map buffer) ----------
+
+/* THIN DEVICE-MEMORY WRAPPERS (host owns the cached map buffer) */
 void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size);
 void wrapper_cuda_free(void* dev_ptr);
 void wrapper_cuda_memcpy(void* dev_ptr, const void* host_ptr, size_t size);

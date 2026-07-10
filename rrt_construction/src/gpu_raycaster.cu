@@ -8,36 +8,16 @@
 #include <rrt_construction/gpu_raycast_math.cuh>
 #include <rrt_construction/gpu_raycast_launch.h>
 
-// Candidates per tile for the split launcher's interval scratch (bounds device
-// memory; lower it if VRAM is tight, raise it to cut per-chunk launch overhead).
+// Candidates per tile for the split launcher's interval scratch (bounds device memory).
 #define SPLIT_CHUNK 128
 
-// Output depth-buffer slots for the batched path. generate_depth_buffer writes
-// into (candidate % BATCH_DEPTH_SLOTS), bounding output memory to slots*per so a
-// 500k-candidate sweep fits. The batched depth output is benchmark-only (not read
-// back); the live per-candidate v3/v4 path is unaffected.
+// Output depth-buffer slots for the batched path (bounds output memory to slots*per); benchmark-only, not read back.
 #define BATCH_DEPTH_SLOTS 4096
 
-// ============================================================================
-//  gpu_raycaster.cu
-//
-//  CUDA front end for the information-gain and marginal-gain raycasters.
-//  This translation unit holds ONLY:
-//    * __global__ kernels  -- thin orchestration; the math lives in
-//                             gpu_raycast_math.cuh.
-//    * extern "C" launchers -- host glue that packs parameters, manages device
-//                             memory and launches the kernels.
-//
-//  Kernel argument lists are bundled into small structs (MapContext, ParentFrame,
-//  AncestorSet, GainResults) to stay well under the JPL 5-argument limit. The
-//  extern "C" launcher signatures (declared in gpu_raycast_launch.h, consumed by
-//  gain_evaluator.cpp) are likewise grouped into POD structs -- GpuMap, GpuSensor,
-//  GpuCandidates, GpuParent, GpuAncestors, GpuResult.
-// ============================================================================
+// gpu_raycaster.cu -- CUDA front end: __global__ kernels (math in gpu_raycast_math.cuh) + extern "C" launchers (ABI in gpu_raycast_launch.h).
 
-// ----------------------------------------------------------------------------
-//  Host helpers (shared by every launcher).
-// ----------------------------------------------------------------------------
+
+/* HOST HELPERS (shared by every launcher) */
 
 // Pack the dynamic launch parameters, deriving the angular steps and phi band.
 static KernelParams make_kernel_params(float voxel_size, float gain_range,
@@ -62,8 +42,7 @@ static KernelParams make_kernel_params(float voxel_size, float gain_range,
     return params;
 }
 
-// Derive the parent depth-image geometry (pixel size + pinhole intrinsics) that
-// every marginal kernel shares.
+// Derive the parent depth-image geometry (pixel size + pinhole intrinsics) shared by every marginal kernel.
 static gpuray::ParentCameraConfig derive_camera_config(float gain_range, float voxel_size,
                                                     const KernelParams& params) {
     gpuray::ParentCameraConfig cam;
@@ -76,8 +55,7 @@ static gpuray::ParentCameraConfig derive_camera_config(float gain_range, float v
     return cam;
 }
 
-// Pick the FOV window from the per-sector histogram: the caller's fixed yaw (when
-// fixed_yaw != null) or the best window. Writes the window gain and its centre yaw.
+// Pick the FOV window from the per-sector histogram: caller's fixed_yaw (if non-null) or the best window.
 __device__ inline void pick_yaw_window(const float* s_yaw_gains, const KernelParams& params,
                                        const float* fixed_yaw, int candidate,
                                        float* out_gain, float* out_center) {
@@ -94,12 +72,10 @@ __device__ inline void pick_yaw_window(const float* s_yaw_gains, const KernelPar
     }
 }
 
-// ============================================================================
-//  Kernels: AEP information gain (no parent occlusion).
-// ============================================================================
 
-// One candidate, one block. Threads share the ray workload and reduce to the
-// best yaw window.
+/* KERNELS: AEP INFORMATION GAIN (no parent occlusion) */
+
+// One candidate, one block: threads share the ray workload and reduce to the best yaw window.
 __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
                                            float* __restrict__ result_gain,
                                            float* __restrict__ result_yaw,
@@ -117,8 +93,6 @@ __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 dir = gpuray::spherical_ray_dir(theta, phi);
 
@@ -158,8 +132,6 @@ __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ po
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 dir = gpuray::spherical_ray_dir(theta, phi);
 
@@ -178,8 +150,7 @@ __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ po
     }
 }
 
-// As above, but also records the per-ray first-hit depth and copies the windowed
-// subset that falls inside the chosen yaw FOV.
+// As above, but also records per-ray first-hit depth and copies the subset inside the chosen yaw FOV.
 __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restrict__ positions,
                                           float* __restrict__ results_gain,
                                           float* __restrict__ results_yaw,
@@ -200,8 +171,6 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 dir = gpuray::spherical_ray_dir(theta, phi);
 
@@ -234,9 +203,8 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
     }
 }
 
-// ============================================================================
-//  Kernels: marginal information gain (subtract space ancestors already saw).
-// ============================================================================
+
+/* KERNELS: MARGINAL INFORMATION GAIN (subtract what ancestors saw) */
 
 // Legacy single-parent, single-interval skip (v1).
 __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __restrict__ positions,
@@ -256,14 +224,11 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
 
-        // Project the ray into the parent frustum, convert the observed-free span
-        // to voxel units, then march while jumping that span.
+        // Project the ray into the parent frustum, convert the observed-free span to voxel units, then march jumping it.
         Ray ray = {cam_pos, ray_dir};
         float3 interval = compute_skip_distance(parent, ray, params.gain_range);
         float2 skip = make_float2(
@@ -312,8 +277,6 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
@@ -376,8 +339,6 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
@@ -423,9 +384,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
     generate_depth_buffer(m, ancestors.cam, pose, params, out.depth + candidate * buffer_rays);
 }
 
-// Multi-ancestor marginal gain, traversal variant (v4). Identical to v3 except it
-// marches the observed-free spans instead of jumping them (safer, no DDA reseat);
-// gain inside a span is suppressed rather than skipped. See march_marginal_gain_traverse.
+// Multi-ancestor marginal gain, traversal variant (v4): like v3 but marches observed-free spans instead of jumping (safer, no reseat).
 __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __restrict__ positions,
                                                  AncestorSet ancestors, GainResults out,
                                                  KernelParams params) {
@@ -444,8 +403,6 @@ __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __r
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
@@ -491,13 +448,12 @@ __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __r
     generate_depth_buffer(m, ancestors.cam, pose, params, out.depth + candidate * buffer_rays);
 }
 
-// ============================================================================
-//  Batched marginal gain: a whole wavefront in one grid (blockIdx = candidate).
-//  Two architectures share this data view; only the kernel structure differs.
-// ============================================================================
 
-// ---- Option 1: fused. One block per candidate; each ray does check-then-march
-// (v4 traverse march: it walks the observed-free spans instead of jumping them).
+/* BATCHED MARGINAL GAIN KERNELS (one wavefront per grid) */
+
+// Two architectures share this data view; only the kernel structure differs.
+
+// Option 1 (fused): one block per candidate; each ray does check-then-march (v4 traverse march).
 __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* __restrict__ positions,
                                                    AncestorBatchDev ab, GainResults out,
                                                    KernelParams params, int depth_slots) {
@@ -517,8 +473,6 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
         int phi_idx   = idx / THETA_BINS;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
-
         float sin_phi = sinf(phi);
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
         float3 cam_pos = positions[candidate];
@@ -559,8 +513,7 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
     generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
 }
 
-// Option 2, stage A: each ray writes its merged skip intervals (voxel units) + count to
-// global scratch, indexed by LOCAL block (`cand_base` = this chunk's first candidate).
+// Option 2, stage A: each ray writes its merged skip intervals (voxel units) + count to global scratch (LOCAL block index).
 __global__ void marginal_skips_stage(const float3* __restrict__ positions, AncestorBatchDev ab,
                                      int cand_base, KernelParams params, float2* __restrict__ skips_out,
                                      int* __restrict__ counts_out, int max_segs) {
@@ -577,7 +530,6 @@ __global__ void marginal_skips_stage(const float3* __restrict__ positions, Ances
         int theta_idx = idx % THETA_BINS;
         int phi_idx   = idx / THETA_BINS;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) { counts_out[ray_slot] = 0; continue; }
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
 
@@ -599,8 +551,7 @@ __global__ void marginal_skips_stage(const float3* __restrict__ positions, Ances
     }
 }
 
-// ---- Option 2, stage B: raycasting only. Reads the merged skip intervals stage
-// A left in global memory and marches (v4 traverse march, matching the fused kernel).
+// Option 2, stage B: reads stage A's merged skip intervals from global memory and marches (v4 traverse).
 __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ positions,
                                      AncestorBatchDev ab, int cand_base, GainResults out,
                                      KernelParams params, const float2* __restrict__ skips_in,
@@ -620,7 +571,6 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
         int theta_idx = idx % THETA_BINS;
         int phi_idx   = idx / THETA_BINS;
         float phi   = params.phi_start + phi_idx * params.dphi;
-        if (phi > params.phi_end) continue;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float sin_phi = sinf(phi);
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
@@ -650,9 +600,8 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
     generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
 }
 
-// ============================================================================
-//  Launchers (extern "C" ABI -- consumed by gain_evaluator.cpp).
-// ============================================================================
+
+/* LAUNCHERS (extern "C" ABI -- consumed by gain_evaluator.cpp) */
 
 // Pack the loose host config fields into the device-side launch structs.
 static KernelParams params_of(const GpuSensor& cfg) {
@@ -676,6 +625,8 @@ static float3* upload_candidates(const GpuCandidates& cands) {
     return d_positions;
 }
 
+
+/* AEP GAIN LAUNCHERS */
 extern "C" void launch_gain_kernel_single(GpuMap map, GpuVec3 cand,
                                          GpuResult out, GpuSensor cfg) {
     KernelParams params = params_of(cfg);
@@ -835,9 +786,10 @@ extern "C" void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands,
     cudaFree(d_depth_buffer);
 }
 
-// Shared setup for the single-parent marginal launchers (v1 and v2): allocate
-// device buffers, upload the candidate + parent state, and assemble the kernel
-// argument structs. Returns the rays-per-candidate launch width.
+
+/* SINGLE-PARENT MARGINAL LAUNCHERS (v1 / v2) */
+
+// Shared setup for the single-parent marginal launchers (v1/v2): alloc buffers, upload state, build arg structs; returns rays-per-candidate.
 static int setup_single_parent_marginal(
     const GpuMap& map, GpuVec3 cand, const GpuParent& parent_in,
     const KernelParams& params, const gpuray::ParentCameraConfig& cam,
@@ -883,8 +835,7 @@ static int setup_single_parent_marginal(
     return rays_per_candidate;
 }
 
-// Download results then release every device buffer held in a GainResults plus
-// the (single) parent depth buffer and candidate position.
+// Download results, then free every GainResults device buffer plus the parent depth buffer and candidate position.
 static void teardown_single_parent_marginal(
     float3* d_cand_pos, const ParentFrame& parent, const GainResults& out,
     const gpuray::ParentCameraConfig& cam, GpuResult result) {
@@ -967,9 +918,10 @@ extern "C" void launch_marginal_gain_kernel_v2_fixed(GpuMap map, GpuVec3 cand, G
     teardown_single_parent_marginal(d_cand_pos, parent, res, cam, out);
 }
 
-// Shared setup for the multi-ancestor marginal launchers (v3 and v4): allocate
-// device buffers, upload the candidate + flattened ancestor chain, and assemble
-// the kernel argument structs. Returns the rays-per-candidate launch width.
+
+/* MULTI-ANCESTOR MARGINAL LAUNCHERS (v3 / v4) */
+
+// Shared setup for the multi-ancestor marginal launchers (v3/v4): alloc buffers, upload the flattened ancestor chain; returns rays-per-candidate.
 static int setup_multi_ancestor_marginal(
     const GpuMap& map, GpuVec3 cand, const GpuAncestors& ancestors_in,
     const KernelParams& params, const gpuray::ParentCameraConfig& cam,
@@ -1020,8 +972,7 @@ static int setup_multi_ancestor_marginal(
     return rays_per_candidate;
 }
 
-// Download results then release every device buffer held in a GainResults plus
-// the flattened ancestor state and candidate position.
+// Download results, then free every GainResults device buffer plus the flattened ancestor state and candidate position.
 static void teardown_multi_ancestor_marginal(
     float3* d_cand_pos, const AncestorSet& ancestors, const GainResults& out,
     const gpuray::ParentCameraConfig& cam, GpuResult result) {
@@ -1081,11 +1032,12 @@ extern "C" void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAnce
     teardown_multi_ancestor_marginal(d_cand_pos, ancestors, res, cam, out);
 }
 
-// ---- Shared device-memory setup/teardown for the two batched launchers -----
-// (BatchDeviceMem and AncestorBatchDev are defined in gpu_raycast_math.cuh.)
 
-// Upload the candidate batch + CSR ancestor chains + output buffers and build the
-// AncestorBatchDev view (identical for fused/split, so only the kernel is timed).
+/* BATCHED MARGINAL LAUNCHERS (fused / split) */
+
+// Shared device-memory setup/teardown for the two batched launchers (types in gpu_raycast_math.cuh).
+
+// Upload the candidate batch + CSR ancestor chains + output buffers and build the AncestorBatchDev view (shared by fused/split).
 static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cands,
                                     const GpuAncestorBatch& anc, const KernelParams& params,
                                     const gpuray::ParentCameraConfig& cam,
@@ -1163,15 +1115,16 @@ static void teardown_batch(const BatchDeviceMem& mem, GpuResult out) {
     if (mem.d_fixed_yaw) cudaFree(mem.d_fixed_yaw);
 }
 
-// Option 1 (fused): one kernel, grid = candidates, threads = rays.
+// Option 1 (fused): one kernel, grid=candidates, threads=rays; fixed_yaws (or null) picks each window yaw.
 extern "C" void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                                  GpuAncestorBatch anc, GpuResult out,
-                                                 GpuSensor cfg, float* kernel_ms) {
+                                                 GpuSensor cfg, float* kernel_ms,
+                                                 const float* fixed_yaws) {
     KernelParams params = params_of(cfg);
     gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
     MapContext m; BatchDeviceMem mem; GainResults res;
-    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res);
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
 
     cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
     cudaEventRecord(t0);
@@ -1188,19 +1141,18 @@ extern "C" void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands
     teardown_batch(mem, out);
 }
 
-// Option 2 (split): stage A writes merged skip intervals to global memory, stage
-// B reads them back and marches. The interval scratch is the price of the split.
+// Option 2 (split): stage A writes merged skip intervals to global memory, stage B reads them back and marches; fixed_yaws optional.
 extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                                  GpuAncestorBatch anc, GpuResult out,
-                                                 GpuSensor cfg, float* kernel_ms) {
+                                                 GpuSensor cfg, float* kernel_ms,
+                                                 const float* fixed_yaws) {
     KernelParams params = params_of(cfg);
     gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
     MapContext m; BatchDeviceMem mem; GainResults res;
-    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res);
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
 
-    // Interval scratch is bounded to one chunk and reused across chunks (the split MUST
-    // tile so wide wavefronts don't blow up device memory; the fused kernel doesn't).
+    // Interval scratch bounded to one chunk and reused across chunks (the split must tile; the fused kernel doesn't).
     const int max_segs = 32;                       // merged capacity per ray in scratch
     const int chunk = min(mem.nc, SPLIT_CHUNK);
     size_t nslots = (size_t)chunk * mem.rays;
@@ -1228,73 +1180,8 @@ extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands
     teardown_batch(mem, out);
 }
 
-// Fixed-yaw variants: same kernels, but each candidate's window is taken at fixed_yaws[i]
-// (via GainResults.fixed_yaw) instead of the best window. out.yaw returns the input yaw.
-extern "C" void launch_marginal_gain_batch_fused_fixed(GpuMap map, GpuCandidates cands,
-                                                       GpuAncestorBatch anc, GpuResult out,
-                                                       GpuSensor cfg, float* kernel_ms,
-                                                       const float* fixed_yaws) {
-    KernelParams params = params_of(cfg);
-    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
-    MapContext m; BatchDeviceMem mem; GainResults res;
-    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
-
-    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
-    cudaEventRecord(t0);
-    evaluate_marginal_gain_batch_fused<<<mem.nc, min(mem.rays, MAX_THREADS_PER_BLOCK)>>>(
-        m, mem.d_cand, ab, res, params, mem.depth_slots);
-    cudaEventRecord(t1);
-    cudaEventSynchronize(t1);
-    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
-    cudaEventDestroy(t0); cudaEventDestroy(t1);
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) printf("CUDA fused batch (fixed) error: %s\n", cudaGetErrorString(err));
-
-    teardown_batch(mem, out);
-}
-
-extern "C" void launch_marginal_gain_batch_split_fixed(GpuMap map, GpuCandidates cands,
-                                                       GpuAncestorBatch anc, GpuResult out,
-                                                       GpuSensor cfg, float* kernel_ms,
-                                                       const float* fixed_yaws) {
-    KernelParams params = params_of(cfg);
-    gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
-
-    MapContext m; BatchDeviceMem mem; GainResults res;
-    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
-
-    const int max_segs = 32;
-    const int chunk = min(mem.nc, SPLIT_CHUNK);
-    size_t nslots = (size_t)chunk * mem.rays;
-    float2* d_skips; int* d_counts;
-    cudaMalloc(&d_skips,  nslots * max_segs * sizeof(float2));
-    cudaMalloc(&d_counts, nslots * sizeof(int));
-
-    int threads = min(mem.rays, MAX_THREADS_PER_BLOCK);
-    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
-    cudaEventRecord(t0);
-    for (int c0 = 0; c0 < mem.nc; c0 += chunk) {
-        int blocks = min(chunk, mem.nc - c0);
-        marginal_skips_stage<<<blocks, threads>>>(mem.d_cand, ab, c0, params, d_skips, d_counts, max_segs);
-        marginal_march_stage<<<blocks, threads>>>(m, mem.d_cand, ab, c0, res, params, d_skips, d_counts, max_segs, mem.depth_slots);
-    }
-    cudaEventRecord(t1);
-    cudaEventSynchronize(t1);
-    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
-    cudaEventDestroy(t0); cudaEventDestroy(t1);
-
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) printf("CUDA split batch (fixed) error: %s\n", cudaGetErrorString(err));
-
-    cudaFree(d_skips); cudaFree(d_counts);
-    teardown_batch(mem, out);
-}
-
-// ============================================================================
-//  Thin CUDA memory wrappers (used by gain_evaluator.cpp to own the map buffer).
-// ============================================================================
+/* THIN CUDA MEMORY WRAPPERS (host owns the cached map buffer) */
 
 extern "C" void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size) {
     cudaMalloc((void**)dev_ptr, size);

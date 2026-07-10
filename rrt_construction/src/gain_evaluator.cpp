@@ -745,13 +745,8 @@ std::vector<std::pair<double, double>> GainEvaluator::computeMarginalGainBatchGP
 
     float ms = 0.0f;
     const float* fy = fixed_yaws ? fixed_yaws->data() : nullptr;
-    if (fy) {
-        if (use_split) launch_marginal_gain_batch_split_fixed(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
-        else           launch_marginal_gain_batch_fused_fixed(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
-    } else {
-        if (use_split) launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms);
-        else           launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms);
-    }
+    if (use_split) launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
+    else           launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
     kernel_ms = ms;
 
     std::vector<std::pair<double, double>> results;

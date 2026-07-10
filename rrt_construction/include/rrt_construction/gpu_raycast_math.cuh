@@ -1,38 +1,15 @@
 #ifndef RRT_CONSTRUCTION_GPU_RAYCAST_MATH_CUH_
 #define RRT_CONSTRUCTION_GPU_RAYCAST_MATH_CUH_
 
-// ============================================================================
-//  gpu_raycast_math.cuh
-//
-//  Header-only device library for the information-gain and marginal-gain
-//  raycasters used by the planners. Sharing
-//  __device__ inline routines through a header is the idiomatic way to reuse
-//  device code without relocatable device code (-rdc=true).
-//
-//  Layout (read top to bottom):
-//    1. TUNABLES   -- compile-time configuration macros.
-//    2. TYPES      -- every struct, grouped before any function.
-//    3. PRIMITIVES -- namespace gpuray: pure, single-purpose math helpers.
-//    4. ROUTINES   -- higher-level device functions built from the primitives.
-//
-//  Coding rules (NASA/JPL "Power of 10", JPL D-60411, C++ Core Guidelines):
-//    * One responsibility per function; <= 5 parameters (arguments bundled
-//      into the structs in section 2).
-//    * Named constants, const-correct read-only views, statically-bounded loops.
-//
-//  DETERMINISM CONTRACT: routines reproduce the original inline arithmetic
-//  verbatim -- same operand order, intrinsics, and epsilons. floor() on a float
-//  equals floorf(), so the gpuray::Dda3 helpers match the kernels' raw DDA exactly.
-// ============================================================================
+// gpu_raycast_math.cuh -- header-only device raycast library. DETERMINISM: reproduces the original inline arithmetic (operand order, intrinsics, epsilons) verbatim.
 
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <math.h>
 #include <stdint.h>
 
-// ============================================================================
-//  1. TUNABLES
-// ============================================================================
+
+/* TUNABLES */
 
 // Occupancy grid cell states.
 #define V_FREE     0
@@ -50,9 +27,8 @@
 
 #define MAX_THREADS_PER_BLOCK 512
 
-// ============================================================================
-//  2. TYPES (structs first -- functions never define types inline)
-// ============================================================================
+
+/* TYPES (structs first; functions never define types inline) */
 
 // Dynamic per-launch parameters; identical layout on host and device.
 struct KernelParams {
@@ -114,8 +90,7 @@ struct MapContext {
     float3 origin;
 };
 
-// A single parent camera frame (single-parent marginal kernels v1/v2, and one
-// ancestor of the v3 chain).
+// A single parent camera frame (single-parent kernels v1/v2, and one ancestor of the v3 chain).
 struct ParentFrame {
     float3                  pos;
     const float*            depth;   // p_width * p_height planar depths
@@ -123,10 +98,7 @@ struct ParentFrame {
     gpuray::ParentCameraConfig cam;
 };
 
-// The full ancestor chain of a candidate (multi-ancestor marginal kernel v3).
-// `depth_idx` (optional, trailing) turns `depth` into a SHARED pool: ancestor i's
-// buffer is pool[depth_idx[i]] instead of the contiguous slot i. Left null by the
-// per-candidate v3/v4 path (contiguous); set by the pooled batch path.
+// Full ancestor chain of a candidate (v3 multi-ancestor); depth_idx (opt) pools depth buffers, else contiguous.
 struct AncestorSet {
     const float3*           positions;   // [num]
     const float*            yaws;        // [num] (parity only; unused in math)
@@ -146,9 +118,7 @@ struct GainResults {
     const float* fixed_yaw;  // [num_candidates] fixed yaw per candidate, or null -> optimize yaw
 };
 
-// Device view of a whole wavefront's ancestor chains in CSR form: candidate c
-// owns ancestors [offsets[c], offsets[c+1]) in the flattened device arrays.
-// `per` = p_width*p_height depths per ancestor. Sliced per block by ancestors_for().
+// Device CSR view of a wavefront's ancestor chains; per = p_width*p_height; sliced per block by ancestors_for().
 struct AncestorBatchDev {
     const int*    offsets;   // [num_candidates+1]
     const float3* pos;       // [total]
@@ -160,9 +130,7 @@ struct AncestorBatchDev {
     const int*    depth_idx; // null -> contiguous depth; else pool index per ancestor slot
 };
 
-// Host-side bookkeeping for a batched launch: every device allocation plus the
-// derived launch dimensions. Lives here (not in the .cu) so no struct is defined
-// in a translation unit; used only by the extern "C" launchers.
+// Host-side bookkeeping for a batched launch: device allocations + launch dims (used only by the extern "C" launchers).
 struct BatchDeviceMem {
     float3* d_cand;
     int*    d_off;
@@ -228,13 +196,14 @@ struct RayProjection {
     gpuray::Dda2 dda;                            // pixel walk over the clipped segment
 };
 
-// ============================================================================
-//  3. PRIMITIVES (namespace gpuray: pure, single-purpose helpers)
-// ============================================================================
+
+/* PRIMITIVES (namespace gpuray: pure, single-purpose helpers) */
 
 namespace gpuray {
 
-// --- Named numerical constants (replace scattered magic numbers) ---
+
+/* Named numerical constants (replace scattered magic numbers) */
+
 // Direction component below which an axis is treated as parallel (no crossing).
 __device__ __constant__ const float kDirEpsilon     = 1e-9f;
 // "Infinite" parametric step for a parallel axis in a DDA.
@@ -244,7 +213,8 @@ __device__ __constant__ const float kGainCubicDiv   = 6.0f;
 // Hard cap on DDA iterations -- a runaway backstop that never trips in practice.
 __device__ __constant__ const int   kMaxDdaSteps    = 8192;
 
-// --- Geometry ---
+
+/* Geometry */
 
 // Unit ray direction for spherical angles (theta = azimuth, phi = polar).
 __device__ inline float3 spherical_ray_dir(float theta, float phi) {
@@ -273,7 +243,8 @@ __device__ inline float2 project_pinhole(float3 p_cam, const ParentCameraConfig&
                        k.fy * p_cam.y * inv_z + k.cy);
 }
 
-// --- Voxel grid indexing ---
+
+/* Voxel grid indexing */
 
 __device__ inline bool in_bounds(int ix, int iy, int iz, int3 dim) {
     return ix >= 0 && ix < dim.x &&
@@ -286,14 +257,16 @@ __device__ inline int voxel_flat_index(int ix, int iy, int iz, int3 dim) {
     return iz * (dim.x * dim.y) + iy * dim.x + ix;
 }
 
-// --- Volumetric information-gain integral (radial term only) ---
-// Unweighted volume element for an unknown segment of length dr at radius r:
-// 2 r^2 dr + dr^3 / 6. Callers apply the per-ray angular weighting.
+
+/* Volumetric information-gain integral (radial term only) */
+
+// Unweighted volume element for an unknown segment (dr at radius r): 2 r^2 dr + dr^3/6; callers apply angular weighting.
 __device__ inline float gain_volume_increment(float r, float dr) {
     return 2.0f * r * r * dr + (dr * dr * dr) / kGainCubicDiv;
 }
 
-// --- 3D DDA (Amanatides & Woo) ---
+
+/* 3D DDA (Amanatides & Woo) */
 
 // Initialise traversal from a fractional voxel start position `g` along `dir`.
 __device__ inline Dda3 dda3_init(float3 g, float3 dir) {
@@ -318,8 +291,7 @@ __device__ inline Dda3 dda3_init(float3 g, float3 dir) {
     return d;
 }
 
-// Re-seat the traversal at fractional position `g` and parametric distance `t`
-// after a jump. Step directions and tDelta are unchanged.
+// Re-seat the traversal at fractional position g and parametric distance t after a jump (step dirs and tDelta unchanged).
 __device__ inline void dda3_reseat(Dda3& d, float3 g, float t) {
     d.ix = floor(g.x);
     d.iy = floor(g.y);
@@ -346,7 +318,9 @@ __device__ inline void dda3_step(Dda3& d) {
     }
 }
 
-// --- 2D DDA over a pixel grid (parent depth image) ---
+
+/* 2D DDA over a pixel grid (parent depth image) */
+
 // Woo DDA over segment start->end, clamped to the pixel range.
 __device__ inline Dda2 dda2_init(float2 start, float2 end, int p_width, int p_height) {
     Dda2 d;
@@ -375,10 +349,10 @@ __device__ inline Dda2 dda2_init(float2 start, float2 end, int p_width, int p_he
     return d;
 }
 
-// --- Yaw sliding-window optimisation ---
 
-// Slide an FOV-wide window over the per-sector gain histogram; return the best
-// window-start index and write its total gain to *out_gain.
+/* Yaw sliding-window optimisation */
+
+// Slide an FOV-wide window over the per-sector gain histogram; return the best window-start index (total gain to *out_gain).
 __device__ inline int best_yaw_start_index(const float* s_yaw_gains, int theta_bins,
                                            int sectors_in_fov, float* out_gain) {
     float max_gain = 0.0f;
@@ -420,9 +394,10 @@ __device__ inline float window_gain_at_yaw(const float* s_yaw_gains, int theta_b
     return g;
 }
 
-// --- Skip-interval set operations (multi-ancestor occlusion) ---
-// Insert [lo,hi] into a sorted, non-overlapping interval set, coalescing any
-// overlapping/touching intervals. Bounded by `max_intervals`.
+
+/* Skip-interval set operations (multi-ancestor occlusion) */
+
+// Insert [lo,hi] into a sorted non-overlapping interval set, coalescing overlaps; bounded by max_intervals.
 __device__ inline void insert_and_merge_interval(float2* intervals, int* count,
                                                  int max_intervals, float lo, float hi) {
     if (hi <= lo) return;
@@ -446,14 +421,13 @@ __device__ inline void insert_and_merge_interval(float2* intervals, int* count,
 
 }  // namespace gpuray
 
-// ============================================================================
-//  4. ROUTINES (built from the primitives above)
-// ============================================================================
 
-// --- Small shared helpers ---
+/* ROUTINES (built from the primitives above) */
 
-// Map cell value at (ix,iy,iz); out-of-bounds reads as V_FREE so callers can
-// treat "outside the grid" and "free" uniformly.
+
+/* Small shared helpers */
+
+// Map cell value at (ix,iy,iz); out-of-bounds reads as V_FREE (outside == free).
 __device__ inline uint8_t voxel_value(const MapContext& m, int ix, int iy, int iz) {
     if (!gpuray::in_bounds(ix, iy, iz, m.dim)) return V_FREE;
     return m.map[gpuray::voxel_flat_index(ix, iy, iz, m.dim)];
@@ -476,8 +450,7 @@ __device__ inline float segment_factor_to_metres(const RayProjection& rp, float 
     return rp.t_visible_start + factor * (rp.t_visible_end - rp.t_visible_start);
 }
 
-// True if the parent surface at pixel (x,y) is a real hit rather than the sensor
-// max range (compares planar depth against the range scaled by the pixel slant).
+// True if the parent surface at pixel (x,y) is a real hit vs the sensor max range (planar depth vs range scaled by pixel slant).
 __device__ inline bool parent_surface_is_real(const gpuray::ParentCameraConfig& cam,
                                               int x, int y, float parent_z, float range) {
     float px_u = (x + 0.5f - cam.cx) / cam.fx;
@@ -497,9 +470,7 @@ __device__ inline ParentFrame ancestor_frame(const AncestorSet& a, int i) {
     return p;
 }
 
-// Slice one candidate's AncestorSet out of the batched CSR view. Pooled depth
-// (ab.depth_idx set) keeps `depth` at the pool base and slices the index array;
-// contiguous depth offsets `depth` by base*per as before.
+// Slice one candidate's AncestorSet from the batched CSR view (pooled or contiguous depth).
 __device__ inline AncestorSet ancestors_for(const AncestorBatchDev& ab, int candidate) {
     int base = ab.offsets[candidate];
     AncestorSet s;
@@ -518,8 +489,7 @@ __device__ inline AncestorSet ancestors_for(const AncestorBatchDev& ab, int cand
     return s;
 }
 
-// Liang-Barsky clip of segment a->b to `box`. Returns false if fully outside;
-// otherwise updates the normalised entry/exit factors *s0,*s1.
+// Liang-Barsky clip of segment a->b to box; false if fully outside, else updates factors *s0,*s1.
 __device__ inline bool clip_line_2d(float2 a, float2 b, Rect2 box, float* s0, float* s1) {
     float dx = b.x - a.x;
     float dy = b.y - a.y;
@@ -543,10 +513,10 @@ __device__ inline bool clip_line_2d(float2 a, float2 b, Rect2 box, float* s0, fl
     return true;
 }
 
-// --- Parent-frustum projection ---
 
-// Clip a candidate ray against one parent depth image and return the frustum
-// geometry needed to walk it. rp.valid is false when the ray misses the frustum.
+/* Parent-frustum projection */
+
+// Clip a candidate ray against one parent depth image; rp.valid is false when the ray misses the frustum.
 __device__ inline RayProjection project_ray_into_parent(const ParentFrame& parent,
                                                         Ray ray, float max_dist) {
     RayProjection rp;
@@ -611,8 +581,7 @@ __device__ inline RayProjection project_ray_into_parent(const ParentFrame& paren
     return rp;
 }
 
-// Single-interval skip distance (legacy v1). Returns (visible_start, hit, status)
-// in metres; x = -1 means the ray never enters the parent frustum.
+// Single-interval skip distance (v1): returns (visible_start, hit, status) in metres; x=-1 if the ray misses the frustum.
 __device__ inline float3 compute_skip_distance(const ParentFrame& parent, Ray ray, float max_dist) {
     RayProjection rp = project_ray_into_parent(parent, ray, max_dist);
     if (!rp.valid) return make_float3(-1.0f, -1.0f, 0.0f);
@@ -666,8 +635,7 @@ __device__ inline float3 compute_skip_distance(const ParentFrame& parent, Ray ra
     return make_float3(rp.t_visible_start, t_hit, status);
 }
 
-// Walk one parent's projected ray, emitting each observed-free span (metres) into
-// the shared skip set and latching *status when a real surface occludes the ray.
+// Walk one parent's projected ray, emitting each observed-free span (metres) and latching *status on real occlusion.
 __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, const RayProjection& rp,
                                                  const KernelParams& params, SkipBuffer skips) {
     gpuray::Dda2 d = rp.dda;
@@ -758,10 +726,10 @@ __device__ inline void compute_multi_segment_skip_distance(const AncestorSet& an
     }
 }
 
-// --- Ray marching: integrate volumetric gain along one candidate ray ---
 
-// Occupancy-only march: distance (metres) to the first occupied voxel, or the
-// sensor range if none is hit.
+/* Ray marching: integrate volumetric gain along one candidate ray */
+
+// Occupancy-only march: distance (metres) to the first occupied voxel, or the sensor range if none hit.
 __device__ inline float march_first_hit(const MapContext& m, float3 origin, float3 dir,
                                         const KernelParams& p) {
     gpuray::Dda3 d = gpuray::dda3_init(gpuray::world_to_voxel(origin, m.origin, p.voxel_size), dir);
@@ -777,8 +745,7 @@ __device__ inline float march_first_hit(const MapContext& m, float3 origin, floa
     return final_depth;
 }
 
-// Plain gain march (AEP kernels): integrate UNKNOWN voxels until an OCCUPIED
-// voxel or max range. Writes the first-hit planar depth to *out_depth.
+// Plain gain march (AEP): integrate UNKNOWN voxels until OCCUPIED or max range; writes first-hit depth to *out_depth.
 __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ray,
                                          const KernelParams& p, float* out_depth) {
     gpuray::Dda3 d = gpuray::dda3_init(gpuray::world_to_voxel(ray.origin, m.origin, p.voxel_size), ray.dir);
@@ -797,8 +764,7 @@ __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ra
     return ray_gain;
 }
 
-// Legacy single-interval marginal march (v1): jump the one observed-free span.
-// `skip` packs (start,end) in voxel units; skip.x < 0 means no interval.
+// Legacy single-interval marginal march (v1): jump the one observed-free span (skip=(start,end) voxels, x<0 = none).
 __device__ inline float march_marginal_gain_single(const MapContext& m, const MarchRay& ray,
                                                    float2 skip, const KernelParams& p,
                                                    float* out_final_depth) {
@@ -829,8 +795,7 @@ __device__ inline float march_marginal_gain_single(const MapContext& m, const Ma
     return ray_gain;
 }
 
-// Legacy multi-segment march (v2): suppress gain inside any observed-free span
-// (no jumping).
+// Legacy multi-segment march (v2): suppress gain inside any observed-free span (no jumping).
 __device__ inline float march_marginal_gain_suppress(const MapContext& m, const MarchRay& ray,
                                                      SkipSet skips, const KernelParams& p,
                                                      float* out_final_depth) {
@@ -856,8 +821,7 @@ __device__ inline float march_marginal_gain_suppress(const MapContext& m, const 
     return ray_gain;
 }
 
-// Canonical multi-ancestor march (v3): jump every observed-free span, clamp the
-// gain integral to the sensor range and to the next skip interval's start.
+// Canonical multi-ancestor march (v3): jump every observed-free span, clamp gain to range and to the next skip start.
 __device__ inline float march_marginal_gain(const MapContext& m, const MarchRay& ray,
                                             SkipSet skips, const KernelParams& p,
                                             float* out_final_depth) {
@@ -902,8 +866,7 @@ __device__ inline float march_marginal_gain(const MapContext& m, const MarchRay&
     return ray_gain;
 }
 
-// v4 marginal march: like v3 but never reseats the DDA -- walks every voxel, omits gain in
-// observed-free spans, and (unlike v3's jump) still stops on OCCUPIED inside a span.
+// v4 marginal march: like v3 but never reseats the DDA -- walks every voxel, omits gain in spans, stops on OCCUPIED inside a span.
 __device__ inline float march_marginal_gain_traverse(const MapContext& m, const MarchRay& ray,
                                                      SkipSet skips, const KernelParams& p,
                                                      float* out_final_depth) {
@@ -938,9 +901,10 @@ __device__ inline float march_marginal_gain_traverse(const MapContext& m, const 
     return ray_gain;
 }
 
-// --- Depth-buffer synthesis (shared by every marginal kernel) ---
-// Block-strided fill: cast one ray per pixel at the chosen pose and store the
-// planar (camera-frame z) first-hit depth. `depth_out` is this candidate's slice.
+
+/* Depth-buffer synthesis (shared by every marginal kernel) */
+
+// Block-strided fill: cast one ray per pixel at the pose, store planar first-hit depth into this candidate's depth_out slice.
 __device__ inline void generate_depth_buffer(const MapContext& m, const gpuray::ParentCameraConfig& cam,
                                              CameraPose pose, const KernelParams& p, float* depth_out) {
     float cos_y = cosf(pose.yaw),         sin_y = sinf(pose.yaw);

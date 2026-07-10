@@ -137,10 +137,10 @@ static void run_and_report(uint8_t* d_map, const Batch& b, int N, int iters) {
     GpuResult oS = {gS.data(), yS.data(), nullptr};
 
     float ms = 0.0f; double sF = 0, sS = 0;
-    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms);   // warm-up
-    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms);
-    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms); sF += ms; }
-    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms); sS += ms; }
+    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr);   // warm-up
+    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr);
+    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr); sF += ms; }
+    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr); sS += ms; }
     double f = sF / iters, s = sS / iters;
 
     double d = 0;
@@ -166,8 +166,8 @@ static void verify_against_reference(uint8_t* d_map, const Batch& b, int N) {
     GpuResult oF = {gF.data(), yF.data(), nullptr};
     GpuResult oS = {gS.data(), yS.data(), nullptr};
     float ms = 0.0f;
-    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms);
-    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms);
+    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr);
+    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr);
 
     // Per-candidate reference: materialize each chain with a CONTIGUOUS depth
     // block gathered from the pool (v3/v4 expect count*per depths).

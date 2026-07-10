@@ -10,6 +10,9 @@ set(CMAKE_BUILD_PARALLEL_LEVEL 8)
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
+# -lineinfo: Nsight source-line attribution for profiling (negligible overhead, no behavior change).
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo")
+
 # C++
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
