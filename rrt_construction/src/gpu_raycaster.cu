@@ -11,13 +11,21 @@
 // Candidates per tile for the split launcher's interval scratch (bounds device memory).
 #define SPLIT_CHUNK 128
 
-// Output depth-buffer slots for the batched path (bounds output memory to slots*per); benchmark-only, not read back.
-#define BATCH_DEPTH_SLOTS 4096
-
 // gpu_raycaster.cu -- CUDA front end: __global__ kernels (math in gpu_raycast_math.cuh) + extern "C" launchers (ABI in gpu_raycast_launch.h).
 
 
 /* HOST HELPERS (shared by every launcher) */
+
+// Gain-sphere angular bins: 180 (2 deg) at the 5 m / 0.2 m reference, finer with range and inversely with voxel; bins tile 360 deg.
+static void set_angular_resolution(KernelParams& params, float voxel_size, float gain_range) {
+    int bins = (int)floorf(180.0f * (gain_range / 5.0f) * (0.2f / voxel_size) + 1e-3f);
+    if (bins < 1) bins = 1;
+    if (bins > THETA_BINS_MAX) bins = THETA_BINS_MAX;
+    
+    params.theta_bins = bins;
+    params.dtheta = 2.0f * CUDART_PI_F / bins;
+    params.dphi = 2.0f * CUDART_PI_F / bins;
+}
 
 // Pack the dynamic launch parameters, deriving the angular steps and phi band.
 static KernelParams make_kernel_params(float voxel_size, float gain_range,
@@ -29,8 +37,7 @@ static KernelParams make_kernel_params(float voxel_size, float gain_range,
     params.fov_p_rad    = fov_p;
     params.camera_pitch = pitch;
 
-    params.dtheta = DTHETA_DEG * CUDART_PI_F / 180.0f;
-    params.dphi   = DPHI_DEG   * CUDART_PI_F / 180.0f;
+    set_angular_resolution(params, voxel_size, gain_range);
 
     float phi_center = (CUDART_PI_F * 0.5f) + params.camera_pitch;
     params.phi_start = phi_center - (params.fov_p_rad * 0.5f);
@@ -62,11 +69,11 @@ __device__ inline void pick_yaw_window(const float* s_yaw_gains, const KernelPar
     if (fixed_yaw) {
         float c = fixed_yaw[candidate];
         *out_center = c;
-        *out_gain   = gpuray::window_gain_at_yaw(s_yaw_gains, THETA_BINS, params.sectors_in_fov,
+        *out_gain   = gpuray::window_gain_at_yaw(s_yaw_gains, params.theta_bins, params.sectors_in_fov,
                                                  params.dtheta, params.fov_y_rad, c);
     } else {
         float mg;
-        int best   = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, params.sectors_in_fov, &mg);
+        int best   = gpuray::best_yaw_start_index(s_yaw_gains, params.theta_bins, params.sectors_in_fov, &mg);
         *out_center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
         *out_gain   = mg;
     }
@@ -80,17 +87,17 @@ __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
                                            float* __restrict__ result_gain,
                                            float* __restrict__ result_yaw,
                                            KernelParams params) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int tid = threadIdx.x;
-    if (tid < THETA_BINS) s_yaw_gains[tid] = 0.0f;
+    if (tid < params.theta_bins) s_yaw_gains[tid] = 0.0f;
     __syncthreads();
 
     int rows_in_fov = params.rows_in_fov;
-    int rays_total  = THETA_BINS * rows_in_fov;
+    int rays_total  = params.theta_bins * rows_in_fov;
 
     for (int idx = tid; idx < rays_total; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -106,7 +113,7 @@ __global__ void evaluate_gain_kernel_single(MapContext m, float3 candidate_pos,
     if (tid == 0) {
         int sectors_in_fov = params.sectors_in_fov;
         float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, params.theta_bins, sectors_in_fov, &max_gain);
         *result_gain = max_gain;
         *result_yaw  = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
     }
@@ -118,18 +125,18 @@ __global__ void evaluate_gain_kernel(MapContext m, const float3* __restrict__ po
                                     float* __restrict__ results_yaw,
                                     KernelParams params,
                                     const float* __restrict__ fixed_yaw = nullptr) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -157,18 +164,18 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
                                           float* __restrict__ depth_buffer_all,
                                           float* __restrict__ depth_buffer,
                                           KernelParams params) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -185,7 +192,7 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
     if (ray_id == 0) {
         int sectors_in_fov = params.sectors_in_fov;
         float max_gain;
-        int best_start_idx = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best_start_idx = gpuray::best_yaw_start_index(s_yaw_gains, params.theta_bins, sectors_in_fov, &max_gain);
         results_gain[candidate] = max_gain;
         results_yaw[candidate]  = gpuray::yaw_window_center_angle(best_start_idx, params.dtheta, params.fov_y_rad);
 
@@ -193,9 +200,9 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
         int my_out = candidate * (sectors_in_fov * rows_in_fov);
         int my_in  = candidate * rays_per_candidate;
         for (int phi_idx = 0; phi_idx < rows_in_fov; phi_idx++) {
-            int row_start = phi_idx * THETA_BINS;
+            int row_start = phi_idx * params.theta_bins;
             for (int theta_idx = 0; theta_idx < sectors_in_fov; theta_idx++) {
-                int global_ray_idx = my_in + ((best_start_idx + theta_idx) % THETA_BINS) + row_start;
+                int global_ray_idx = my_in + ((best_start_idx + theta_idx) % params.theta_bins) + row_start;
                 int local_ray_idx  = my_out + theta_idx + (phi_idx * sectors_in_fov);
                 depth_buffer[local_ray_idx] = depth_buffer_all[global_ray_idx];
             }
@@ -210,18 +217,18 @@ __global__ void evaluate_gain_kernel_depth(MapContext m, const float3* __restric
 __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __restrict__ positions,
                                               ParentFrame parent, GainResults out,
                                               KernelParams params) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -263,18 +270,18 @@ __global__ void evaluate_marginal_gain_kernel(MapContext m, const float3* __rest
 __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __restrict__ positions,
                                                  ParentFrame parent, GainResults out,
                                                  KernelParams params) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -324,19 +331,19 @@ __global__ void evaluate_marginal_gain_kernel_v2(MapContext m, const float3* __r
 __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __restrict__ positions,
                                                  AncestorSet ancestors, GainResults out,
                                                  KernelParams params) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
     int sectors_in_fov = params.sectors_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -371,7 +378,7 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
         float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, params.theta_bins, sectors_in_fov, &max_gain);
         float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
@@ -388,19 +395,19 @@ __global__ void evaluate_marginal_gain_kernel_v3(MapContext m, const float3* __r
 __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __restrict__ positions,
                                                  AncestorSet ancestors, GainResults out,
                                                  KernelParams params) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
     int sectors_in_fov = params.sectors_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -435,7 +442,7 @@ __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __r
     __shared__ float s_best_yaw;
     if (ray_id == 0) {
         float max_gain;
-        int best = gpuray::best_yaw_start_index(s_yaw_gains, THETA_BINS, sectors_in_fov, &max_gain);
+        int best = gpuray::best_yaw_start_index(s_yaw_gains, params.theta_bins, sectors_in_fov, &max_gain);
         float center = gpuray::yaw_window_center_angle(best, params.dtheta, params.fov_y_rad);
         out.gain[candidate] = max_gain;
         out.yaw[candidate]  = center;
@@ -457,20 +464,20 @@ __global__ void evaluate_marginal_gain_kernel_v4(MapContext m, const float3* __r
 __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* __restrict__ positions,
                                                    AncestorBatchDev ab, GainResults out,
                                                    KernelParams params, int depth_slots) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     AncestorSet ancestors = ancestors_for(ab, candidate);
 
     int rows_in_fov    = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float sin_phi = sinf(phi);
@@ -522,13 +529,13 @@ __global__ void marginal_skips_stage(const float3* __restrict__ positions, Ances
     AncestorSet ancestors = ancestors_for(ab, candidate);
 
     int rows_in_fov = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
     float3 cam_pos = positions[candidate];
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
         long ray_slot = (long)local * rays_per_candidate + idx;
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float3 ray_dir = gpuray::spherical_ray_dir(theta, phi);
@@ -556,20 +563,20 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
                                      AncestorBatchDev ab, int cand_base, GainResults out,
                                      KernelParams params, const float2* __restrict__ skips_in,
                                      const int* __restrict__ counts_in, int max_segs, int depth_slots) {
-    __shared__ float s_yaw_gains[THETA_BINS];
+    __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = cand_base + blockIdx.x;
     int local = blockIdx.x;
     int ray_id = threadIdx.x;
-    if (ray_id < THETA_BINS) s_yaw_gains[ray_id] = 0.0f;
+    if (ray_id < params.theta_bins) s_yaw_gains[ray_id] = 0.0f;
     __syncthreads();
 
     int rows_in_fov    = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
     float3 cam_pos = positions[candidate];
 
     for (int idx = threadIdx.x; idx < rays_per_candidate; idx += blockDim.x) {
-        int theta_idx = idx % THETA_BINS;
-        int phi_idx   = idx / THETA_BINS;
+        int theta_idx = idx % params.theta_bins;
+        int phi_idx   = idx / params.theta_bins;
         float phi   = params.phi_start + phi_idx * params.dphi;
         float theta = -CUDART_PI_F + theta_idx * params.dtheta;
         float sin_phi = sinf(phi);
@@ -637,7 +644,7 @@ extern "C" void launch_gain_kernel_single(GpuMap map, GpuVec3 cand,
     cudaMalloc(&d_res_yaw, sizeof(float));
 
     int rows = params.rows_in_fov;
-    int total_rays = THETA_BINS * rows;
+    int total_rays = params.theta_bins * rows;
 
     MapContext m = context_of(map);
     float3 candidate_pos = make_float3(cand.x, cand.y, cand.z);
@@ -674,7 +681,8 @@ extern "C" void launch_gain_kernel(GpuMap map, GpuCandidates cands,
     MapContext m = {d_map, make_int3(map.dx, map.dy, map.dz),
                     make_float3(map.ox, map.oy, map.oz)};
 
-    evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
+    int total_rays = params.theta_bins * params.rows_in_fov;
+    evaluate_gain_kernel<<<cands.count, min(total_rays, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params);
     cudaDeviceSynchronize();
 
@@ -706,8 +714,9 @@ extern "C" void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands,
     MapContext m = context_of(map);
 
     cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    int total_rays = params.theta_bins * params.rows_in_fov;
     cudaEventRecord(t0);
-    evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
+    evaluate_gain_kernel<<<cands.count, min(total_rays, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params);
     cudaEventRecord(t1);
     cudaEventSynchronize(t1);
@@ -737,9 +746,10 @@ extern "C" void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands,
     cudaMemcpy(d_fixed_yaw, fixed_yaws, res_size, cudaMemcpyHostToDevice);
 
     MapContext m = context_of(map);
+    int total_rays = params.theta_bins * params.rows_in_fov;
     cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
     cudaEventRecord(t0);
-    evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
+    evaluate_gain_kernel<<<cands.count, min(total_rays, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params, d_fixed_yaw);
     cudaEventRecord(t1);
     cudaEventSynchronize(t1);
@@ -761,7 +771,7 @@ extern "C" void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands,
 
     int window_width  = params.sectors_in_fov;
     int window_height = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * window_height;
+    int rays_per_candidate = params.theta_bins * window_height;
 
     size_t buffer_size_all = (size_t)cands.count * rays_per_candidate * sizeof(float);
     size_t buffer_size = (size_t)cands.count * window_width * window_height * sizeof(float);
@@ -806,7 +816,7 @@ static int setup_single_parent_marginal(
     MapContext* m, float3** d_cand_pos, ParentFrame* parent, GainResults* out) {
 
     int rows_in_fov = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
     size_t buffer_size_all = (size_t)rays_per_candidate * sizeof(float);
     size_t buffer_size = (size_t)cam.p_width * cam.p_height * sizeof(float);
 
@@ -939,7 +949,7 @@ static int setup_multi_ancestor_marginal(
 
     int n = ancestors_in.count;
     int rows_in_fov = params.rows_in_fov;
-    int rays_per_candidate = THETA_BINS * rows_in_fov;
+    int rays_per_candidate = params.theta_bins * rows_in_fov;
     size_t buffer_size_all = (size_t)rays_per_candidate * sizeof(float);
     size_t buffer_size = (size_t)cam.p_width * cam.p_height * sizeof(float);
     size_t per = (size_t)cam.p_width * cam.p_height;   // depth elements per ancestor
@@ -1057,8 +1067,8 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
     int total = anc.total;
     size_t per = (size_t)cam.p_width * cam.p_height;
     int rows_in_fov = params.rows_in_fov;
-    int rays = THETA_BINS * rows_in_fov;
-    int depth_slots = min(nc, BATCH_DEPTH_SLOTS);
+    int rays = params.theta_bins * rows_in_fov;
+    int depth_slots = nc;
 
     float3* h_cand = new float3[nc];
     for (int i = 0; i < nc; ++i) h_cand[i] = make_float3(cands.x[i], cands.y[i], cands.z[i]);

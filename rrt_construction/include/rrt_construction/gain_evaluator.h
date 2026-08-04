@@ -116,6 +116,9 @@ class GainEvaluator {
     return w * h;
   }
 
+  // Live map voxel size (= dr_), set from the tsdf layer in setTsdfLayer().
+  double getVoxelSize() const { return dr_; }
+
   // Batched multi-ancestor marginal gain over a whole wavefront (CSR-flattened ancestors; use_split = split kernels).
   std::vector<std::pair<double, double>> computeMarginalGainBatchGPU(
       const std::vector<float>& cand_x, const std::vector<float>& cand_y, const std::vector<float>& cand_z,
@@ -201,6 +204,12 @@ class GainEvaluator {
   GpuMap gpuMap() const;
   GpuSensor gpuSensor() const;
 
+  // Build the 26 neighbour-voxel offsets scaled by dr_.
+  void buildNeighborOffsets();
+
+  // Gain-sphere angular resolution (1 ray/voxel at max range).
+  void angularResolution(float& dtheta_rad, float& dphi_rad, int& theta_bins) const;
+
   // NON-OWNED pointer to the tsdf layer to use for evaluating exploration gain.
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
   voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
@@ -215,7 +224,7 @@ class GainEvaluator {
   float gain_range_; 
   double fov_y_rad_, fov_p_rad_;
   double r_max_;
-  double dr_;
+  double dr_ = 0.2;
   double camera_pitch_;
 
   int yaw_samples_;

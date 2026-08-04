@@ -1120,9 +1120,10 @@ void NBVPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
         unknown_voxel.action = visualization_msgs::Marker::ADD;
 
         // Voxel size
-        unknown_voxel.scale.x = 0.2;
-        unknown_voxel.scale.y = 0.2;
-        unknown_voxel.scale.z = 0.2;
+        double vsz = segment_evaluator.getVoxelSize();
+        unknown_voxel.scale.x = vsz;
+        unknown_voxel.scale.y = vsz;
+        unknown_voxel.scale.z = vsz;
 
         unknown_voxel.color.a = 0.5;
         unknown_voxel.color.r = 0.0;

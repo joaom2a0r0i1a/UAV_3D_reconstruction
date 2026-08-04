@@ -35,28 +35,8 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("accurate_frontiers", p_accurate_frontiers_, false);
   nh_private.param("checking_distance", p_checking_distance_, 2.0);
 
-  nh_private.param("map/voxel_size", dr_, 0.2);
-
-  // initialize neighbor offsets
-  auto vs = dr_ * p_checking_distance_;
-
-  int idx = 0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++){
-      for (int z = -1; z <= 1; z++) {
-        if (x == 0 && y == 0 && z == 0) {
-          continue;
-        }
-
-        if (!p_accurate_frontiers_ && std::abs(x) * std::abs(y) + std::abs(z) > 1) {
-          continue;
-        }
-
-        c_neighbor_voxels_[idx] = Eigen::Vector3d(x, y, z) * vs;
-        idx++;
-      }
-    }
-  }
+  // dr_ (voxel size) defaults to 0.2 here and setTsdfLayer() sets it to the live map's voxel size.
+  buildNeighborOffsets();
 }
 
 // --- 1. Bit Packing (Infinite Grid Index) ---
@@ -141,6 +121,34 @@ void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer)
   voxel_size_inv_ = 1.0 / voxel_size_;
   voxels_per_side_ = tsdf_layer_->voxels_per_side();
   voxels_per_side_inv_ = 1.0 / voxels_per_side_;
+  dr_ = voxel_size_;
+  buildNeighborOffsets();
+}
+
+// Gain-sphere angular bins: 180 (2 deg) at the 5 m / 0.2 m reference, finer with r_max and inversely with voxel; mirrors the GPU (CPU==GPU).
+void GainEvaluator::angularResolution(float& dtheta_rad, float& dphi_rad, int& theta_bins) const {
+  int bins = (int)std::floor(180.0 * (r_max_ / 5.0) * (0.2 / dr_) + 1e-3);
+  if (bins < 1) bins = 1;
+  if (bins > 640) bins = 640;
+
+  theta_bins = bins;
+  dtheta_rad = (float)(2.0 * M_PI / bins);
+  dphi_rad = (float)(2.0 * M_PI / bins);
+}
+
+void GainEvaluator::buildNeighborOffsets() {
+  double vs = dr_ * p_checking_distance_;
+  int idx = 0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int z = -1; z <= 1; z++) {
+        if (x == 0 && y == 0 && z == 0) continue;
+        if (!p_accurate_frontiers_ && std::abs(x) * std::abs(y) + std::abs(z) > 1) continue;
+        c_neighbor_voxels_[idx] = Eigen::Vector3d(x, y, z) * vs;
+        idx++;
+      }
+    }
+  }
 }
 
 void GainEvaluator::setEsdfMap(voxblox::EsdfMap::Ptr esdf_map) {
@@ -903,10 +911,8 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
     int dim_z = cached_dim_.z();
 
     // Camera FoV
-    float dtheta_deg = 2.0f;
-    float dphi_deg   = 2.0f;
-    float dtheta_rad = dtheta_deg * M_PI / 180.0f;
-    float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+    float dtheta_rad, dphi_rad; int theta_bins;
+    angularResolution(dtheta_rad, dphi_rad, theta_bins);
 
     float fov_p_rad = fov_p_rad_;
     float camera_pitch = camera_pitch_ * M_PI / 180.0f;
@@ -914,7 +920,6 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
     float phi_start  = phi_center - (fov_p_rad / 2.0f);
     float phi_end    = phi_center + (fov_p_rad / 2.0f);
 
-    int theta_bins = 360 / dtheta_deg;
     std::vector<float> yaw_gains(theta_bins, 0.0f);
 
     // Per-bin voxel keys; only the best bins get committed to the map later.
@@ -1075,8 +1080,8 @@ void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, 
     int dim_z = cached_dim_.z();
 
     // 3. Angular Parameters
-    float dtheta_rad = 2.0f * M_PI / 180.0f; 
-    float dphi_rad   = 2.0f * M_PI / 180.0f;
+    float dtheta_rad, dphi_rad; int theta_bins_unused;
+    angularResolution(dtheta_rad, dphi_rad, theta_bins_unused);
     
     // Vertical FOV (Pitch)
     float fov_p_rad  = fov_p_rad_; 
@@ -1175,16 +1180,14 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
     float ox = cached_origin_.x(); float oy = cached_origin_.y(); float oz = cached_origin_.z();
     int dim_x = cached_dim_.x(); int dim_y = cached_dim_.y(); int dim_z = cached_dim_.z();
 
-    float dtheta_deg = 2.0f; float dphi_deg = 2.0f;
-    float dtheta_rad = dtheta_deg * M_PI / 180.0f;
-    float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+    float dtheta_rad, dphi_rad; int theta_bins;
+    angularResolution(dtheta_rad, dphi_rad, theta_bins);
 
     float fov_p_rad = fov_p_rad_;
     float camera_pitch = camera_pitch_ * M_PI / 180.0f;
     float phi_center = (M_PI / 2.0f) + camera_pitch;
     float phi_start  = phi_center - (fov_p_rad / 2.0f);
 
-    int theta_bins = 360 / dtheta_deg;
     std::vector<float> yaw_gains(theta_bins, 0.0f);
     // Per-bin observed voxels (ALL seen, not just marginal) -> committed for the chosen window if requested.
     std::vector<std::vector<uint64_t>> seen_keys_per_bin;
@@ -1282,10 +1285,8 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
 
-  float dtheta_deg = 2.0f;
-  float dphi_deg   = 2.0f;
-  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
-  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+  float dtheta_rad, dphi_rad; int theta_bins;
+  angularResolution(dtheta_rad, dphi_rad, theta_bins);
 
   float fov_p_rad = fov_p_rad_;
   float camera_pitch = camera_pitch_ * M_PI / 180.0f;
@@ -1293,7 +1294,6 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
   float phi_start  = phi_center - (fov_p_rad / 2.0f);
   float phi_end    = phi_center + (fov_p_rad / 2.0f);
 
-  int theta_bins = 360 / dtheta_deg;
   std::vector<float> yaw_gains(theta_bins, 0.0f);
 
   // 2. WOO DDA Raycasting Loop
@@ -1423,10 +1423,8 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<ui
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
 
-  float dtheta_deg = 2.0f;
-  float dphi_deg   = 2.0f;
-  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
-  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+  float dtheta_rad, dphi_rad; int theta_bins;
+  angularResolution(dtheta_rad, dphi_rad, theta_bins);
 
   float fov_p_rad = fov_p_rad_;
   float camera_pitch = camera_pitch_ * M_PI / 180.0f;    
@@ -1434,7 +1432,6 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<ui
   float phi_start  = phi_center - (fov_p_rad / 2.0f);
   float phi_end    = phi_center + (fov_p_rad / 2.0f);
 
-  int theta_bins = 360 / dtheta_deg;
   std::vector<float> yaw_gains(theta_bins, 0.0f);
 
   // 3D DDA Raycasting
@@ -1554,10 +1551,8 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const eth_ma
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
 
-  float dtheta_deg = 2.0f;
-  float dphi_deg   = 2.0f;
-  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
-  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+  float dtheta_rad, dphi_rad; int theta_bins;
+  angularResolution(dtheta_rad, dphi_rad, theta_bins);
 
   float fov_p_rad = fov_p_rad_;
   float camera_pitch = camera_pitch_ * M_PI / 180.0f;
@@ -1565,7 +1560,6 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const eth_ma
   float phi_start  = phi_center - (fov_p_rad / 2.0f);
   float phi_end    = phi_center + (fov_p_rad / 2.0f);
 
-  int theta_bins = 360 / dtheta_deg;
   std::vector<float> yaw_gains(theta_bins, 0.0f);
 
   // 3D DDA Raycasting
@@ -1678,10 +1672,8 @@ std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
 
-  float dtheta_deg = 2.0f;
-  float dphi_deg   = 2.0f;
-  float dtheta_rad = dtheta_deg * M_PI / 180.0f;
-  float dphi_rad   = dphi_deg   * M_PI / 180.0f;
+  float dtheta_rad, dphi_rad; int theta_bins;
+  angularResolution(dtheta_rad, dphi_rad, theta_bins);
 
   float fov_p_rad = fov_p_rad_;
   float camera_pitch = camera_pitch_ * M_PI / 180.0f;
@@ -1689,7 +1681,6 @@ std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<
   float phi_start  = phi_center - (fov_p_rad / 2.0f);
   float phi_end    = phi_center + (fov_p_rad / 2.0f);
 
-  int theta_bins = 360 / dtheta_deg;
   std::vector<float> yaw_gains(theta_bins, 0.0f);
 
     // Original Raycasting Loop 

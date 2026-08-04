@@ -55,6 +55,3 @@ camera_intrinsics:
 
 accurate_frontiers: false
 checking_distance: 2.0
-
-map:
-  voxel_size: 0.2 # [m]

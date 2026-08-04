@@ -431,13 +431,8 @@ void AEPlanner::localPlanner() {
 
     root->depth_buffer.clear();
 
-    int p_width = ceil((2.0f * max_distance * tanf(horizontal_fov * 0.5f)) / 0.2f);
-    int p_height = ceil((2.0f * max_distance * tanf(vertical_fov * 0.5f)) / 0.2f);
-
-    // 2. Resize and Fill with MAX RANGE (Empty Space)
-    // This matches your "Root is empty" concept, but provides valid memory.
-    root->depth_buffer.resize(p_width * p_height, -1.0f);
-    ROS_INFO("Root depth size: %lu", root->depth_buffer.size());
+    // Root sees nothing: an empty (max-range) buffer sized to the current voxel resolution.
+    root->depth_buffer.resize(segment_evaluator.depthImagePixels(), -1.0f);
 
     RRTStar.clearKDTree();
     rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
@@ -2074,9 +2069,10 @@ void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
         unknown_voxel.action = visualization_msgs::Marker::ADD;
 
         // Voxel size
-        unknown_voxel.scale.x = 0.2;
-        unknown_voxel.scale.y = 0.2;
-        unknown_voxel.scale.z = 0.2;
+        double vsz = segment_evaluator.getVoxelSize();
+        unknown_voxel.scale.x = vsz;
+        unknown_voxel.scale.y = vsz;
+        unknown_voxel.scale.z = vsz;
 
         unknown_voxel.color.a = 0.5;
         unknown_voxel.color.r = 0.0;

@@ -16,14 +16,9 @@
 #define V_OCCUPIED 1
 #define V_UNKNOWN  2
 
-// Angular discretisation of the gain sphere, in degrees.
-#define DTHETA_DEG 2
-#define DPHI_DEG   2
-
-// Derived angular bin counts.
-#define THETA_BINS (360 / DTHETA_DEG)   // azimuth sectors (180)
-#define PHI_BINS   (180 / DPHI_DEG)     // polar rows (90)
-#define TOTAL_RAYS (THETA_BINS * PHI_BINS)
+// Azimuth bins are set at runtime from voxel_size/r_max (see set_angular_resolution); this only caps
+// the shared histogram for the finest voxel (~0.05 m).
+#define THETA_BINS_MAX 640
 
 #define MAX_THREADS_PER_BLOCK 512
 
@@ -44,6 +39,7 @@ struct KernelParams {
     float phi_start;
     float phi_end;
 
+    int theta_bins;       // azimuth bins over the full circle = round(2*pi / dtheta)
     int rows_in_fov;      // vertical (phi) sample rows  = angular_bins(fov_p, dphi)
     int sectors_in_fov;   // best-yaw window width (theta) = angular_bins(fov_y, dtheta)
 };
