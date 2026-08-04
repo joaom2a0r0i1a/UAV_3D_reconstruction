@@ -15,6 +15,7 @@
 #include <rrt_construction/kino_rrt_star_kd.h>
 #include <rrt_construction/gpu_raycast_launch.h>
 
+#include <unordered_set>
 #include <cmath>
 #include <chrono>
 
@@ -93,7 +94,8 @@ class GainEvaluator {
 
   // Compute gain for a batch of poses
   // fixed_yaws (optional, [num_candidates]): evaluate the FOV window at each yaw instead of optimizing.
-  std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr);
+  // kernel_ms (optional): receives the device kernel time (ms), same cudaEvent measurement as the marginal batch.
+  std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr, float* kernel_ms = nullptr);
 
   std::pair<double, double> computeSingleGainGPU(const double pos_x, const double pos_y, const double pos_z);
 
@@ -114,18 +116,14 @@ class GainEvaluator {
     return w * h;
   }
 
-  // Batched multi-ancestor marginal gain over a whole wavefront (v4 traverse math).
-  // Ancestors are CSR-flattened: candidate c owns slots [offsets[c], offsets[c+1]).
-  // anc_depth is contiguous (total*per), padded with -1 for unready/root ancestors.
-  // use_split selects Option 2 (split kernels) over Option 1 (fused). Returns per-
-  // candidate {gain, yaw}; fills out_depth (num_candidates*per) with each candidate's
-  // generated depth buffer; kernel_ms receives the device kernel time (ms).
+  // Batched multi-ancestor marginal gain over a whole wavefront (CSR-flattened ancestors; use_split = split kernels).
   std::vector<std::pair<double, double>> computeMarginalGainBatchGPU(
       const std::vector<float>& cand_x, const std::vector<float>& cand_y, const std::vector<float>& cand_z,
       const std::vector<int>& offsets, const std::vector<float>& anc_pos,
       const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
       const std::vector<float>& anc_depth, bool use_split,
-      std::vector<float>& out_depth, float& kernel_ms, const std::vector<float>* fixed_yaws = nullptr);
+      std::vector<float>& out_depth, float& kernel_ms, const std::vector<float>* fixed_yaws = nullptr,
+      const std::vector<int>* depth_idx = nullptr, int num_nodes = 0);
 
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
@@ -134,11 +132,17 @@ class GainEvaluator {
 
   void populateParentHistory(const std::vector<uint8_t>& flat_map, rrt_star::Node* node);
 
+  // All-ancestors CPU marginal gain (one_parent_only = parent only; commit_observed stores the view for descendants, needs shallow-first callers).
+  std::pair<double, double> computeMarginalGainCPU_AllAncestors(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw = NAN, bool one_parent_only = false, bool commit_observed = false);
+
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose, double fixed_yaw = NAN);
 
   // [Validation] CPU calculation using DDA algorithm
   std::pair<double, double> computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+
+  // [Validation] Live-map twin of computeGainCPU_DDA (reads voxblox instead of the flat map)
+  std::pair<double, double> computeGainCPU_DDA_Voxblox(const eth_mav_msgs::EigenTrajectoryPoint& pose);
 
   // [Validation] CPU calculation using Naive Raycasting
   std::pair<double, double> computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);

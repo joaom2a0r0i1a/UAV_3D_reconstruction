@@ -16,7 +16,7 @@ windows:
       layout: tiled
       panes:
         - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/grass_plane_school.world gui:=true
-        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/grass_plane_police_station.world gui:=false
+        #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/grass_plane_police_station.world gui:=true
         #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/grass_plane_maze.world gui:=true
         #- waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/big_maze.world gui:=true
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 20 0 0 0.0 --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
@@ -27,9 +27,9 @@ windows:
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 0 -15 0.5 1.57 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         # HOUSE 
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -11 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
-        # SCHOOL 
+        # SCHOOL
         - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
-        # POLICE STATION 
+        # POLICE STATION
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -12 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         # MAZE
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos 8.5 7.5 0.5 3.14 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
@@ -65,8 +65,8 @@ windows:
       layout: tiled
       panes:
         #- 'history -s python3 eval_paths.py'
-        #- waitForControl; roslaunch motion_planning NBVPlanner.launch
-        - waitForControl; roslaunch motion_planning AEPlanner.launch
+        - waitForControl; roslaunch motion_planning NBVPlanner.launch
+        #- waitForControl; roslaunch motion_planning AEPlanner.launch
         #- waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
         #- waitForControl; roslaunch motion_planning KinoAEPlanner.launch
         - waitForControl; roslaunch motion_planning experiment_starter.launch

@@ -87,7 +87,7 @@ extern "C" {
 /* EXPECTED-INFORMATION-GAIN LAUNCHERS */
 void launch_gain_kernel_single(GpuMap map, GpuVec3 cand, GpuResult out, GpuSensor cfg);
 void launch_gain_kernel(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
-void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
+void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg, float* kernel_ms);
 void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
 
 
@@ -115,7 +115,7 @@ void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
 
 /* FIXED-YAW VARIANTS (NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
 void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
-                                    GpuSensor cfg, const float* fixed_yaws);
+                                    GpuSensor cfg, const float* fixed_yaws, float* kernel_ms);
 void launch_marginal_gain_kernel_v2_fixed(GpuMap map, GpuVec3 cand, GpuParent parent,
                                           GpuResult out, GpuSensor cfg, float fixed_yaw);
 

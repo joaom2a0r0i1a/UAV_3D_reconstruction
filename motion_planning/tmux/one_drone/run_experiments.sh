@@ -34,7 +34,7 @@ export TMUX_SOCKET_NAME=mrs
 # ------------------------------------------------------------------ knobs ----
 MODE="${1:-explore}"          # explore | benchmark
 NUM_RUNS="${2:-3}"            # repetitions per config (was 5 originally)
-SIM_TIME="${3:-1850}"        # seconds per run (wall-clock kill)
+SIM_TIME="${3:-950}"         # seconds per run (wall-clock kill)
 CHECK_INTERVAL=30            # seconds between liveness checks
 
 # data/ lives two levels up from this script (motion_planning/data)
@@ -72,6 +72,9 @@ export AEP_MARGINAL_SPLIT=$4
 export AEP_BENCHMARK=$5
 export EXP_DATA_DIR=$6
 export EXP_TIME_LIMIT=$7
+export AEP_EARLY_STOP=${AEP_EARLY_STOP:-false}
+export AEP_EARLY_STOP_GRACE=${AEP_EARLY_STOP_GRACE:-60.0}
+export NBV_X1_CSV=${NBV_X1_CSV:-}
 EOF
 }
 
@@ -117,6 +120,11 @@ run_config() {
     echo ">>> [$label] starting run #$i / $NUM_RUNS"
     write_env "$rrt" "$marg" "$compute" "$split" "$bench" "$datadir" "$tlimit"
 
+    # Early-stop sentinel: eval_data_node writes this once it has flushed the CSV
+    # and finalized the bag (only when AEP_EARLY_STOP=true). Clear it before start.
+    local sentinel="$datadir/.run_complete"
+    rm -f "$sentinel"
+
     tmuxinator start -p ./session.yml
 
     local elapsed=0
@@ -127,6 +135,11 @@ run_config() {
         terminate_sim
         cleanup
         exit 1
+      fi
+      if [ -f "$sentinel" ]; then
+        echo ">>> [$label] run self-completed early (planner terminated); tearing down."
+        rm -f "$sentinel"
+        break
       fi
       sleep $CHECK_INTERVAL
       elapsed=$((elapsed + CHECK_INTERVAL))

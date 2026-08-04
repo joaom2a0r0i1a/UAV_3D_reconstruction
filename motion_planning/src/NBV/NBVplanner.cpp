@@ -1,4 +1,7 @@
 #include "motion_planning/NBV/NBVplanner.h"
+#include <cstdlib>
+#include <fstream>
+#include <algorithm>
 
 NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
 
@@ -29,13 +32,19 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("rrt/N_yaw_samples", num_yaw_samples);
     param_loader.loadParam("rrt/radius", radius);
     param_loader.loadParam("rrt/step_size", step_size);
+    param_loader.loadParam("rrt/fixed_step", fixed_step, false);
     param_loader.loadParam("rrt/tolerance", tolerance);
     param_loader.loadParam("rrt/rrt_star", local_rrt_star, false);
 
     param_loader.loadParam("evaluation/marginal_gain", marginal_gain, false);
+    param_loader.loadParam("evaluation/optimize_yaw", optimize_yaw, false);
     param_loader.loadParam("evaluation/compute", eval_compute, std::string("cpu"));
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
-    param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
+
+    // Benchmark / X2 timing
+    param_loader.loadParam("benchmark/enabled", benchmark_mode, false);
+    param_loader.loadParam("benchmark/timing_after_s", timing_after_s_, 600.0);
+    param_loader.loadParam("benchmark/x2_max", x2_capture_max_, 10);
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -54,6 +63,12 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     // Initialize UAV as state IDLE
     state_ = STATE_IDLE;
     iteration_ = 0;
+
+    // Benchmark run state
+    replan_count_ = 0;
+    nbv_started_ = false;
+    x2_timing_window_ = false;
+    x2_capture_count_ = 0;
 
     // Get vertical FoV and setup camera
     vertical_fov = segment_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
@@ -163,6 +178,8 @@ std::vector<float> NBVPlanner::parentCamRows(float yaw) {
 
 // Batched multi-ancestor marginal gain at each node's FIXED yaw (generation-ordered).
 void NBVPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes) {
+    // Kernel time is summed across depth levels (one GPU launch each) for the whole-tree total.
+    last_marg_kernel_ms_ = 0.0f;
     if (nodes.empty()) return;
     const int per = segment_evaluator.depthImagePixels();
 
@@ -180,12 +197,14 @@ void NBVPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>
         std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n), fixed_yaws(n);
         std::vector<int>   anc_offsets(1, 0);
         std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
+        std::vector<int>   depth_idx;
+        std::unordered_map<rrt_star::Node*, int> pool_slot;   // each ancestor's depth buffer stored once
         for (size_t li = 0; li < n; ++li) {
             rrt_star::Node* nd = nodes[idxs[li]];
             cand_x_f[li] = (float)nd->point.x();
             cand_y_f[li] = (float)nd->point.y();
             cand_z_f[li] = (float)nd->point.z();
-            fixed_yaws[li] = (float)nd->point[3];        // evaluate at the node's own random yaw
+            fixed_yaws[li] = (float)nd->point[3];
             for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
                 std::vector<float> R_flat = parentCamRows((float)a->point[3]);
                 anc_pos.push_back((float)a->point.x());
@@ -193,10 +212,15 @@ void NBVPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>
                 anc_pos.push_back((float)a->point.z());
                 anc_yaw.push_back((float)a->point[3]);
                 anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
-                if ((int)a->depth_buffer.size() == per)
-                    anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-                else
-                    anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+                auto slot = pool_slot.find(a);
+                if (slot == pool_slot.end()) {
+                    slot = pool_slot.emplace(a, (int)pool_slot.size()).first;
+                    if ((int)a->depth_buffer.size() == per)
+                        anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+                    else
+                        anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+                }
+                depth_idx.push_back(slot->second);
             }
             anc_offsets.push_back((int)(anc_pos.size() / 3));
         }
@@ -205,11 +229,14 @@ void NBVPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>
         float ms = 0.0f;
         auto results = segment_evaluator.computeMarginalGainBatchGPU(
             cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
-            marginal_split, depth_out, ms, &fixed_yaws);
+            marginal_split, depth_out, ms, optimize_yaw ? nullptr : &fixed_yaws,
+            &depth_idx, (int)pool_slot.size());
+        last_marg_kernel_ms_ += ms;
 
         for (size_t li = 0; li < n; ++li) {
             rrt_star::Node* node = nodes[idxs[li]];
-            node->gain = results[li].first;              // yaw stays fixed
+            node->gain = results[li].first;
+            if (optimize_yaw) node->point[3] = results[li].second;
             node->depth_buffer.assign(depth_out.begin() + (size_t)li * per,
                                       depth_out.begin() + (size_t)(li + 1) * per);
         }
@@ -230,25 +257,30 @@ void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
             x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z();
             fixed_yaws[i] = (float)nodes[i]->point[3];
         }
-        auto res = segment_evaluator.computeGainBatchGPU(x, y, z, &fixed_yaws);
-        for (size_t i = 0; i < nodes.size(); ++i) nodes[i]->gain = res[i].first;   // yaw fixed
+        last_abs_kernel_ms_ = 0.0f;
+        auto res = segment_evaluator.computeGainBatchGPU(x, y, z, optimize_yaw ? nullptr : &fixed_yaws, &last_abs_kernel_ms_);
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            nodes[i]->gain = res[i].first;
+            if (optimize_yaw) nodes[i]->point[3] = res[i].second;
+        }
     } else {
         for (rrt_star::Node* nd : nodes) {
             std::pair<double, double> r;
             if (marginal_gain) {
                 if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
-                r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]);
+                r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, optimize_yaw ? NAN : nd->point[3]);
             } else {
                 eth_mav_msgs::EigenTrajectoryPoint pose;
                 pose.position_W = nd->point.head(3);
-                r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose, nd->point[3]);
+                r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose, optimize_yaw ? NAN : nd->point[3]);
             }
-            nd->gain = r.first;   // yaw fixed
+            nd->gain = r.first;
+            if (optimize_yaw) nd->point[3] = r.second;
         }
     }
 }
 
-double NBVPlanner::computeV2SingleParent(rrt_star::Node* node) {
+double NBVPlanner::computeSingleParentGainGPU(rrt_star::Node* node) {
     const int per = segment_evaluator.depthImagePixels();
     rrt_star::Node* p = node->parent;
     double p_yaw = p ? p->point[3] : 0.0;
@@ -287,56 +319,141 @@ void NBVPlanner::logTreeNodes() {
                      up->gain, up->gain * exp(-lambda * up->cost), up->score);
 }
 
-// Benchmark: time all methods + per-node v2-vs-cpuhash (all fixed-yaw) on the same nodes.
+// Time every gain variant (G_all / single-parent / absolute, GPU vs CPU) on the same nodes at
+// their fixed yaw, then dump per-node gains to the X1 CSV. Restores each node's gain when done.
 void NBVPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
     if (nodes.empty()) return;
     const size_t n = nodes.size();
 
-    std::vector<double> save_gain(n);
-    for (size_t i = 0; i < n; ++i) save_gain[i] = nodes[i]->gain;
-    const bool save_marg = marginal_gain; const std::string save_comp = eval_compute; const bool save_split = marginal_split;
-
-    auto timed = [&](bool marg, const std::string& comp, bool split) -> double {
-        marginal_gain = marg; eval_compute = comp; marginal_split = split;
-        auto t0 = std::chrono::high_resolution_clock::now();
-        evaluateGains(nodes);
-        auto t1 = std::chrono::high_resolution_clock::now();
-        return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    auto snapshot_gains = [&]() {
+        std::vector<double> g(n);
+        for (size_t i = 0; i < n; ++i) g[i] = nodes[i]->gain;
+        return g;
     };
 
-    double t_fused = timed(true,  "gpu", false); std::vector<double> g_fused(n); for (size_t i = 0; i < n; ++i) g_fused[i] = nodes[i]->gain;
-    double t_split = timed(true,  "gpu", true);  std::vector<double> g_split(n); for (size_t i = 0; i < n; ++i) g_split[i] = nodes[i]->gain;
-    double t_mcpu  = timed(true,  "cpu", false);
-    double t_agpu  = timed(false, "gpu", false); std::vector<double> g_agpu(n);  for (size_t i = 0; i < n; ++i) g_agpu[i]  = nodes[i]->gain;
-    double t_acpu  = timed(false, "cpu", false); std::vector<double> g_acpu(n);  for (size_t i = 0; i < n; ++i) g_acpu[i]  = nodes[i]->gain;
+    const std::vector<double> saved_gain    = snapshot_gains();
+    const bool                saved_marginal = marginal_gain;
+    const std::string         saved_compute  = eval_compute;
+    const bool                saved_split    = marginal_split;
 
-    bench_ms_fused += t_fused; bench_ms_split += t_split; bench_ms_mcpu += t_mcpu; bench_ms_agpu += t_agpu; bench_ms_acpu += t_acpu;
+    auto time_eval = [&](bool marginal, const std::string& compute, bool split) {
+        marginal_gain = marginal; eval_compute = compute; marginal_split = split;
+        auto t0 = std::chrono::high_resolution_clock::now();
+        evaluateGains(nodes);
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::high_resolution_clock::now() - t0).count();
+    };
+
+    double t_gall_gpu        = time_eval(true,  "gpu", false);
+    double t_gall_gpu_kernel = last_marg_kernel_ms_;
+    std::vector<double> g_gall_gpu = snapshot_gains();
+
+    double t_gall_split = time_eval(true, "gpu", true);
+    std::vector<double> g_gall_split = snapshot_gains();
+
+    double t_g1p_cpu_hashmap = time_eval(true, "cpu", false);   // legacy HashMap pass, console summary only
+
+    double t_abs_gpu        = time_eval(false, "gpu", false);
+    double t_abs_gpu_kernel = last_abs_kernel_ms_;
+    std::vector<double> g_abs_gpu = snapshot_gains();
+
+    double t_abs_cpu = time_eval(false, "cpu", false);
+    std::vector<double> g_abs_cpu = snapshot_gains();
+
+    bench_ms_gall_gpu   += t_gall_gpu;
+    bench_ms_gall_split += t_gall_split;
+    bench_ms_g1p_cpu    += t_g1p_cpu_hashmap;
+    bench_ms_abs_gpu    += t_abs_gpu;
+    bench_ms_abs_cpu    += t_abs_cpu;
+    bench_kernel_gall_gpu_ += t_gall_gpu_kernel;
+    bench_kernel_abs_gpu_  += t_abs_gpu_kernel;
     bench_nodes += (int)n;
 
-    marginal_gain = save_marg; eval_compute = save_comp; marginal_split = save_split;
-    for (size_t i = 0; i < n; ++i) nodes[i]->gain = save_gain[i];
+    // Per-replan samples for mean+/-std. transfer_ms = total wall time - device kernel time.
+    ROS_INFO("[X2rep] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
+             n, t_gall_gpu, t_gall_gpu_kernel, t_gall_gpu - t_gall_gpu_kernel);
+    ROS_INFO("[X2repABS] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
+             n, t_abs_gpu, t_abs_gpu_kernel, t_abs_gpu - t_abs_gpu_kernel);
 
-    // Per-node: GPU single-parent (v2) vs CPU single-parent hash (ground truth), both at the node's fixed yaw.
+    marginal_gain = saved_marginal; eval_compute = saved_compute; marginal_split = saved_split;
+    for (size_t i = 0; i < n; ++i) nodes[i]->gain = saved_gain[i];
+
+    // CPU marginal baselines, depth-sequential so each node subtracts its ancestors' committed views.
+    // G_single-parent and G_all are separate passes; observed sets are cleared before each.
+    std::vector<rrt_star::Node*> depth_nodes = nodes;
+    sortByDepth(depth_nodes);
+    rrt_star::Node* tree_root = depth_nodes.empty() ? nullptr : depth_nodes.front();
+    while (tree_root && tree_root->parent) tree_root = tree_root->parent;
+    
+    auto clear_observed = [&]() {
+        if (tree_root) tree_root->observed_unknown_voxels.clear();
+        for (rrt_star::Node* nd : depth_nodes) nd->observed_unknown_voxels.clear();
+    };
+
+    clear_observed();
+    auto t0_g1p = std::chrono::high_resolution_clock::now();
+    for (rrt_star::Node* nd : depth_nodes) {
+        segment_evaluator.computeMarginalGainCPU_AllAncestors(flat_map_, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/true, /*commit_observed=*/true);
+    }
+    double t_g1p_cpu = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0_g1p).count();
+
+    std::unordered_map<rrt_star::Node*, double> gall_of;
+    clear_observed();
+    auto t0_gall = std::chrono::high_resolution_clock::now();
+    for (rrt_star::Node* nd : depth_nodes) {
+        gall_of[nd] = segment_evaluator.computeMarginalGainCPU_AllAncestors(flat_map_, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/false, /*commit_observed=*/true).first;
+    }
+    double t_gall_cpu = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0_gall).count();
+
+    std::vector<double> g_gall_cpu(n);
+    for (size_t i = 0; i < n; ++i) g_gall_cpu[i] = gall_of[nodes[i]];   // back to input order for the CSV
+
+    ROS_INFO("[X2cpu] nodes=%zu cpu_absolute_ms=%.3f cpu_gain_1parent_ms=%.3f", n, t_abs_cpu, t_g1p_cpu);
+    ROS_INFO("[X1cpu] nodes=%zu cpu_gain_all_ms=%.3f", n, t_gall_cpu);
+
+    // Per-node dump of all 6 gain variants -> CSV. cols: replan,depth,abs_cpu,abs_gpu,p1_cpu,p1_gpu,all_cpu,all_gpu
+    const char* x1_csv_path = std::getenv("NBV_X1_CSV");
+    std::ofstream x1;
+    if (x1_csv_path) x1.open(x1_csv_path, std::ios::app);
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
-        double v2 = computeV2SingleParent(nd);
-        double sg = nd->gain;
+        double g1p_gpu = computeSingleParentGainGPU(nd);
+        double saved = nd->gain;
         if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
-        double hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]).first;
-        nd->gain = sg;
-        double err = std::fabs(v2 - hash);
-        bench_v2_err_sum += err; if (err > bench_v2_err_max) bench_v2_err_max = err;
-        ROS_INFO("[BENCH][%s] fused=%7.3f split=%7.3f | v2(gpu1p)=%7.3f hash(cpu1p)=%7.3f err=%.4f | absG=%7.3f absC=%7.3f",
-                 phase, g_fused[i], g_split[i], v2, hash, err, g_agpu[i], g_acpu[i]);
+        double g1p_cpu = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]).first;
+        nd->gain = saved;
+
+        double err = std::fabs(g1p_gpu - g1p_cpu);
+        bench_g1p_err_sum += err;
+        if (err > bench_g1p_err_max) bench_g1p_err_max = err;
+
+        if (x1.is_open()) {
+            int depth = 0; for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++depth;
+            x1 << replan_count_ << ',' << depth << ',' << g_abs_cpu[i] << ',' << g_abs_gpu[i] << ','
+               << g1p_cpu << ',' << g1p_gpu << ',' << g_gall_cpu[i] << ',' << g_gall_gpu[i] << '\n';
+        } else {
+            ROS_INFO("[BENCH][%s] gall_gpu=%7.3f split=%7.3f | g1p_gpu=%7.3f g1p_cpu=%7.3f err=%.4f | abs_gpu=%7.3f abs_cpu=%7.3f",
+                     phase, g_gall_gpu[i], g_gall_split[i], g1p_gpu, g1p_cpu, err, g_abs_gpu[i], g_abs_cpu[i]);
+        }
     }
 }
 
 void NBVPlanner::NBV() {
     best_score_ = 0;
+    ++replan_count_;
+    // Only benchmark once sim-time >= threshold, so early collision-heavy replans don't skew timings.
+    double sim_now = ros::Time::now().toSec();
+    bool x2_was_open = x2_timing_window_;
+    x2_timing_window_ = (sim_now >= timing_after_s_);
+    if (x2_timing_window_ && !x2_was_open)
+        ROS_WARN("[X2] timing window OPEN at sim_t=%.1fs (threshold=%.1fs, replan=%d)", sim_now, timing_after_s_, replan_count_);
+    // One capture = one whole replan (both phases); the cap counts replans, incremented at the end.
+    bool x2_do_capture = benchmark_mode && x2_timing_window_ && (x2_capture_count_ < x2_capture_max_);
     rrt_star::Node* best_node = nullptr;
     if (benchmark_mode) {
-        bench_ms_fused = bench_ms_split = bench_ms_mcpu = bench_ms_agpu = bench_ms_acpu = 0.0;
-        bench_v2_err_sum = bench_v2_err_max = 0.0; bench_nodes = 0;
+        bench_ms_gall_gpu = bench_ms_gall_split = bench_ms_g1p_cpu = bench_ms_abs_gpu = bench_ms_abs_cpu = 0.0;
+        bench_g1p_err_sum = bench_g1p_err_max = 0.0; bench_nodes = 0;
+        bench_kernel_gall_gpu_ = bench_kernel_abs_gpu_ = 0.0;
     }
     auto tree_t0 = std::chrono::high_resolution_clock::now();
 
@@ -384,7 +501,7 @@ void NBVPlanner::NBV() {
         }
         if (!branch_candidates.empty()) {
             evaluateGains(branch_candidates);
-            if (benchmark_mode) benchmarkGains(branch_candidates);
+            if (x2_do_capture) benchmarkGains(branch_candidates);
             for (rrt_star::Node* node : branch_candidates) {
                 segment_evaluator.computeScore(node, lambda);
                 if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
@@ -400,6 +517,9 @@ void NBVPlanner::NBV() {
     const int BATCH_SIZE = 2 * N_max;
     collision_id_counter_ = 0;
     bool terminated = false;
+
+    // Full-algorithm timing (tree creation + gain eval + scoring), independent of the benchmark passes.
+    double x2_tree_ms = 0.0, x2_eval_ms = 0.0, x2_score_ms = 0.0, x2_kernel_ms = 0.0;
 
     while (j < N_max || best_score_ == 0.0) {
         if (collision_id_counter_ > 10000 * j) {
@@ -421,6 +541,7 @@ void NBVPlanner::NBV() {
         if (cap <= 0) break;
 
         std::vector<rrt_star::Node*> batch_nodes;
+        auto x2_tree0 = std::chrono::high_resolution_clock::now();
         for (int k = 0; k < cap && j <= N_termination; ++k) {
             Eigen::Vector4d rand_point_yaw;
             RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
@@ -429,7 +550,7 @@ void NBVPlanner::NBV() {
             rrt_star::Node* nearest_node = nullptr;
             RRTStar.findNearestKD(rand_point, nearest_node);
             std::unique_ptr<rrt_star::Node> new_node;
-            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
+            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node, fixed_step);
 
             if (new_node->point[0] > max_x || new_node->point[0] < min_x ||
                 new_node->point[1] < min_y || new_node->point[1] > max_y ||
@@ -438,7 +559,7 @@ void NBVPlanner::NBV() {
             std::vector<rrt_star::Node*> seg = {new_node.get()};
             if (!isPathCollisionFree(seg)) { collision_id_counter_++; k--; continue; }
 
-            new_node->point[3] = rand_point_yaw[3];   // NBVP: fixed random yaw (never optimized)
+            new_node->point[3] = rand_point_yaw[3];   // random sampled yaw (kept as-is unless optimize_yaw re-picks it in evaluateGains)
             new_node->gain = 0.0; new_node->score = 0.0;
 
             rrt_star::Node* added_node;
@@ -456,6 +577,7 @@ void NBVPlanner::NBV() {
             batch_nodes.push_back(added_node);
             j++;
         }
+        x2_tree_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_tree0).count();
 
         if (batch_nodes.empty()) continue;
 
@@ -470,34 +592,54 @@ void NBVPlanner::NBV() {
             if (marginal_gain) gain_nodes = score_nodes;
         }
 
+        auto x2_eval0 = std::chrono::high_resolution_clock::now();
         evaluateGains(gain_nodes);
-        if (benchmark_mode) benchmarkGains(gain_nodes);
+        x2_eval_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_eval0).count();
+        
+        if (eval_compute == "gpu" && marginal_gain) x2_kernel_ms += last_marg_kernel_ms_;
+        if (x2_do_capture) benchmarkGains(gain_nodes);
 
+        auto x2_score0 = std::chrono::high_resolution_clock::now();
         for (rrt_star::Node* node : score_nodes) {
             segment_evaluator.computeScore(node, lambda);
             if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
             visualize_node(node->point, ns); visualize_edge(node, ns);
         }
+        x2_score_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_score0).count();
 
         if (j >= N_termination) { terminated = true; break; }
     }
+
+    // Per-replan full-algorithm timing, logged only inside the timing window.
+    if (benchmark_mode && x2_timing_window_) {
+        double x2_full_ms = x2_tree_ms + x2_eval_ms + x2_score_ms;
+        ROS_INFO("[X2full] nodes=%zu tree_construction_ms=%.3f gain_evaluation_ms=%.3f scoring_ms=%.3f full_algorithm_ms=%.3f gain_computation_ms=%.3f",
+                 RRTStar.getNodes().size(), x2_tree_ms, x2_eval_ms, x2_score_ms, x2_full_ms, x2_kernel_ms);
+    }
+    if (x2_do_capture) ++x2_capture_count_;
 
     logTreeNodes();
 
     if (benchmark_mode && bench_nodes > 0) {
         double bn = (double)bench_nodes;
         ROS_INFO("\n=== NBVP GAIN BENCHMARK (fixed yaw, %d nodes) ===\n"
-                 "marginal-gpu-fused : %9.3f ms | %7.4f ms/node\n"
+                 "marginal-gpu-G_all : %9.3f ms | %7.4f ms/node  total  [X2 ONLINE]\n"
+                 "  |- gain computation : %9.3f ms | %7.4f ms/node  (CPU->GPU transfer = %9.3f ms)\n"
                  "marginal-gpu-split : %9.3f ms | %7.4f ms/node\n"
-                 "marginal-cpu-hash  : %9.3f ms | %7.4f ms/node\n"
-                 "absolute-gpu       : %9.3f ms | %7.4f ms/node\n"
+                 "marginal-cpu-1parent : %9.3f ms | %7.4f ms/node\n"
+                 "absolute-gpu       : %9.3f ms | %7.4f ms/node  total\n"
+                 "  |- gain computation : %9.3f ms | %7.4f ms/node  (CPU->GPU transfer = %9.3f ms)\n"
                  "absolute-cpu       : %9.3f ms | %7.4f ms/node\n"
                  "v2(gpu 1-parent) vs cpu-hash: mean err %.4f | max err %.4f\n"
                  "==================================================",
                  bench_nodes,
-                 bench_ms_fused, bench_ms_fused/bn, bench_ms_split, bench_ms_split/bn,
-                 bench_ms_mcpu, bench_ms_mcpu/bn, bench_ms_agpu, bench_ms_agpu/bn,
-                 bench_ms_acpu, bench_ms_acpu/bn, bench_v2_err_sum/bn, bench_v2_err_max);
+                 bench_ms_gall_gpu, bench_ms_gall_gpu/bn,
+                 bench_kernel_gall_gpu_, bench_kernel_gall_gpu_/bn, bench_ms_gall_gpu - bench_kernel_gall_gpu_,
+                 bench_ms_gall_split, bench_ms_gall_split/bn,
+                 bench_ms_g1p_cpu, bench_ms_g1p_cpu/bn,
+                 bench_ms_abs_gpu, bench_ms_abs_gpu/bn,
+                 bench_kernel_abs_gpu_, bench_kernel_abs_gpu_/bn, bench_ms_abs_gpu - bench_kernel_abs_gpu_,
+                 bench_ms_abs_cpu, bench_ms_abs_cpu/bn, bench_g1p_err_sum/bn, bench_g1p_err_max);
     }
 
     if (terminated) {

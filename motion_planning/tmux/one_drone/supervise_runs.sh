@@ -21,7 +21,7 @@
 CONTAINER=noetic_ws
 LABEL="${1:-GPU_marg_RRT}"
 TARGET_RUNS="${2:-2}"
-SIM_TIME="${3:-1850}"
+SIM_TIME="${3:-950}"
 SPEC="${4:-}"
 MAX_ATTEMPTS_PER_RUN=5
 
@@ -54,10 +54,19 @@ ensure_container() {
     docker start "$CONTAINER" >/dev/null 2>&1
     sleep 6
   fi
-  # clear any stale sim/master so a fresh run can bind port 11311
+  # Clear ALL stale sim procs so a fresh run can bind the mavlink UDP ports (px4 14005 / mavros 14006)
+  # AND the ROS master (11311). CRITICAL: killing gzserver/rosmaster alone is NOT enough -- stale `px4`
+  # (SITL) and `mavros_node` survive the tmux teardown (px4 detaches; killProcessRecursive misses it) and
+  # keep holding their UDP ports, so the NEXT run's mavros never connects (State: DISARMED NO_GPS, "Have
+  # not received Mavros state") -> UAV never ready -> eval_data_node times out -> run produces no data.
   docker exec "$CONTAINER" bash -lc \
-    'pkill -9 -x rosmaster 2>/dev/null; pkill -9 -x gzserver 2>/dev/null; pkill -9 -x gzclient 2>/dev/null; tmux -L mrs kill-server 2>/dev/null; rm -f '"$ONE_CTR"'/current_config.env; true' 2>/dev/null
-  sleep 2
+    'tmux -L mrs kill-server 2>/dev/null; \
+     pkill -9 -x px4 2>/dev/null; pkill -9 -f mavros 2>/dev/null; \
+     pkill -9 -x gzserver 2>/dev/null; pkill -9 -x gzclient 2>/dev/null; \
+     pkill -9 -x rosmaster 2>/dev/null; pkill -9 -f roscore 2>/dev/null; \
+     pkill -9 -f "roslaunch mrs" 2>/dev/null; pkill -9 -f "roslaunch motion_planning" 2>/dev/null; \
+     rm -f '"$ONE_CTR"'/current_config.env; true' 2>/dev/null
+  sleep 4   # let the UDP ports (14005/14006) and master port fully release before the next launch
 }
 
 echo "=========================================================="
@@ -80,7 +89,7 @@ while [ "$(good_runs)" -lt "$TARGET_RUNS" ]; do
     ensure_container
     pre=$(ls -1d "$LABELDIR"/2* 2>/dev/null | sort)
     echo ">>> [$LABEL] run $((have + 1))/$TARGET_RUNS — attempt $attempt ($(date +%H:%M:%S))"
-    docker exec -e EXP_CONFIG_SPEC="$SPEC" -w "$ONE_CTR" "$CONTAINER" bash -lc "./run_experiments.sh explore 1 $SIM_TIME"
+    docker exec -e EXP_CONFIG_SPEC="$SPEC" -e AEP_EARLY_STOP="${AEP_EARLY_STOP:-false}" -e AEP_EARLY_STOP_GRACE="${AEP_EARLY_STOP_GRACE:-60.0}" -w "$ONE_CTR" "$CONTAINER" bash -lc "./run_experiments.sh explore 1 $SIM_TIME"
     rc=$?
     post=$(ls -1d "$LABELDIR"/2* 2>/dev/null | sort)
     newdir=$(comm -13 <(printf '%s\n' "$pre") <(printf '%s\n' "$post") | tail -1)

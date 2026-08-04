@@ -77,8 +77,8 @@ public:
     void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);
 
-    // Generation-ordered batched marginal-gain eval; sets node->gain/yaw/depth_buffer for each node.
-    void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes);
+    // Generation-ordered batched marginal-gain eval; sets node->gain/yaw/depth_buffer. use_fixed_yaw keeps each node's point[3].
+    void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool use_fixed_yaw = false);
 
     // Evaluate node gains per the configured (marginal_gain, eval_compute); sets node->gain and yaw.
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
@@ -94,19 +94,21 @@ public:
     bool isAncestorEuler(const rrt_star::Node* a, const rrt_star::Node* d) const;
     // GPU single-parent marginal (v2) using the node's immediate parent's stored depth buffer.
     double computeV2SingleParent(rrt_star::Node* node);
-    // GPU multi-ancestor marginal (v4, per-node non-batched) over the node's full ancestor chain.
-    double computeV4MultiAncestor(rrt_star::Node* node);
+    // GPU multi-ancestor marginal (v4, per-node non-batched) over the node's full ancestor chain. Optimizes yaw
+    // (free); if out_yaw != null it receives the argmax yaw. Does NOT overwrite node->gain/yaw/depth_buffer.
+    double computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw = nullptr);
     // Non-owning observers to every non-root node currently in the tree.
     std::vector<rrt_star::Node*> collectTreeNodes();
     // Order nodes shallow-first (parents before children) for cumulative scoring.
     void sortByDepth(std::vector<rrt_star::Node*>& nodes);
-    // Publish every node whose ABSOLUTE gain > g_zero as a global-frontier candidate. Uses absolute
-    // (not marginal) gain so a spot with new space is still cached when an ancestor already covers it.
+    // Telescoped path-union (root->node) of each node's marginal (or own-view absolute) gain. Local scratch for global scoring.
+    std::unordered_map<rrt_star::Node*, double> pathUnion(rrt_star::Node* root_ptr, bool use_marginal);
+    // Publish every node whose ABSOLUTE gain > g_zero as a global-frontier candidate. Reads the node's
+    // absolute_gain field so a spot with new space is still cached when an ancestor covers its marginal.
     void cacheHighGainNodes();
-    // Absolute (own-view) gain + best yaw per node, without touching node->gain/yaw (marginal scoring
-    // stays intact). Fills out_gain/out_yaw. For the frontier g_zero decision only.
-    void computeAbsoluteGainsInto(const std::vector<rrt_star::Node*>& nodes,
-                                  std::vector<double>& out_gain, std::vector<double>& out_yaw);
+    // Lazily fill node->absolute_gain + node->absolute_yaw (own-view result, position-only => rewire-
+    // invariant) for any node still at the -1 sentinel. Computed once per node; never disturbs gain/point[3]/score.
+    void fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes);
     // Log per-node score over the final tree once (avoids per-batch re-logging).
     void logTreeNodes();
 
@@ -160,11 +162,6 @@ private:
     voxblox::Transformation T_C_B;
     geometry_msgs::TransformStamped T_B_C_message;
     voxblox::Transformation T_B_C;
-
-    geometry_msgs::TransformStamped T_C_W_message;
-    voxblox::Transformation T_C_W;
-    geometry_msgs::TransformStamped T_W_C_message;
-    voxblox::Transformation T_W_C;
 
     // Parameters
     std::string frame_id;
@@ -249,13 +246,10 @@ private:
     std::vector<mrs_msgs::Reference> waypoints_;
     int waypoint_index_ = 0;
 
-    // Local Planner variables
-    // best_branch / previous_node are caches that must outlive clearKDTree(), so they
-    // OWN their nodes (deep copies). next_best_node is a non-owning observer.
+    // Local Planner variables. best_branch / previous_node own their nodes (outlive clearKDTree()); next_best_node is non-owning.
     std::vector<std::unique_ptr<rrt_star::Node>> best_branch;
     std::unique_ptr<rrt_star::Node> previous_node;
     rrt_star::Node* next_best_node = nullptr;
-    eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
 
@@ -266,8 +260,6 @@ private:
     // UAV variables
     bool is_initialized = false;
     Eigen::Vector4d pose;
-    double distance_;
-    mrs_msgs::UavState uav_state;
     mrs_msgs::ControlManagerDiagnostics control_manager_diag;
 
     // State variables

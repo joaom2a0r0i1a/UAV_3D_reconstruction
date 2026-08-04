@@ -693,7 +693,7 @@ extern "C" void launch_gain_kernel(GpuMap map, GpuCandidates cands,
 }
 
 extern "C" void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands,
-                                        GpuResult out, GpuSensor cfg) {
+                                        GpuResult out, GpuSensor cfg, float* kernel_ms) {
     KernelParams params = params_of(cfg);
     size_t res_size = cands.count * sizeof(float);
 
@@ -705,9 +705,14 @@ extern "C" void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands,
 
     MapContext m = context_of(map);
 
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    cudaEventRecord(t0);
     evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params);
-    cudaDeviceSynchronize();
+    cudaEventRecord(t1);
+    cudaEventSynchronize(t1);
+    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
 
     cudaMemcpy(out.gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
     cudaMemcpy(out.yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);
@@ -720,7 +725,7 @@ extern "C" void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands,
 // Fixed-yaw absolute batch: gain of the FOV window at fixed_yaws[i]; out.yaw = input yaw.
 extern "C" void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands,
                                               GpuResult out, GpuSensor cfg,
-                                              const float* fixed_yaws) {
+                                              const float* fixed_yaws, float* kernel_ms) {
     KernelParams params = params_of(cfg);
     size_t res_size = cands.count * sizeof(float);
 
@@ -732,9 +737,14 @@ extern "C" void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands,
     cudaMemcpy(d_fixed_yaw, fixed_yaws, res_size, cudaMemcpyHostToDevice);
 
     MapContext m = context_of(map);
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+    cudaEventRecord(t0);
     evaluate_gain_kernel<<<cands.count, min(TOTAL_RAYS, MAX_THREADS_PER_BLOCK)>>>(
         m, d_positions, d_results_gain, d_results_yaw, params, d_fixed_yaw);
-    cudaDeviceSynchronize();
+    cudaEventRecord(t1);
+    cudaEventSynchronize(t1);
+    if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
 
     cudaMemcpy(out.gain, d_results_gain, res_size, cudaMemcpyDeviceToHost);
     cudaMemcpy(out.yaw, d_results_yaw, res_size, cudaMemcpyDeviceToHost);

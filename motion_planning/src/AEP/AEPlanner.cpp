@@ -337,9 +337,7 @@ void AEPlanner::localPlannerGPU() {
             new_node->gain = 0.0;
             new_node->score = 0.0;
 
-            // RRT keeps the steer parent (nearest). RRT* picks the min-cost parent among neighbours and
-            // rewires; batched GPU eval (after the whole build) makes this safe -- rewire updates node->cost
-            // and propagateCost fixes the moved subtree, so gains/scores below see the final tree.
+            // RRT keeps the nearest steer parent; RRT* rewires (safe: batched eval + propagateCost run after the build).
             rrt_star::Node* added_node;
             if (local_rrt_star) {
                 std::vector<rrt_star::Node*> nearby;
@@ -359,9 +357,7 @@ void AEPlanner::localPlannerGPU() {
 
         if (batch_nodes.empty()) continue;
 
-        // score_nodes: nodes to rescore + re-pick best from. gain_nodes: nodes to re-raycast the gain.
-        // RRT never rewires, so both are just the new batch. RRT* rewires older nodes, so rescore the
-        // whole tree (costs changed); marginal gain also changes with ancestry, absolute does not.
+        // score_nodes = rescore set, gain_nodes = re-raycast set. RRT: both are the new batch; RRT* rewires so rescore the whole tree.
         std::vector<rrt_star::Node*> score_nodes = batch_nodes;
         std::vector<rrt_star::Node*> gain_nodes  = batch_nodes;
         if (local_rrt_star) {
@@ -452,49 +448,6 @@ void AEPlanner::localPlanner() {
 
     float camera_pitch_rad = (float)camera_pitch;
 
-    //Eigen::Matrix3f R_CB = T_C_B.getRotation().toImplementation().toRotationMatrix().cast<float>();
-
-    // Helper: Get Parent Camera State (Rotation + Position)
-    /*auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw) -> std::pair<std::vector<float>, Eigen::Vector3d> {
-        Eigen::Vector3d parent_pos = body_pos;
-
-        // R_body: Body -> World Rotation
-        // Col 0 = Body X (Front)
-        // Col 1 = Body Y (Left)
-        // Col 2 = Body Z (Up)
-        Eigen::Matrix3d R_body;
-        R_body = Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ());
-
-        std::vector<float> R_flat(9);
-
-        // Goal: Construct R0, R1, R2 for the Kernel.
-        // The Kernel's "compute_skip_distance" needs World->Camera projection.
-        // This expects R0, R1, R2 to be the ROWS of R_wc.
-        // Since R_wc = (R_cw)^T, the ROWS of R_wc are the COLUMNS of R_cw.
-        
-        // Columns of R_cw (Camera Axes in World Frame):
-        // Col 0 (Cam Right) = Body -Y (Left)
-        // Col 1 (Cam Down)  = Body -Z (Up)
-        // Col 2 (Cam Front) = Body X  (Front)
-
-        // --- CUDA R0: Camera X Axis (Right) = -Body Y (Col 1) ---
-        R_flat[0] = -(float)R_body(0,1); // x component
-        R_flat[1] = -(float)R_body(1,1); // y component
-        R_flat[2] = -(float)R_body(2,1); // z component
-
-        // --- CUDA R1: Camera Y Axis (Down) = -Body Z (Col 2) ---
-        R_flat[3] = -(float)R_body(0,2);
-        R_flat[4] = -(float)R_body(1,2);
-        R_flat[5] = -(float)R_body(2,2);
-
-        // --- CUDA R2: Camera Z Axis (Forward) = Body X (Col 0) ---
-        R_flat[6] = (float)R_body(0,0);
-        R_flat[7] = (float)R_body(1,0);
-        R_flat[8] = (float)R_body(2,0);
-
-        return {R_flat, parent_pos};
-    };*/
-
     auto get_parent_cam_state = [&](const Eigen::Vector3d& body_pos, float yaw, float pitch_rad) -> std::pair<std::vector<float>, Eigen::Vector3d> {
     
         // 1. Precompute Trig (Ensure pitch is RADIANS!)
@@ -505,9 +458,7 @@ void AEPlanner::localPlanner() {
 
         std::vector<float> R_flat(9);
 
-        // 2. Explicit Basis Construction (Matches GPU Kernel Logic)
-        // We derived these by rotating the Camera Basis vectors 
-        // (Right, Down, Front) using the Body->World chain.
+        // Camera basis (Right/Down/Front) rotated through the Body->World chain, matching the GPU kernel.
 
         // R0: Camera Right Axis (x_cam=1) in World
         // Kernel Formula: dir_x = sin_y, dir_y = -cos_y, dir_z = 0
@@ -521,10 +472,7 @@ void AEPlanner::localPlanner() {
         R_flat[4] = -sin_p * sin_y;
         R_flat[5] = -cos_p;
 
-        // R2: Camera Front Axis (z_cam=1) in World
-        // Kernel Formula: dir_x = cos_p*cos_y, dir_y = cos_p*sin_y, dir_z = -sin_p
-        // Note: If Pitch=0, this is (cos_y, sin_y, 0) -> Points in Yaw dir. Correct.
-        // Note: If Pitch>0 (Look Down), z becomes -sin_p (Negative). Correct.
+        // Front axis (z_cam) in world: dir = (cos_p*cos_y, cos_p*sin_y, -sin_p); pitch>0 looks down.
         R_flat[6] = cos_p * cos_y;
         R_flat[7] = cos_p * sin_y;
         R_flat[8] = -sin_p;
@@ -535,40 +483,6 @@ void AEPlanner::localPlanner() {
     sensor_msgs::PointCloud2 debug_msg = segment_evaluator.visualizeGpuMap(flat_map_, map_origin_, map_dim_);
     ROS_WARN("GPU Debug Map Published! Check Rviz topic /gpu_debug_map");
     pub_gpu_debug.publish(debug_msg);
-
-    /*eth_mav_msgs::EigenTrajectoryPoint pose_trajectory;
-    pose_trajectory.position_W = root->point.head(3);
-    pose_trajectory.setFromYaw(root->point[3]);
-
-    // 1. Run CPU (Reference)
-    auto start_cpu = std::chrono::high_resolution_clock::now();
-    std::pair<double, double> res_cpu = segment_evaluator.computeGainRaycasting(pose_trajectory);
-    auto end_cpu = std::chrono::high_resolution_clock::now();
-
-    auto start_cpu_flat = std::chrono::high_resolution_clock::now();
-    std::pair<double, double> res_cpu_flat = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose_trajectory);
-    auto end_cpu_flat = std::chrono::high_resolution_clock::now();
-
-    // 3. Run GPU (Challenger)
-    auto start_gpu = std::chrono::high_resolution_clock::now();
-    std::pair<double, double> res_gpu = segment_evaluator.computeGainGPU({root->point.x()}, {root->point.y()}, {root->point.z()});
-    auto end_gpu = std::chrono::high_resolution_clock::now();
-
-    // 4. Results
-    double cpu_ms = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
-    double cpu_flat_ms = std::chrono::duration<double, std::milli>(end_cpu_flat - start_cpu_flat).count();
-    double gpu_ms = std::chrono::duration<double, std::milli>(end_gpu - start_gpu).count();
-
-    ROS_INFO_THROTTLE(0.5, 
-        "\n--- GAIN CHECK ---\n"
-        "CPU: Gain=%.2f | Yaw=%.2f | Time=%.3f ms\n"
-        "CPU FLAT: Gain=%.2f | Yaw=%.2f | Time=%.3f ms\n"
-        "GPU: Gain=%.2f | Yaw=%.2f | Time=%.3f ms\n"
-        "------------------",
-        res_cpu.first, res_cpu.second, cpu_ms,
-        res_cpu_flat.first, res_cpu_flat.second, cpu_flat_ms,
-        res_gpu.first, res_gpu.second, gpu_ms
-    );*/
 
     visualize_node(root_ptr->point, ns);
     bool isFirstIteration = true;
@@ -614,11 +528,6 @@ void AEPlanner::localPlanner() {
                 new_node_best->point.x(), new_node_best->point.y(), new_node_best->point.z(),
                 parent_cam_pos, new_node_best->parent->point[3], parent_R, new_node_best->parent->depth_buffer, new_node_best->depth_buffer);
 
-            /*trajectory_point.position_W = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
-
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);*/
-
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -629,9 +538,6 @@ void AEPlanner::localPlanner() {
                 best_score_ = new_node_best->score;
                 best_node = new_node_best.get();
             }
-
-            //ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
-            
 
             rrt_star::Node* added_node_best = RRTStar.addKDTreeNode(std::move(new_node_best));
             visualize_edge(added_node_best, ns);
@@ -784,9 +690,7 @@ void AEPlanner::localPlanner() {
         static double sum_time_hash = 0.0;
         static double sum_time_v2 = 0.0;
 
-        // ==========================================================
-        // 1. ALWAYS RUN THE EVALUATIONS
-        // ==========================================================
+        // 1. Always run the evaluations
 
         auto start_cpu = std::chrono::high_resolution_clock::now();
         res_cpu = segment_evaluator.computeGainCPU_FlatMap(flat_map_, trajectory_point);
@@ -856,9 +760,7 @@ void AEPlanner::localPlanner() {
             anc_depth_flat, depth_buf_v4);
         auto end_gpu_marg_v4 = std::chrono::high_resolution_clock::now();
 
-        // ==========================================================
-        // 1.5 PHYSICAL SANITY CHECK (Marginal Gain <= Absolute Gain)
-        // ==========================================================
+        // 1.5 Physical sanity check (marginal gain <= absolute gain)
         const double EPSILON = 1e-3; 
         double absolute_baseline = res_cpu.first;
 
@@ -902,9 +804,7 @@ void AEPlanner::localPlanner() {
             log_anomaly("GPU_Marg_V4", res_gpu_marg_v4.first);
         }
 
-        // ==========================================================
-        // 2. ONLY DO THE LOGGING AND ACCUMULATION UNDER THE LIMIT
-        // ==========================================================
+        // 2. Only log and accumulate under the benchmark limit
         if (nodes_evaluated < NODE_LIMIT) {
             double ms_cpu       = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
             double ms_cpu_hash  = std::chrono::duration<double, std::milli>(end_cpu_hash - start_cpu_hash).count();
@@ -1042,10 +942,6 @@ void AEPlanner::localPlanner() {
             best_node = new_node.get();
         }
 
-        //ROS_INFO("[AEPlanner]: Best Gain Optimized: %f", new_node->gain);
-        //ROS_INFO("[AEPlanner]: Best Gain: %f", result2.first);
-        //ROS_INFO("[AEPlanner]: Best Cost: %f", new_node->cost);
-        //ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
 
         rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
         visualize_edge(added_node, ns);
@@ -1085,9 +981,7 @@ std::vector<float> AEPlanner::parentCamRows(float yaw) {
               cos_p * cos_y,  cos_p * sin_y, -sin_p };
 }
 
-// Ancestor cull test (walked over the chain): broad-phase distance (centres within 2*max_distance) then
-// narrow-phase sphere(cand,max_distance)-vs-view-pyramid SAT (mode 1 = horizontal planes, 2 = + vertical).
-// Culls only on a proven separating plane, so it never wrongly culls. Axes match parentCamRows; pitch 10 deg.
+// Ancestor cull: broad-phase distance then sphere-vs-view-pyramid SAT (mode 1=horizontal, 2=+vertical); culls only on a proven separating plane.
 bool AEPlanner::ancestorMayOverlap(const rrt_star::Node* cand, const rrt_star::Node* anc, int mode) const {
     const double r = max_distance;                       // candidate sphere radius
     const double vx = cand->point.x() - anc->point.x();  // apex(ancestor) -> candidate
@@ -1145,7 +1039,7 @@ bool AEPlanner::isAncestorEuler(const rrt_star::Node* a, const rrt_star::Node* d
     return ia->second <= id->second && id->second <= oa->second;
 }
 
-void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes) {
+void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool use_fixed_yaw) {
     if (nodes.empty()) return;
     const int per = segment_evaluator.depthImagePixels();
     bench_kernel_ms_ = 0.0;   // accumulate the CUDA-event device time across all generation levels
@@ -1164,14 +1058,17 @@ void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>&
         const std::vector<size_t>& idxs = level.second;
         const size_t n = idxs.size();
 
-        std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n);
+        std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n), fixed_yaws(n);
         std::vector<int>   anc_offsets(1, 0);
         std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
+        std::vector<int>   depth_idx;
+        std::unordered_map<rrt_star::Node*, int> pool_slot;   // each ancestor's depth buffer stored once
         for (size_t li = 0; li < n; ++li) {
             rrt_star::Node* nd = nodes[idxs[li]];
             cand_x_f[li] = (float)nd->point.x();
             cand_y_f[li] = (float)nd->point.y();
             cand_z_f[li] = (float)nd->point.z();
+            fixed_yaws[li] = (float)nd->point[3];   // used only when use_fixed_yaw (evaluate at the node's own heading)
 
             // Append one ancestor's pose + depth buffer to the flattened kernel input.
             auto push_anc = [&](rrt_star::Node* a) {
@@ -1181,10 +1078,15 @@ void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>&
                 anc_pos.push_back((float)a->point.z());
                 anc_yaw.push_back((float)a->point[3]);
                 anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
-                if ((int)a->depth_buffer.size() == per)
-                    anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-                else
-                    anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+                auto slot = pool_slot.find(a);
+                if (slot == pool_slot.end()) {
+                    slot = pool_slot.emplace(a, (int)pool_slot.size()).first;
+                    if ((int)a->depth_buffer.size() == per)
+                        anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+                    else
+                        anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
+                }
+                depth_idx.push_back(slot->second);
             };
 
             if (ancestor_cull_mode == 0 || !ancestor_cull_kd) {
@@ -1210,7 +1112,8 @@ void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>&
         float ms = 0.0f;
         auto results = segment_evaluator.computeMarginalGainBatchGPU(
             cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
-            marginal_split, depth_out, ms);
+            marginal_split, depth_out, ms, use_fixed_yaw ? &fixed_yaws : nullptr,
+            &depth_idx, (int)pool_slot.size());
         bench_kernel_ms_ += ms;   // device (CUDA-event) kernel time for this level
 
         for (size_t li = 0; li < n; ++li) {
@@ -1229,11 +1132,13 @@ void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
 
     if (marginal_gain && gpu) {
         evaluateMarginalGainsBatched(nodes);   // batched multi-ancestor marginal (generation-ordered)
+        fillAbsoluteGains(nodes);              // own-view gain alongside the marginal (rewire-invariant, once)
     } else if (!marginal_gain && gpu) {
         std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
         for (size_t i = 0; i < nodes.size(); ++i) { x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z(); }
         auto res = segment_evaluator.computeGainBatchGPU(x, y, z);
-        for (size_t i = 0; i < nodes.size(); ++i) { nodes[i]->gain = res[i].first; nodes[i]->point[3] = res[i].second; }
+        // Absolute mode: node gain/yaw IS the own-view result, so absolute_gain/absolute_yaw mirror it.
+        for (size_t i = 0; i < nodes.size(); ++i) { nodes[i]->gain = res[i].first; nodes[i]->point[3] = res[i].second; nodes[i]->absolute_gain = res[i].first; nodes[i]->absolute_yaw = res[i].second; }
     } else {
         // CPU sequential: marginal -> hash (immediate parent); absolute -> flat-map raycast.
         for (rrt_star::Node* nd : nodes) {
@@ -1245,10 +1150,13 @@ void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
                 eth_mav_msgs::EigenTrajectoryPoint pose;
                 pose.position_W = nd->point.head(3);
                 r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose);
+                nd->absolute_gain = r.first;    // absolute mode: gain/yaw == own-view result
+                nd->absolute_yaw  = r.second;
             }
             nd->gain = r.first;
             nd->point[3] = r.second;
         }
+        if (marginal_gain) fillAbsoluteGains(nodes);   // own-view gain for the CPU-marginal path
     }
 }
 
@@ -1267,10 +1175,8 @@ double AEPlanner::computeV2SingleParent(rrt_star::Node* node) {
     return r.first;
 }
 
-// Per-node (non-batched) GPU multi-ancestor marginal gain. Mirrors the v2 helper's
-// body-position + parentCamRows convention, but walks the full ancestor chain so the
-// result is directly comparable, per node, to the batched fused/split methods.
-double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node) {
+// Per-node (non-batched) GPU multi-ancestor marginal gain; walks the full chain, comparable per-node to the batched methods.
+double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw) {
     const int per = segment_evaluator.depthImagePixels();
     std::vector<Eigen::Vector3d> anc_positions;
     std::vector<double>          anc_yaws;
@@ -1290,6 +1196,7 @@ double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node) {
     auto r = segment_evaluator.computeMarginalGainGPU_v4(
         node->point.x(), node->point.y(), node->point.z(),
         anc_positions, anc_yaws, anc_R_flat, anc_depth_flat, out);
+    if (out_yaw) *out_yaw = r.second;   // argmax yaw (free-yaw optimum); node->gain/yaw/buffer left untouched
     return r.first;
 }
 
@@ -1308,41 +1215,46 @@ std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() {
     return nodes;
 }
 
-// Absolute (own-view) gain + best yaw per node, without disturbing node->gain/yaw. In absolute mode the
-// node's gain already IS this; in marginal mode we re-raycast each node ignoring ancestors.
-void AEPlanner::computeAbsoluteGainsInto(const std::vector<rrt_star::Node*>& nodes,
-                                         std::vector<double>& out_gain, std::vector<double>& out_yaw) {
-    out_gain.assign(nodes.size(), 0.0);
-    out_yaw.assign(nodes.size(), 0.0);
-    if (nodes.empty()) return;
+// Telescoped path-union root->node: path_sum[n] = path_sum[parent] + (use_marginal ? gain : absolute_gain). Local scratch for global scoring.
+std::unordered_map<rrt_star::Node*, double> AEPlanner::pathUnion(rrt_star::Node* root_ptr, bool use_marginal) {
+    std::vector<rrt_star::Node*> tree = collectTreeNodes();
+    sortByDepth(tree);   // parents before children so each path_sum[parent] is ready
+    std::unordered_map<rrt_star::Node*, double> path_sum{{root_ptr, 0.0}};
+    for (rrt_star::Node* n : tree)
+        path_sum[n] = path_sum[n->parent] + (use_marginal ? n->gain : n->absolute_gain);
+    return path_sum;
+}
 
-    if (!marginal_gain) {
-        for (size_t i = 0; i < nodes.size(); ++i) { out_gain[i] = nodes[i]->gain; out_yaw[i] = nodes[i]->point[3]; }
-    } else if (eval_compute == "gpu") {
-        std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
-        for (size_t i = 0; i < nodes.size(); ++i) { x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z(); }
-        auto res = segment_evaluator.computeGainBatchGPU(x, y, z);   // absolute (no fixed yaw, no ancestors)
-        for (size_t i = 0; i < nodes.size(); ++i) { out_gain[i] = res[i].first; out_yaw[i] = res[i].second; }
+// Own-view absolute gain is position-only => rewire-invariant; compute once per node (sentinel < 0) and never touch gain/yaw/score.
+void AEPlanner::fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes) {
+    std::vector<rrt_star::Node*> todo;
+    todo.reserve(nodes.size());
+    for (rrt_star::Node* n : nodes) if (n->absolute_gain < 0.0) todo.push_back(n);
+    if (todo.empty()) return;
+
+    if (eval_compute == "gpu") {
+        std::vector<double> x(todo.size()), y(todo.size()), z(todo.size());
+        for (size_t i = 0; i < todo.size(); ++i) { x[i] = todo[i]->point.x(); y[i] = todo[i]->point.y(); z[i] = todo[i]->point.z(); }
+        auto res = segment_evaluator.computeGainBatchGPU(x, y, z);   // own-view (no fixed yaw, no ancestors); map already resident
+        for (size_t i = 0; i < todo.size(); ++i) { todo[i]->absolute_gain = res[i].first; todo[i]->absolute_yaw = res[i].second; }
     } else {
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            eth_mav_msgs::EigenTrajectoryPoint p; p.position_W = nodes[i]->point.head(3);
+        for (size_t i = 0; i < todo.size(); ++i) {
+            eth_mav_msgs::EigenTrajectoryPoint p; p.position_W = todo[i]->point.head(3);
             auto r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, p);
-            out_gain[i] = r.first; out_yaw[i] = r.second;
+            todo[i]->absolute_gain = r.first; todo[i]->absolute_yaw = r.second;
         }
     }
 }
 
 void AEPlanner::cacheHighGainNodes() {
-    std::vector<rrt_star::Node*> tree = collectTreeNodes();
-    if (tree.empty()) return;
-
-    // Cache a frontier when its OWN view still sees new space (absolute gain > g_zero), even if marginal
-    // gain is ~0 because an ancestor covers it. Otherwise marginal mode hides real frontiers near the end
-    // and the planner never terminates. Cache the absolute gain/yaw so the frontier server keeps them.
-    std::vector<double> abs_gain, abs_yaw;
-    computeAbsoluteGainsInto(tree, abs_gain, abs_yaw);
-    for (size_t i = 0; i < tree.size(); ++i)
-        if (abs_gain[i] > g_zero) cacheNode(tree[i], abs_gain[i], abs_yaw[i]);
+    // Cache a frontier when its OWN view still sees new space (absolute_gain > g_zero), else marginal mode hides frontiers and never terminates.
+    for (const auto& up : RRTStar.getNodes()) {
+        rrt_star::Node* n = up.get();
+        if (!n->parent) continue;                                 // skip root
+        // Cache the ABSOLUTE gain AND the yaw that achieves it: in marginal mode point[3] is the marginal
+        // yaw, which would aim the frontier away from the very space that qualified it.
+        if (n->absolute_gain > g_zero) cacheNode(n, n->absolute_gain, n->absolute_yaw);
+    }
 }
 
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
@@ -1445,9 +1357,7 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     marginal_gain = save_marg; eval_compute = save_comp; marginal_split = save_split;
     for (size_t i = 0; i < n; ++i) { nodes[i]->gain = save_gain[i]; nodes[i]->point[3] = save_yaw[i]; }
 
-    // Per-node result check: GPU single-parent (v2) vs CPU single-parent hash (ground truth), both
-    // against the SAME parent view (parent at its restored best yaw). Also log ancestor count so the
-    // gain study can relate "gain shaved by marginalization" to tree-depth overlap.
+    // Per-node check: GPU single-parent (v2) vs CPU hash (truth) against the same parent view; logs ancestor count for the gain study.
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
         // AncKept diagnostic: of all ancestors (Ancestors), how many are within broad-phase reach (2*max_distance).
@@ -1496,7 +1406,8 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
     }
 
     rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
-    root_ptr->gain = 0.0;   // start pose contributes nothing to a path-sum gain
+    root_ptr->gain = 0.0;
+    root_ptr->absolute_gain = 0.0;
     auto tree_t0 = std::chrono::high_resolution_clock::now();
 
     // Cache the map on the GPU (needed for the batched marginal-gain eval).
@@ -1508,16 +1419,6 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
     collision_id_counter_ = 0;
     int m = 0;
     const int GLOBAL_BATCH = 2 * N_min_nodes;   // scale the batch with the node budget (add only up to the limit)
-
-    // A frontier's global gain is its ABSOLUTE (own-view) gain, recomputed at the node. The marginal
-    // path-sum can fall below threshold for a still-informative cached frontier (its path crosses
-    // already-observed space), so a real goal would never qualify and AEP would never terminate.
-    std::unordered_map<rrt_star::Node*, double> frontier_abs_gain;   // absolute gain per frontier node
-    auto global_gain = [&](rrt_star::Node* f) -> double {
-        if (!marginal_gain) return f->gain;   // absolute mode: node gain already is the own-view gain
-        auto it = frontier_abs_gain.find(f);
-        return (it != frontier_abs_gain.end()) ? it->second : 0.0;
-    };
 
     while (m < N_min_nodes || all_global_goals.empty()) {
         if (collision_id_counter_ > 10000 * (m+1)) {
@@ -1567,40 +1468,36 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
             ++m;
         }
 
-        // The global tree is always RRT*, so marginal path sums need the whole tree recomputed each batch
-        // (rewire restales ancestries). Absolute is position-only: gpu evaluates the new batch, cpu the
-        // frontier nodes only.
+        // Pick nodes to (re)evaluate: marginal = whole tree (rewire restaled ancestries); absolute+gpu = new batch;
+        // absolute+cpu = new frontiers only. absolute_gain is own-view (set once at birth), so it's always valid at qualification.
         std::vector<rrt_star::Node*> gain_nodes;
         if (marginal_gain)              gain_nodes = collectTreeNodes();
         else if (eval_compute == "gpu") gain_nodes = batch_new;
         else                            gain_nodes = batch_frontier;
 
-        evaluateGains(gain_nodes);
+        evaluateGains(gain_nodes);   // sets node->gain (+ node->absolute_gain/absolute_yaw via fillAbsoluteGains)
         if (benchmark_mode) benchmarkGains(gain_nodes, "global");
 
-        // Recompute the absolute gain of each new frontier node once (position-only, so rewire-safe).
-        // This is the "recompute the gain in the cached nodes" that lets a real frontier still qualify.
-        if (marginal_gain && !batch_frontier.empty()) {
-            std::vector<double> fg, fy;
-            computeAbsoluteGainsInto(batch_frontier, fg, fy);
-            for (size_t i = 0; i < batch_frontier.size(); ++i) frontier_abs_gain[batch_frontier[i]] = fg[i];
-        }
-
+        // Qualify frontiers by OWN-VIEW absolute gain (not the marginal path-sum), else informative frontiers over seen space get dropped and AEP never terminates.
         all_global_goals.clear();
-        for (rrt_star::Node* f : frontier_nodes) {
-            if (global_gain(f) >= 0.1) all_global_goals.push_back(f);
+        for (rrt_star::Node* f : frontier_nodes)
+            if (f->absolute_gain >= 0.1) all_global_goals.push_back(f);
+    }
+
+    // Score the qualified goals by the path-union of gains (own-view absolute, or de-overlapped marginal), discounted by cost.
+    {
+        const bool use_marginal = marginal_gain;
+        ROS_INFO("[AEPlanner]: Global scoring mode = %s (path-union * discount)", use_marginal ? "MARGINAL" : "ABSOLUTE");
+        std::unordered_map<rrt_star::Node*, double> path_sum = pathUnion(root_ptr, use_marginal);
+        for (rrt_star::Node* g : all_global_goals) {
+            g->gain  = path_sum[g];
+            g->score = path_sum[g] * exp(-global_lambda * g->cost);
         }
     }
 
-    // Commit gain + score on the chosen goals. global_gain now reads the per-node absolute gain map,
-    // so overwriting node->gain here can't corrupt another goal's value. score = gain discounted by cost.
-    std::vector<double> goal_gains(all_global_goals.size());
-    for (size_t i = 0; i < all_global_goals.size(); ++i) goal_gains[i] = global_gain(all_global_goals[i]);
-    for (size_t i = 0; i < all_global_goals.size(); ++i) {
-        all_global_goals[i]->gain  = goal_gains[i];
-        all_global_goals[i]->score = goal_gains[i] * exp(-global_lambda * all_global_goals[i]->cost);
-        if (!benchmark_mode) ROS_INFO("[Goal] gain=%.3f score=%.3f", all_global_goals[i]->gain, all_global_goals[i]->score);
-    }
+    if (!benchmark_mode)
+        for (rrt_star::Node* g : all_global_goals)
+            ROS_INFO("[Goal] gain=%.3f score=%.3f", g->gain, g->score);
 
     ROS_INFO("[AEPlanner]: Global Planner Ends");
     if (!benchmark_mode) {
@@ -1656,26 +1553,11 @@ void AEPlanner::getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goa
             if (global_goals[i]->cost < best_global_node->cost) best_global_node = global_goals[i];
         } else if (global_selection == "gain") {
             if (global_goals[i]->gain > best_global_node->gain) best_global_node = global_goals[i];
-        } else {   // "score" (default): gain discounted by path cost
+        } else {
             if (global_goals[i]->score > best_global_node->score) best_global_node = global_goals[i];
         }
     }
 
-    rrt_star::Node* auxiliar_node = best_global_node;
-
-    // Skip the last best node
-    if (auxiliar_node->parent) {
-        auxiliar_node = auxiliar_node->parent;
-    }
-
-    // Update the yaw to follow the path
-    while (auxiliar_node->parent) {
-        double dx = auxiliar_node->point.x() - auxiliar_node->parent->point.x();
-        double dy = auxiliar_node->point.y() - auxiliar_node->parent->point.y();
-        auxiliar_node->point[3] = std::atan2(dy, dx);
-
-        auxiliar_node = auxiliar_node->parent;
-    }
 
     ROS_INFO("[AEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
     ROS_INFO("[AEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_node->gain, best_global_node->cost, best_global_node->score);
@@ -1825,7 +1707,6 @@ void AEPlanner::callbackUavState(const mrs_msgs::UavState::ConstPtr msg) {
         return;
     }
     ROS_INFO_ONCE("[AEPlanner]: getting UavState diagnostics");
-    //uav_state = *msg;
     geometry_msgs::Pose uav_state = msg->pose;
     double yaw = mrs_lib::getYaw(uav_state);
     pose = {uav_state.position.x, uav_state.position.y, uav_state.position.z, yaw};

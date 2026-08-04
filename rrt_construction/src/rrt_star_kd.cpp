@@ -3,22 +3,15 @@
 // Constructors
 rrt_star::rrt_star() {}
 
-rrt_star::Node::Node(const Eigen::Vector4d& p) : point(p), parent(nullptr), cost(0), gain(0), score(0) {}
+rrt_star::Node::Node(const Eigen::Vector4d& p) : point(p), parent(nullptr), cost(0), gain(0), absolute_gain(-1.0), absolute_yaw(0.0), score(0) {}
 
 // Add and clear Nodes
 void rrt_star::KDTree_data::clear() {
-    // Clear the raw coordinate mirror FIRST, then release node ownership. Every
-    // structural link (Node* parent and std::vector<Node*> children) is non-owning,
-    // so destroying `data` frees all node memory instantly with zero risk of cyclic
-    // retention or double-free.
     points.clear();
     data.clear();
 }
 
 rrt_star::Node* rrt_star::addKDTreeNode(std::unique_ptr<Node> node) {
-    // The planners set node->parent before insertion (steer_parent / chooseParent),
-    // so forward that parent to addNode to keep the parent <-> children raw links
-    // synchronized as ownership is transferred into the flat `data` vector.
     Node* parentNode = node->parent;
     Node* observer = tree_data_.addNode(std::move(node), parentNode);
     kdtree_->addPoints(tree_data_.points.size() - 1, tree_data_.points.size() - 1);
@@ -124,12 +117,12 @@ void rrt_star::steer(Node* fromNode, const Eigen::Vector3d& toPoint, double step
     }
 }
 
-void rrt_star::steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node) {
+void rrt_star::steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node, bool fixed_step) {
     double dist = (toPoint - fromNode->point.head<3>()).norm();
-    if (dist < stepSize) {
+    if (dist < stepSize && !fixed_step) {   // variable step (default)
         new_node = std::make_unique<Node>(Eigen::Vector4d(toPoint.x(), toPoint.y(), toPoint.z(), fromNode->point.w()));
         new_node->parent = fromNode;
-    } else {
+    } else {                                 // fixed step
         Eigen::Vector3d direction = (toPoint - fromNode->point.head<3>()).normalized();
         Eigen::Vector3d newPoint = fromNode->point.head<3>() + stepSize * direction;
         new_node = std::make_unique<Node>(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.w()));
@@ -200,8 +193,6 @@ void rrt_star::rewire(Node* new_node, std::vector<Node*>& nearby_nodes, double r
     for (Node* node : nearby_nodes) {
         double new_cost = new_node->cost + (node->point.head<3>() - new_node->point.head<3>()).norm();
         if (new_cost < node->cost) {
-            // Keep the children adjacency in sync with the parent link: detach
-            // `node` from its previous parent's children list before re-pointing.
             if (node->parent) {
                 std::vector<Node*>& siblings = node->parent->children;
                 siblings.erase(std::remove(siblings.begin(), siblings.end(), node), siblings.end());
@@ -210,8 +201,6 @@ void rrt_star::rewire(Node* new_node, std::vector<Node*>& nearby_nodes, double r
             node->parent = new_node;
             new_node->children.push_back(node);
             node->cost = new_cost;
-            // Downward traversal over the raw children links (never the flat data
-            // vector) to keep the whole subtree's cost consistent after the move.
             propagateCost(node);
         }
     }
@@ -250,8 +239,6 @@ void rrt_star::backtrackPathAEP(Node* node, std::vector<std::unique_ptr<Node>>& 
     }
     std::reverse(chain.begin(), chain.end());   // root first
 
-    // Emit owning deep copies, relinking parents amongst the clones so the
-    // resulting branch is self-contained and survives clearKDTree().
     path.clear();
     Node* prev_clone = nullptr;
     for (Node* original : chain) {

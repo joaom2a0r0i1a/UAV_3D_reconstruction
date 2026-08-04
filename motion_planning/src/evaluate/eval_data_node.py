@@ -11,6 +11,7 @@ import subprocess
 
 # ros
 import rospy
+import rosnode
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String, Bool
 from std_srvs.srv import SetBool, Trigger
@@ -36,6 +37,13 @@ class EvalData(object):
             '~time_limit', 0.0)  # Maximum sim duration in minutes, 0 for inf
         self.reset_ros = rospy.get_param(
             '~reset_ros', True)  # On shutdown stops the planner
+
+        # Early stop: after the planner self-terminates, wait a grace then pad coverage to time_limit and stop (gated, default off).
+        self.early_stop = rospy.get_param('~early_stop', False)
+        self.early_stop_grace = rospy.get_param('~early_stop_grace',
+                                                60.0)  # seconds after planner death
+        self.planner_seen = False      # latch: only watch for death after it was alive
+        self.grace_deadline = None     # ros-time at which to stop, once planner is gone
 
         self.eval_walltime_0 = None
         self.eval_rostime_0 = None
@@ -87,12 +95,6 @@ class EvalData(object):
                                                PointCloud2,
                                                self.points_callback,
                                                queue_size=10)
-            #self.collision_sub = rospy.Subscriber("collision",
-            #                                      String,
-            #                                      self.collision_callback,
-            #                                      queue_size=10)
-            #self.cpu_time_srv = rospy.ServiceProxy(
-            #    self.ns_planner + "/get_cpu_time", SetBool) # ERROR HEREEEEE
 
             # Finish
             self.writelog("Data folder created at '%s'." % self.eval_directory)
@@ -195,12 +197,6 @@ class EvalData(object):
             time_real = time.time() - self.eval_walltime_0
             time_ros = rospy.get_time() - self.eval_rostime_0
             map_name = "{0:05d}".format(self.eval_n_maps)
-            #try:
-            #    cpu = self.cpu_time_srv(True)
-            #except:
-            #    # Usually this means the planner died
-            #    self.stop_experiment("Planner Node died (cpu srv failed).")
-            #    return
             self.eval_writer.writerow([
                 map_name, time_ros, time_real, self.eval_n_pointclouds#,
                 #float(cpu.message)
@@ -211,11 +207,70 @@ class EvalData(object):
             self.eval_n_pointclouds = 0
             self.eval_n_maps += 1
 
+        # Early stop: planner self-shuts-down when done; wait a grace, pad the curve to time_limit, finalize the bag, stop.
+        if self.early_stop and self.time_limit > 0.0:
+            if self._planner_alive():
+                self.planner_seen = True
+            elif self.planner_seen:
+                if self.grace_deadline is None:
+                    self.writelog(
+                        "Planner terminated; %ds grace before stop." %
+                        int(self.early_stop_grace))
+                    rospy.loginfo(
+                        "[eval] Planner terminated; %ds grace before stop." %
+                        int(self.early_stop_grace))
+                    self.grace_deadline = rospy.get_time() + self.early_stop_grace
+                # 'if' (not 'elif') so grace=0 stops on the same tick termination is detected (map already saved above; no coverage lost).
+                if rospy.get_time() >= self.grace_deadline:
+                    self._pad_to_time_limit()
+                    self._finalize_rosbag()
+                    self.stop_experiment(
+                        "Planner terminated; padded curve to time_limit.")
+                    return
+
         # If the time limit is reached stop the simulation
         if self.time_limit > 0.0:
             if rospy.get_time(
             ) - self.eval_rostime_0 >= self.time_limit * 60.0:
                 self.stop_experiment("Time limit reached.")
+
+    def _planner_alive(self):
+        # Ping the planner node; False once it self-terminates (ros::shutdown).
+        full = self.ns_planner if self.ns_planner.startswith('/') \
+            else (rospy.get_namespace() + self.ns_planner)
+        try:
+            return rosnode.rosnode_ping(full, max_count=1, verbose=False)
+        except Exception:
+            return False
+
+    def _pad_to_time_limit(self):
+        # Hold the final map's coverage flat out to time_limit so the curve spans the full budget (reuses the final MapName at rising RosTime).
+        if not self.evaluate:
+            return
+        last_map = "{0:05d}".format(max(self.eval_n_maps - 1, 0))
+        t = rospy.get_time() - self.eval_rostime_0
+        wt = time.time() - self.eval_walltime_0
+        target = self.time_limit * 60.0
+        pad_rows = 0
+        # Add rows until the last one reaches/just passes target, so the curve spans
+        # the full budget (matches full-length runs, whose last row lands ~= target).
+        while t < target:
+            t += self.eval_frequency
+            self.eval_writer.writerow([last_map, t, wt, 0])
+            pad_rows += 1
+        self.eval_data_file.flush()
+        self.writelog(
+            "Padded curve with final map %s: +%d rows up to %.0f min." %
+            (last_map, pad_rows, self.time_limit))
+
+    def _finalize_rosbag(self):
+        # Clean-kill the recorder so it renames tmp_bag_*.bag.active -> .bag
+        # (a SIGKILL from teardown would leave an unusable .active).
+        try:
+            os.system("rosnode kill /uav1/rosbag_recorder >/dev/null 2>&1")
+            rospy.sleep(3.0)  # allow the rename to complete
+        except Exception:
+            pass
 
     def eval_finish(self):
         self.eval_data_file.close()
@@ -228,6 +283,13 @@ class EvalData(object):
                       (n_maps, self.eval_n_maps))
         self.eval_log_file.close()
         rospy.loginfo("On eval_data_node shutdown: closing data files.")
+        # Sentinel (written LAST, after CSV closed): tells run_experiments.sh the
+        # run finished cleanly so it can tear down the sim without racing the flush.
+        try:
+            open(os.path.join(os.path.dirname(self.eval_directory),
+                              ".run_complete"), "w").close()
+        except Exception:
+            pass
 
     def writelog(self, text):
         # In case of simulation data being stored, maintain a log file
@@ -260,10 +322,6 @@ class EvalData(object):
                       "*" * width)
         rospy.signal_shutdown(reason)
 
-    #def collision_callback(self, _):
-    #    if not self.collided:
-    #        self.collided = True
-    #        self.stop_experiment("Collision detected!")
 
 
 if __name__ == '__main__':
