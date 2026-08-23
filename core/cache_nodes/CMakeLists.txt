@@ -19,6 +19,7 @@ set(CATKIN_DEPENDENCIES
   minkindr_conversions
   message_generation
   rrt_construction
+  gain_evaluation
   geometry_msgs
   std_msgs
 )

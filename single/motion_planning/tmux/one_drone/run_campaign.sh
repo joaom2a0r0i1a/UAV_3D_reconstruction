@@ -68,7 +68,7 @@ if [ "$DRY" = 1 ]; then
   TMPD=$(mktemp -d)
   cp "$REPO/single/motion_planning/config/AEPlanner.yaml"      "$TMPD/AEPlanner.yaml"
   cp "$REPO/single/motion_planning/config/NBVPlanner.yaml"     "$TMPD/NBVPlanner.yaml"
-  cp "$REPO/core/rrt_construction/config/GainConfig.yaml"    "$TMPD/GainConfig.yaml"
+  cp "$REPO/core/gain_evaluation/config/GainConfig.yaml"    "$TMPD/GainConfig.yaml"
   cp "$REPO/core/cache_nodes/config/config.yaml"             "$TMPD/cache_config.yaml"
   cp "$REPO/single/motion_planning/tmux/one_drone/session.yml" "$TMPD/session.yml"
   YAML="$TMPD/AEPlanner.yaml"; NYAML="$TMPD/NBVPlanner.yaml"
@@ -77,7 +77,7 @@ if [ "$DRY" = 1 ]; then
 else
   YAML="$REPO/single/motion_planning/config/AEPlanner.yaml"
   NYAML="$REPO/single/motion_planning/config/NBVPlanner.yaml"
-  GCFG="$REPO/core/rrt_construction/config/GainConfig.yaml"
+  GCFG="$REPO/core/gain_evaluation/config/GainConfig.yaml"
   SESS="$REPO/single/motion_planning/tmux/one_drone/session.yml"
   CCFG="$REPO/core/cache_nodes/config/config.yaml"
 fi
@@ -155,7 +155,7 @@ if [ "$DRY" = 1 ]; then
   echo; echo "### DRY-RUN diffs (temp copies vs repo) ###"
   for f in AEPlanner.yaml NBVPlanner.yaml GainConfig.yaml cache_config.yaml session.yml; do
     case "$f" in
-      GainConfig.yaml)   real="$REPO/core/rrt_construction/config/$f" ;;
+      GainConfig.yaml)   real="$REPO/core/gain_evaluation/config/$f" ;;
       cache_config.yaml) real="$REPO/core/cache_nodes/config/config.yaml" ;;
       session.yml)       real="$REPO/single/motion_planning/tmux/one_drone/$f" ;;
       *)                 real="$REPO/single/motion_planning/config/$f" ;;

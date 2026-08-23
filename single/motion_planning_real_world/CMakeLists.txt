@@ -27,6 +27,7 @@ set(CATKIN_DEPENDENCIES
   voxblox_ros
   minkindr_conversions
   motion_planning
+  gain_evaluation
   cache_nodes
   mavros
   mavros_msgs

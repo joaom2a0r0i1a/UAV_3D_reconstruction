@@ -25,6 +25,7 @@ set(CATKIN_DEPENDENCIES
   voxblox_ros
   minkindr_conversions
   rrt_construction
+  gain_evaluation
   cache_nodes
   )
   

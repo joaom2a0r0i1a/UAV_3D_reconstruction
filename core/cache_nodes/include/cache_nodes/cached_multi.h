@@ -20,7 +20,7 @@
 #include <minkindr_conversions/kindr_msg.h>
 
 #include <rrt_construction/rrt_star_kd.h>
-#include <rrt_construction/gain_evaluator.h>
+#include <gain_evaluation/gain_evaluator.h>
 
 #include <Eigen/Dense>
 #include <vector>

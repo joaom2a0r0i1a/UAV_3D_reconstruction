@@ -16,7 +16,7 @@
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning" type="NBV" name="planner_node" output="screen">
-      <rosparam file="$(find rrt_construction)/config/GainConfig.yaml" />
+      <rosparam file="$(find gain_evaluation)/config/GainConfig.yaml" />
       <rosparam file="$(find motion_planning)/config/NBVPlanner.yaml" />
 
       <!-- Sweep overrides, applied after the yaml so they win. -->

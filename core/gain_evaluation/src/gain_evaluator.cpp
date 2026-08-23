@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <algorithm>
 
-#include "rrt_construction/gain_evaluator.h"
-#include "rrt_construction/gpu_raycast_launch.h"
+#include "gain_evaluation/gain_evaluator.h"
+#include "gain_evaluation/gpu_raycast_launch.h"
 
 // Bundle the cached map / sensor state into the launcher ABI structs so each
 // GPU call passes a couple of grouped arguments instead of a dozen scalars.

@@ -1,24 +1,17 @@
 <?xml version="1.0"?>
 <package format="2">
-
-  <name>rrt_construction</name>
+  <name>gain_evaluation</name>
   <version>0.0.0</version>
-  <description>The rrt construction package</description>
-
+  <description>Information-gain evaluation package.</description>
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
-  <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>
-
-  <license>TODO</license>
+  <license>BSD</license>
 
   <buildtool_depend>catkin</buildtool_depend>
-
   <depend>rospy</depend>
   <depend>roscpp</depend>
   <depend>mrs_msgs</depend>
   <depend>mrs_lib</depend>
   <depend>std_srvs</depend>
-  
-  <export>
-  </export>
-
+  <depend>voxblox_ros</depend>
+  <depend>rrt_construction</depend>
 </package>

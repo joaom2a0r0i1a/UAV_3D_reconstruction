@@ -29,7 +29,7 @@
 #include <random>
 #include <algorithm>
 
-#include "rrt_construction/gpu_raycast_launch.h"
+#include "gain_evaluation/gpu_raycast_launch.h"
 
 // One synthetic wavefront held in host memory.
 struct Batch {

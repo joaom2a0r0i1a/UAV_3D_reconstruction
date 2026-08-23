@@ -14,7 +14,7 @@
 
 #include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/kino_rrt_star_kd.h>
-#include <rrt_construction/gpu_raycast_launch.h>
+#include <gain_evaluation/gpu_raycast_launch.h>
 
 #include <unordered_set>
 #include <cmath>

@@ -21,6 +21,7 @@
   <depend>voxblox_ros</depend>
   <depend>std_srvs</depend>
   <depend>rrt_construction</depend>
+  <depend>gain_evaluation</depend>
   <depend>cache_nodes</depend>
   <depend>mavros</depend>
   <depend>mavros_msgs</depend>

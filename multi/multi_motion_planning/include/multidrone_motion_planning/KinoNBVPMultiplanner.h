@@ -33,7 +33,7 @@
 #include <multiagent_collision_check/Segment.h>
 #include <multiagent_collision_check/multiagent_collision_checker.h>
 #include <rrt_construction/kino_rrt_star_kd.h>
-#include <rrt_construction/gain_evaluator.h>
+#include <gain_evaluation/gain_evaluator.h>
 
 typedef enum
 {

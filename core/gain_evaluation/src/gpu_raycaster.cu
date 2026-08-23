@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include <rrt_construction/gpu_raycast_math.cuh>
-#include <rrt_construction/gpu_raycast_launch.h>
+#include <gain_evaluation/gpu_raycast_math.cuh>
+#include <gain_evaluation/gpu_raycast_launch.h>
 
 // Candidates per tile for the split launcher's interval scratch (bounds device memory).
 #define SPLIT_CHUNK 128
