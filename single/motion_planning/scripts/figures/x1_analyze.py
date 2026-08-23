@@ -9,8 +9,8 @@ import csv, os, math, statistics as st
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-LOG = os.environ.get("X1_LOG", "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone/variants_logs")
-OUT = "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/motion_planning/data"
+LOG = os.environ.get("X1_LOG", "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone/variants_logs")
+OUT = "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/data"
 NS  = [50, 100, 500, 1000, 5000, 10000]
 X1B_N   = os.environ.get("X1B_N", "all")     # "all" = pool every tree size (clean slope separation); or a single N
 X1B_DMAX = int(os.environ.get("X1B_DMAX", "25"))   # max depth shown

@@ -72,8 +72,8 @@ windows:
       layout: tiled
       panes:
         #- 'history -s python3 eval_paths.py'
-        #- waitForControl; roslaunch motion_planning NBVPlanner.launch
-        - waitForControl; roslaunch motion_planning AEPlanner.launch
+        - waitForControl; roslaunch motion_planning NBVPlanner.launch
+        #- waitForControl; roslaunch motion_planning AEPlanner.launch
         #- waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
         #- waitForControl; roslaunch motion_planning KinoAEPlanner.launch
         - waitForControl; roslaunch motion_planning experiment_starter.launch
@@ -96,10 +96,8 @@ windows:
       layout: tiled
       panes:
         - waitForControl; roslaunch motion_planning cam_to_ptcld.launch
-        - waitForControl; roslaunch motion_planning process_pointcloud.launch 
-          config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
-          config_pcl_freespace_filter_rs_front_pitched:=./config/rs_front_pitched_freespace_filter.yaml 
-          config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+        - waitForControl; roslaunch motion_planning process_pointcloud.launch
+          config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml
   #- rqt_plot:
       #layout: tiled
       #panes:

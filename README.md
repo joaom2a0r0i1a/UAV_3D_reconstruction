@@ -84,7 +84,7 @@ catkin build
 To start the simulation with one drone:
 
 ```bash
-cd ~/catkin_ws/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone
+cd ~/catkin_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone
 ./start.sh
 ```
 ### Multi-Drone Simulation

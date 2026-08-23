@@ -25,8 +25,8 @@ SIM_TIME="${3:-950}"
 SPEC="${4:-}"
 MAX_ATTEMPTS_PER_RUN=5
 
-ONE_CTR=/home/ros1/ros1_motion_ws/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone
-DATA_HOST=/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/motion_planning/data
+ONE_CTR=/home/ros1/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone
+DATA_HOST=/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/data
 LABELDIR="$DATA_HOST/$LABEL"
 
 csv_rows() { wc -l < "$1/voxblox_data.csv" 2>/dev/null || echo 0; }

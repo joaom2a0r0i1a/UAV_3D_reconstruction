@@ -10,8 +10,8 @@ import os, re, statistics as st
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-LOG = "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone/variants_logs"
-OUT = "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/motion_planning/data"
+LOG = "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone/variants_logs"
+OUT = "/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/data"
 NS  = [50, 100, 500, 1000, 5000, 10000]
 BUDGET, BUDGET2 = 500.0, 1000.0
 # Fixed-yaw X2 by default; set X2_TAG=timing_yawopt_n X2_SUFFIX=_yawopt for the yaw-optimization run.

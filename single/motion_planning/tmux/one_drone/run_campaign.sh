@@ -46,8 +46,8 @@ done
 [ -n "$CONF" ] && [ -f "$CONF" ] || { echo "usage: $0 [--dry-run|--eval-only|--no-eval] [-N n] [-T s] <campaign.conf>"; exit 2; }
 
 REPO=/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction
-DATA="$REPO/motion_planning/data"
-LOGDIR="$REPO/motion_planning/tmux/one_drone/variants_logs"
+DATA="$REPO/single/motion_planning/data"
+LOGDIR="$REPO/single/motion_planning/tmux/one_drone/variants_logs"
 mkdir -p "$LOGDIR"
 
 # ---- campaign defaults, then load ----
@@ -66,24 +66,24 @@ SUMMARY="$LOGDIR/$SUMMARY"
 # ---- config file targets: real files, or temp copies under --dry-run --------
 if [ "$DRY" = 1 ]; then
   TMPD=$(mktemp -d)
-  cp "$REPO/motion_planning/config/AEPlanner.yaml"      "$TMPD/AEPlanner.yaml"
-  cp "$REPO/motion_planning/config/NBVPlanner.yaml"     "$TMPD/NBVPlanner.yaml"
-  cp "$REPO/rrt_construction/config/GainConfig.yaml"    "$TMPD/GainConfig.yaml"
-  cp "$REPO/cache_nodes/config/config.yaml"             "$TMPD/cache_config.yaml"
-  cp "$REPO/motion_planning/tmux/one_drone/session.yml" "$TMPD/session.yml"
+  cp "$REPO/single/motion_planning/config/AEPlanner.yaml"      "$TMPD/AEPlanner.yaml"
+  cp "$REPO/single/motion_planning/config/NBVPlanner.yaml"     "$TMPD/NBVPlanner.yaml"
+  cp "$REPO/core/rrt_construction/config/GainConfig.yaml"    "$TMPD/GainConfig.yaml"
+  cp "$REPO/core/cache_nodes/config/config.yaml"             "$TMPD/cache_config.yaml"
+  cp "$REPO/single/motion_planning/tmux/one_drone/session.yml" "$TMPD/session.yml"
   YAML="$TMPD/AEPlanner.yaml"; NYAML="$TMPD/NBVPlanner.yaml"
   GCFG="$TMPD/GainConfig.yaml"; SESS="$TMPD/session.yml"; CCFG="$TMPD/cache_config.yaml"
   echo "### DRY-RUN — editing temp copies in $TMPD, no launches, no real writes ###"
 else
-  YAML="$REPO/motion_planning/config/AEPlanner.yaml"
-  NYAML="$REPO/motion_planning/config/NBVPlanner.yaml"
-  GCFG="$REPO/rrt_construction/config/GainConfig.yaml"
-  SESS="$REPO/motion_planning/tmux/one_drone/session.yml"
-  CCFG="$REPO/cache_nodes/config/config.yaml"
+  YAML="$REPO/single/motion_planning/config/AEPlanner.yaml"
+  NYAML="$REPO/single/motion_planning/config/NBVPlanner.yaml"
+  GCFG="$REPO/core/rrt_construction/config/GainConfig.yaml"
+  SESS="$REPO/single/motion_planning/tmux/one_drone/session.yml"
+  CCFG="$REPO/core/cache_nodes/config/config.yaml"
 fi
 
 # shellcheck disable=SC1091
-source "$REPO/motion_planning/tmux/one_drone/lib_campaign.sh"
+source "$REPO/single/motion_planning/tmux/one_drone/lib_campaign.sh"
 
 # T budget: conf/-T value if set, else the per-world default (minutes -> seconds).
 # +STARTUP_TOL_S: eval_data_node's time_limit counts from sim-ready (t=0), but the planner only
@@ -155,10 +155,10 @@ if [ "$DRY" = 1 ]; then
   echo; echo "### DRY-RUN diffs (temp copies vs repo) ###"
   for f in AEPlanner.yaml NBVPlanner.yaml GainConfig.yaml cache_config.yaml session.yml; do
     case "$f" in
-      GainConfig.yaml)   real="$REPO/rrt_construction/config/$f" ;;
-      cache_config.yaml) real="$REPO/cache_nodes/config/config.yaml" ;;
-      session.yml)       real="$REPO/motion_planning/tmux/one_drone/$f" ;;
-      *)                 real="$REPO/motion_planning/config/$f" ;;
+      GainConfig.yaml)   real="$REPO/core/rrt_construction/config/$f" ;;
+      cache_config.yaml) real="$REPO/core/cache_nodes/config/config.yaml" ;;
+      session.yml)       real="$REPO/single/motion_planning/tmux/one_drone/$f" ;;
+      *)                 real="$REPO/single/motion_planning/config/$f" ;;
     esac
     d=$(diff "$real" "$TMPD/$f" 2>/dev/null)
     [ -n "$d" ] && { echo "--- $f ---"; echo "$d"; }
