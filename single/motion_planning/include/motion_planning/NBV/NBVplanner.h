@@ -67,7 +67,6 @@ public:
     void NBV();
 
     // Fixed-yaw gain evaluation (duplicated from AEP; NBVP keeps each node's random yaw).
-    void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes);
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "nbvp");
     std::vector<float> parentCamRows(float yaw);

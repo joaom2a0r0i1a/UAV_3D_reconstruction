@@ -199,116 +199,13 @@ void NBVPlanner::GetTransformation() {
     segment_evaluator.setCameraExtrinsics(T_C_B);
 }
 
-std::vector<float> NBVPlanner::parentCamRows(float yaw) {
-    const float pitch = 10.0f * M_PI / 180.0f;
-    float cos_y = cosf(yaw), sin_y = sinf(yaw);
-    float cos_p = cosf(pitch), sin_p = sinf(pitch);
-    return { sin_y,          -cos_y,          0.0f,
-             -sin_p * cos_y, -sin_p * sin_y, -cos_p,
-              cos_p * cos_y,  cos_p * sin_y, -sin_p };
-}
-
-// Batched multi-ancestor marginal gain at each node's FIXED yaw (generation-ordered).
-void NBVPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes) {
-    // Kernel time is summed across depth levels (one GPU launch each) for the whole-tree total.
-    last_marg_kernel_ms_ = 0.0f;
-    if (nodes.empty()) return;
-    const int per = segment_evaluator.depthImagePixels();
-
-    std::map<int, std::vector<size_t>> levels;
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        int depth = 0;
-        for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent) ++depth;
-        levels[depth].push_back(i);
-    }
-
-    for (const auto& level : levels) {
-        const std::vector<size_t>& idxs = level.second;
-        const size_t n = idxs.size();
-
-        std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n), fixed_yaws(n);
-        std::vector<int>   anc_offsets(1, 0);
-        std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
-        std::vector<int>   depth_idx;
-        std::unordered_map<rrt_star::Node*, int> pool_slot;   // each ancestor's depth buffer stored once
-        for (size_t li = 0; li < n; ++li) {
-            rrt_star::Node* nd = nodes[idxs[li]];
-            cand_x_f[li] = (float)nd->point.x();
-            cand_y_f[li] = (float)nd->point.y();
-            cand_z_f[li] = (float)nd->point.z();
-            fixed_yaws[li] = (float)nd->point[3];
-            for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
-                std::vector<float> R_flat = parentCamRows((float)a->point[3]);
-                anc_pos.push_back((float)a->point.x());
-                anc_pos.push_back((float)a->point.y());
-                anc_pos.push_back((float)a->point.z());
-                anc_yaw.push_back((float)a->point[3]);
-                anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
-                auto slot = pool_slot.find(a);
-                if (slot == pool_slot.end()) {
-                    slot = pool_slot.emplace(a, (int)pool_slot.size()).first;
-                    if ((int)a->depth_buffer.size() == per)
-                        anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-                    else
-                        anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
-                }
-                depth_idx.push_back(slot->second);
-            }
-            anc_offsets.push_back((int)(anc_pos.size() / 3));
-        }
-
-        std::vector<float> depth_out;
-        float ms = 0.0f;
-        auto results = segment_evaluator.computeMarginalGainBatchGPU(
-            cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
-            marginal_split, depth_out, ms, optimize_yaw ? nullptr : &fixed_yaws,
-            &depth_idx, (int)pool_slot.size());
-        last_marg_kernel_ms_ += ms;
-
-        for (size_t li = 0; li < n; ++li) {
-            rrt_star::Node* node = nodes[idxs[li]];
-            node->gain = results[li].first;
-            if (optimize_yaw) node->point[3] = results[li].second;
-            node->depth_buffer.assign(depth_out.begin() + (size_t)li * per,
-                                      depth_out.begin() + (size_t)(li + 1) * per);
-        }
-    }
-}
+std::vector<float> NBVPlanner::parentCamRows(float yaw) { return segment_evaluator.parentCamRows(yaw); }
 
 // Evaluate node gains per (marginal_gain, eval_compute), always at each node's fixed yaw.
 void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
-    if (nodes.empty()) return;
-    const bool gpu = (eval_compute == "gpu");
-
-    if (marginal_gain && gpu) {
-        evaluateMarginalGainsBatched(nodes);
-    } else if (!marginal_gain && gpu) {
-        std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
-        std::vector<float> fixed_yaws(nodes.size());
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z();
-            fixed_yaws[i] = (float)nodes[i]->point[3];
-        }
-        last_abs_kernel_ms_ = 0.0f;
-        auto res = segment_evaluator.computeGainBatchGPU(x, y, z, optimize_yaw ? nullptr : &fixed_yaws, &last_abs_kernel_ms_);
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            nodes[i]->gain = res[i].first;
-            if (optimize_yaw) nodes[i]->point[3] = res[i].second;
-        }
-    } else {
-        for (rrt_star::Node* nd : nodes) {
-            std::pair<double, double> r;
-            if (marginal_gain) {
-                if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
-                r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, optimize_yaw ? NAN : nd->point[3]);
-            } else {
-                Eigen::Vector4d pose = nd->point;
-                r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose, optimize_yaw ? NAN : nd->point[3]);
-            }
-            nd->gain = r.first;
-            if (optimize_yaw) nd->point[3] = r.second;
-        }
-    }
+    // Shared gain pipeline (core/rrt_construction); RH-NBVP does not track absolute gain.
+    GainEvaluator::GainConfig cfg{marginal_gain, optimize_yaw, eval_compute, marginal_split, /*track_absolute=*/false};
+    segment_evaluator.evaluateGains(nodes, flat_map_, cfg, last_marg_kernel_ms_, last_abs_kernel_ms_);
 }
 
 double NBVPlanner::computeSingleParentGainGPU(rrt_star::Node* node) {
@@ -327,11 +224,7 @@ double NBVPlanner::computeSingleParentGainGPU(rrt_star::Node* node) {
 }
 
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
-void NBVPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) {
-    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
-    std::stable_sort(nodes.begin(), nodes.end(),
-                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
-}
+void NBVPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { segment_evaluator.sortByDepth(nodes); }
 
 std::vector<rrt_star::Node*> NBVPlanner::collectTreeNodes() {
     std::vector<rrt_star::Node*> nodes;

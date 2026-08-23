@@ -40,8 +40,6 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
     param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
-    param_loader.loadParam("evaluation/ancestor_cull_mode", ancestor_cull_mode, 0);
-    param_loader.loadParam("evaluation/ancestor_cull_kd", ancestor_cull_kd, false);   // false=walk, true=whole-tree KD
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -1012,191 +1010,23 @@ void AEPlanner::localPlanner() {
     next_best_node = best_branch[1].get();
 }
 
-std::vector<float> AEPlanner::parentCamRows(float yaw) {
-    const float pitch = (float)camera_pitch;
-    float cos_y = cosf(yaw), sin_y = sinf(yaw);
-    float cos_p = cosf(pitch), sin_p = sinf(pitch);
-    return { sin_y,          -cos_y,          0.0f,
-             -sin_p * cos_y, -sin_p * sin_y, -cos_p,
-              cos_p * cos_y,  cos_p * sin_y, -sin_p };
-}
+std::vector<float> AEPlanner::parentCamRows(float yaw) { return segment_evaluator.parentCamRows(yaw); }
 
-// Ancestor cull: broad-phase distance then sphere-vs-view-pyramid SAT (mode 1=horizontal, 2=+vertical); culls only on a proven separating plane.
-bool AEPlanner::ancestorMayOverlap(const rrt_star::Node* cand, const rrt_star::Node* anc, int mode) const {
-    const double r = max_distance;                       // candidate sphere radius
-    const double vx = cand->point.x() - anc->point.x();  // apex(ancestor) -> candidate
-    const double vy = cand->point.y() - anc->point.y();
-    const double vz = cand->point.z() - anc->point.z();
-    if (vx * vx + vy * vy + vz * vz > (2.0 * r) * (2.0 * r)) return false;   // broad phase: beyond reach
-    const double pitch = camera_pitch;                   // camera pitch (matches parentCamRows)
-    const double cy = std::cos((double)anc->point[3]), sy = std::sin((double)anc->point[3]);
-    const double cp = std::cos(pitch), sp = std::sin(pitch);
-    const double Rt[3] = { sy, -cy, 0.0 };               // camera Right  (row0)
-    const double Fw[3] = { cp * cy, cp * sy, -sp };      // camera Forward (row2, optical axis)
-    const double hh = 0.5 * horizontal_fov, ch = std::cos(hh), sh = std::sin(hh);   // horizontal side planes
-    if (( ch * Rt[0] - sh * Fw[0]) * vx + ( ch * Rt[1] - sh * Fw[1]) * vy + ( ch * Rt[2] - sh * Fw[2]) * vz > r) return false; // right
-    if ((-ch * Rt[0] - sh * Fw[0]) * vx + (-ch * Rt[1] - sh * Fw[1]) * vy + (-ch * Rt[2] - sh * Fw[2]) * vz > r) return false; // left
-    if (mode == 2) {                                     // vertical side planes; Up = -row1 (row1 = Down)
-        const double Up[3] = { sp * cy, sp * sy, cp };
-        const double hv = 0.5 * vertical_fov, cv = std::cos(hv), sv = std::sin(hv);
-        if (( cv * Up[0] - sv * Fw[0]) * vx + ( cv * Up[1] - sv * Fw[1]) * vy + ( cv * Up[2] - sv * Fw[2]) * vz > r) return false; // top
-        if ((-cv * Up[0] - sv * Fw[0]) * vx + (-cv * Up[1] - sv * Fw[1]) * vy + (-cv * Up[2] - sv * Fw[2]) * vz > r) return false; // bottom
-    }
-    return true;                                         // no separating plane -> keep
-}
 
-// Preorder Euler tour from root (in = entry time, out = max entry time in subtree) so `a` is an ancestor of `d` iff in[a] <= in[d] <= out[a]; iterative to survive deep trees. Only used by the optional KD path.
-void AEPlanner::computeEulerLabels() {
-    euler_in_.clear();
-    euler_out_.clear();
-    const auto& all = RRTStar.getNodes();
-    if (all.empty()) return;
-    euler_in_.reserve(all.size() * 2);
-    euler_out_.reserve(all.size() * 2);
-    std::vector<std::pair<rrt_star::Node*, bool>> stk;   // (node, children-already-pushed?)
-    stk.emplace_back(all[0].get(), false);
-    int t = 0;
-    while (!stk.empty()) {
-        rrt_star::Node* v = stk.back().first;
-        const bool expanded = stk.back().second;
-        stk.pop_back();
-        if (!expanded) {
-            euler_in_[v] = t++;
-            stk.emplace_back(v, true);
-            for (rrt_star::Node* c : v->children) stk.emplace_back(c, false);
-        } else {
-            int m = euler_in_[v];
-            for (rrt_star::Node* c : v->children) { int co = euler_out_[c]; if (co > m) m = co; }
-            euler_out_[v] = m;
-        }
-    }
-}
 
-bool AEPlanner::isAncestorEuler(const rrt_star::Node* a, const rrt_star::Node* d) const {
-    auto ia = euler_in_.find(a);  if (ia == euler_in_.end()) return false;
-    auto id = euler_in_.find(d);  if (id == euler_in_.end()) return false;
-    auto oa = euler_out_.find(a); if (oa == euler_out_.end()) return false;
-    return ia->second <= id->second && id->second <= oa->second;
-}
 
-void AEPlanner::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool use_fixed_yaw) {
-    if (nodes.empty()) return;
-    const int per = segment_evaluator.depthImagePixels();
-    bench_kernel_ms_ = 0.0;   // accumulate the CUDA-event device time across all generation levels
 
-    if (ancestor_cull_mode != 0 && ancestor_cull_kd) computeEulerLabels();   // only the optional KD path needs it
 
-    // Bucket by tree depth so each ancestor is evaluated (its depth buffer stored) before its descendants.
-    std::map<int, std::vector<size_t>> levels;
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        int depth = 0;
-        for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent) ++depth;
-        levels[depth].push_back(i);
-    }
 
-    for (const auto& level : levels) {
-        const std::vector<size_t>& idxs = level.second;
-        const size_t n = idxs.size();
 
-        std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n), fixed_yaws(n);
-        std::vector<int>   anc_offsets(1, 0);
-        std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
-        std::vector<int>   depth_idx;
-        std::unordered_map<rrt_star::Node*, int> pool_slot;   // each ancestor's depth buffer stored once
-        for (size_t li = 0; li < n; ++li) {
-            rrt_star::Node* nd = nodes[idxs[li]];
-            cand_x_f[li] = (float)nd->point.x();
-            cand_y_f[li] = (float)nd->point.y();
-            cand_z_f[li] = (float)nd->point.z();
-            fixed_yaws[li] = (float)nd->point[3];   // used only when use_fixed_yaw (evaluate at the node's own heading)
-
-            // Append one ancestor's pose + depth buffer to the flattened kernel input.
-            auto push_anc = [&](rrt_star::Node* a) {
-                std::vector<float> R_flat = parentCamRows((float)a->point[3]);
-                anc_pos.push_back((float)a->point.x());
-                anc_pos.push_back((float)a->point.y());
-                anc_pos.push_back((float)a->point.z());
-                anc_yaw.push_back((float)a->point[3]);
-                anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
-                auto slot = pool_slot.find(a);
-                if (slot == pool_slot.end()) {
-                    slot = pool_slot.emplace(a, (int)pool_slot.size()).first;
-                    if ((int)a->depth_buffer.size() == per)
-                        anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-                    else
-                        anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
-                }
-                depth_idx.push_back(slot->second);
-            };
-
-            if (ancestor_cull_mode == 0 || !ancestor_cull_kd) {
-                // Default: walk the parent chain (depth is small in the bushy tree), cull each ancestor.
-                for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent)
-                    if (ancestor_cull_mode == 0 || ancestorMayOverlap(nd, a, ancestor_cull_mode)) push_anc(a);
-            } else {
-                // Optional whole-tree KD path: radius query -> O(1) Euler ancestor filter -> SAT. Sort
-                // deepest-first (descending euler_in) to match the walk's accumulation order (stable gains).
-                RRTStar.findNearbyKDRadius(nd, 2.0 * max_distance, cull_near_);
-                std::vector<rrt_star::Node*> anc;
-                for (rrt_star::Node* a : cull_near_)
-                    if (a != nd && isAncestorEuler(a, nd) && ancestorMayOverlap(nd, a, ancestor_cull_mode))
-                        anc.push_back(a);
-                std::sort(anc.begin(), anc.end(),
-                          [&](rrt_star::Node* x, rrt_star::Node* y) { return euler_in_.at(x) > euler_in_.at(y); });
-                for (rrt_star::Node* a : anc) push_anc(a);
-            }
-            anc_offsets.push_back((int)(anc_pos.size() / 3));
-        }
-
-        std::vector<float> depth_out;
-        float ms = 0.0f;
-        auto results = segment_evaluator.computeMarginalGainBatchGPU(
-            cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
-            marginal_split, depth_out, ms, use_fixed_yaw ? &fixed_yaws : nullptr,
-            &depth_idx, (int)pool_slot.size());
-        bench_kernel_ms_ += ms;   // device (CUDA-event) kernel time for this level
-
-        for (size_t li = 0; li < n; ++li) {
-            rrt_star::Node* node = nodes[idxs[li]];
-            node->gain = results[li].first;
-            node->point[3] = results[li].second;
-            node->depth_buffer.assign(depth_out.begin() + (size_t)li * per,
-                                      depth_out.begin() + (size_t)(li + 1) * per);
-        }
-    }
-}
 
 void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
-    if (nodes.empty()) return;
-    const bool gpu = (eval_compute == "gpu");
-
-    if (marginal_gain && gpu) {
-        evaluateMarginalGainsBatched(nodes);   // batched multi-ancestor marginal (generation-ordered)
-        fillAbsoluteGains(nodes);              // own-view gain alongside the marginal (rewire-invariant, once)
-    } else if (!marginal_gain && gpu) {
-        std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
-        for (size_t i = 0; i < nodes.size(); ++i) { x[i] = nodes[i]->point.x(); y[i] = nodes[i]->point.y(); z[i] = nodes[i]->point.z(); }
-        auto res = segment_evaluator.computeGainBatchGPU(x, y, z);
-        // Absolute mode: node gain/yaw IS the own-view result, so absolute_gain/absolute_yaw mirror it.
-        for (size_t i = 0; i < nodes.size(); ++i) { nodes[i]->gain = res[i].first; nodes[i]->point[3] = res[i].second; nodes[i]->absolute_gain = res[i].first; nodes[i]->absolute_yaw = res[i].second; }
-    } else {
-        // CPU sequential: marginal -> hash (immediate parent); absolute -> flat-map raycast.
-        for (rrt_star::Node* nd : nodes) {
-            std::pair<double, double> r;
-            if (marginal_gain) {
-                if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
-                r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd);
-            } else {
-                Eigen::Vector4d pose = nd->point;
-                r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose);
-                nd->absolute_gain = r.first;    // absolute mode: gain/yaw == own-view result
-                nd->absolute_yaw  = r.second;
-            }
-            nd->gain = r.first;
-            nd->point[3] = r.second;
-        }
-        if (marginal_gain) fillAbsoluteGains(nodes);   // own-view gain for the CPU-marginal path
-    }
+    // Shared gain pipeline (core/rrt_construction). AEP always optimizes yaw and tracks the own-view
+    // absolute gain/yaw alongside the marginal (for global-planner scoring).
+    GainEvaluator::GainConfig cfg{marginal_gain, /*optimize_yaw=*/true, eval_compute, marginal_split, /*track_absolute=*/true};
+    float marg_ms = 0.0f, abs_ms = 0.0f;
+    segment_evaluator.evaluateGains(nodes, flat_map_, cfg, marg_ms, abs_ms);
+    bench_kernel_ms_ = marg_ms;   // device (CUDA-event) ms of the marginal batch
 }
 
 double AEPlanner::computeV2SingleParent(rrt_star::Node* node) {
@@ -1240,11 +1070,7 @@ double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw) 
 }
 
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
-void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) {
-    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
-    std::stable_sort(nodes.begin(), nodes.end(),
-                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
-}
+void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { segment_evaluator.sortByDepth(nodes); }
 
 std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() {
     std::vector<rrt_star::Node*> nodes;
@@ -1264,26 +1090,7 @@ std::unordered_map<rrt_star::Node*, double> AEPlanner::pathUnion(rrt_star::Node*
     return path_sum;
 }
 
-// Own-view absolute gain is position-only => rewire-invariant; compute once per node (sentinel < 0) and never touch gain/yaw/score.
-void AEPlanner::fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes) {
-    std::vector<rrt_star::Node*> todo;
-    todo.reserve(nodes.size());
-    for (rrt_star::Node* n : nodes) if (n->absolute_gain < 0.0) todo.push_back(n);
-    if (todo.empty()) return;
 
-    if (eval_compute == "gpu") {
-        std::vector<double> x(todo.size()), y(todo.size()), z(todo.size());
-        for (size_t i = 0; i < todo.size(); ++i) { x[i] = todo[i]->point.x(); y[i] = todo[i]->point.y(); z[i] = todo[i]->point.z(); }
-        auto res = segment_evaluator.computeGainBatchGPU(x, y, z);   // own-view (no fixed yaw, no ancestors); map already resident
-        for (size_t i = 0; i < todo.size(); ++i) { todo[i]->absolute_gain = res[i].first; todo[i]->absolute_yaw = res[i].second; }
-    } else {
-        for (size_t i = 0; i < todo.size(); ++i) {
-            Eigen::Vector4d p = todo[i]->point;
-            auto r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, p);
-            todo[i]->absolute_gain = r.first; todo[i]->absolute_yaw = r.second;
-        }
-    }
-}
 
 void AEPlanner::cacheHighGainNodes() {
     // Cache a frontier when its OWN view still sees new space (absolute_gain > g_zero), else marginal mode hides frontiers and never terminates.
@@ -1347,27 +1154,6 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     double t_split_host = timed(true, "gpu", true);  double t_split_dev = bench_kernel_ms_;
     std::vector<double> g_split(n); for (size_t i = 0; i < n; ++i) g_split[i] = nodes[i]->gain;
 
-    // Item 1 validation: g_fused (mode 0) is the no-cull reference; re-eval fused under 2D/3D on the same tree, report max|dgain| + timing + walk-vs-radius set diff, then restore depth buffers.
-    if (ancestor_cull_mode == 0) {
-        std::vector<std::vector<float>> save_db(n);
-        for (size_t i = 0; i < n; ++i) save_db[i] = nodes[i]->depth_buffer;
-        for (int m = 1; m <= 2; ++m) {
-            ancestor_cull_mode = m;
-            double t_cull = timed(true, "gpu", false);                 // fused marginal under mode m
-            double gmax = 0.0;
-            for (size_t i = 0; i < n; ++i) gmax = std::max(gmax, std::fabs(nodes[i]->gain - g_fused[i]));
-            long kept = 0, cons = 0;
-            for (size_t i = 0; i < n; ++i)
-                for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent) {
-                    ++cons; if (ancestorMayOverlap(nodes[i], a, m)) ++kept;
-                }
-            ROS_WARN("[CULL-CHECK] phase=%s mode=%s n=%zu max|dgain|=%.3e host_ms(off/on)=%.3f/%.3f kept=%ld/%ld (%.1f%%)",
-                     phase, (m == 1 ? "2D" : "3D"), n, gmax, t_fused_host, t_cull,
-                     kept, cons, cons ? 100.0 * (double)kept / (double)cons : 100.0);
-        }
-        ancestor_cull_mode = 0;
-        for (size_t i = 0; i < n; ++i) nodes[i]->depth_buffer = save_db[i];
-    }
 
     bench_ms_fused += t_fused_host; bench_ms_split += t_split_host; bench_ms_mcpu += t_mcpu;
     bench_ms_agpu += t_agpu; bench_ms_acpu += t_acpu; bench_ms_v2 += t_v2; bench_ms_v4 += t_v4;
@@ -1390,7 +1176,7 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
                << t_acpu << "," << t_mcpu << "\n";
     }
     std::ofstream gf = open_csv("benchmark_gains.csv",
-        "Phase,NodeIdx,Ancestors,g_fused,g_split,g_abs_gpu,g_abs_cpu,hash_cpu1p,v2_gpu1p,v4_multi,AncKept");
+        "Phase,NodeIdx,Ancestors,g_fused,g_split,g_abs_gpu,g_abs_cpu,hash_cpu1p,v2_gpu1p,v4_multi");
 
     // Restore gain/yaw + config (leave depth buffers as the split pass set them).
     marginal_gain = save_marg; eval_compute = save_comp; marginal_split = save_split;
@@ -1399,16 +1185,8 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     // Per-node check: GPU single-parent (v2) vs CPU hash (truth) against the same parent view; logs ancestor count for the gain study.
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
-        // AncKept diagnostic: of all ancestors (Ancestors), how many are within broad-phase reach (2*max_distance).
-        int anc = 0, anc_kept = 0;
-        const double cull_r2 = (2.0 * max_distance) * (2.0 * max_distance);
-        for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
-            ++anc;
-            double dx = a->point.x() - nd->point.x();
-            double dy = a->point.y() - nd->point.y();
-            double dz = a->point.z() - nd->point.z();
-            if (dx * dx + dy * dy + dz * dz <= cull_r2) ++anc_kept;
-        }
+        int anc = 0;
+        for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++anc;
         double v2 = computeV2SingleParent(nd);
         double v4 = computeV4MultiAncestor(nd);   // before hash's populateParentHistory
         double sg = nd->gain, sy = nd->point[3];   // hash overwrites gain/yaw; restore right after
@@ -1419,7 +1197,7 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
         bench_v2_err_sum += err; if (err > bench_v2_err_max) bench_v2_err_max = err;
         if (gf.is_open())
             gf << phase << "," << i << "," << anc << "," << g_fused[i] << "," << g_split[i] << "," << g_agpu[i]
-               << "," << g_acpu[i] << "," << hash << "," << v2 << "," << v4 << "," << anc_kept << "\n";
+               << "," << g_acpu[i] << "," << hash << "," << v2 << "," << v4 << "\n";
     }
 }
 

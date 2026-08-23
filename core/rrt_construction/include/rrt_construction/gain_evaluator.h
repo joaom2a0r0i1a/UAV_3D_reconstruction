@@ -139,6 +139,37 @@ class GainEvaluator {
   // All-ancestors CPU marginal gain (one_parent_only = parent only; commit_observed stores the view for descendants, needs shallow-first callers).
   std::pair<double, double> computeMarginalGainCPU_AllAncestors(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw = NAN, bool one_parent_only = false, bool commit_observed = false);
 
+
+  /*              SHARED GAIN PIPELINE (AEP + RH-NBVP)                 */
+
+  // Per-node camera basis rows (Right, Forward-down-pitched, ...) for a yaw, at the configured camera pitch.
+  std::vector<float> parentCamRows(float yaw) const;
+
+  // Order nodes shallow-first so each parent's view is committed before its children (marginal batching).
+  void sortByDepth(std::vector<rrt_star::Node*>& nodes) const;
+
+  // Batched multi-ancestor marginal gain, generation-ordered; kernel time accumulated into kernel_ms.
+  void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
+                                    bool marginal_split, float& kernel_ms);
+
+  // Own-view (absolute) gain for nodes whose absolute_gain is unset (< 0), used by AEP global scoring.
+  void fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
+                         const std::string& eval_compute);
+
+  // Config for the unified gain dispatch.
+  struct GainConfig {
+    bool        marginal_gain;   // marginal (de-overlapped) vs absolute (own-view)
+    bool        optimize_yaw;    // argmax-yaw per node vs evaluate at the node's own heading
+    std::string eval_compute;    // "gpu" or "cpu"
+    bool        marginal_split;  // marginal+gpu: split vs fused kernel
+    bool        track_absolute;  // also populate absolute_gain/absolute_yaw (AEP)
+  };
+
+  // Unified gain evaluation: sets node->gain (+ point[3] when optimizing, + absolute_* when tracked).
+  // Kernel times are accumulated into marg_kernel_ms / abs_kernel_ms.
+  void evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
+                     const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms);
+
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw = NAN);
 

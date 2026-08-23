@@ -87,12 +87,6 @@ public:
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
     // World<-camera rotation rows (row-major, 9 floats) for an ancestor yaw (matches the GPU kernel).
     std::vector<float> parentCamRows(float yaw);
-    // Ancestor cull test: broad-phase distance + narrow-phase sphere-vs-pyramid SAT. mode 1=2D, 2=3D. Conservative.
-    bool ancestorMayOverlap(const rrt_star::Node* cand, const rrt_star::Node* anc, int mode) const;
-    // Optional whole-tree KD path (ancestor_cull_kd): Euler-tour labels so isAncestorEuler is O(1) when
-    // the gather finds candidates' ancestors via a nanoflann radius query instead of the parent walk.
-    void computeEulerLabels();
-    bool isAncestorEuler(const rrt_star::Node* a, const rrt_star::Node* d) const;
     // GPU single-parent marginal (v2) using the node's immediate parent's stored depth buffer.
     double computeV2SingleParent(rrt_star::Node* node);
     // GPU multi-ancestor marginal (v4, per-node non-batched) over the node's full ancestor chain. Optimizes yaw
@@ -109,7 +103,6 @@ public:
     void cacheHighGainNodes();
     // Lazily fill node->absolute_gain + node->absolute_yaw (own-view result, position-only => rewire-
     // invariant) for any node still at the -1 sentinel. Computed once per node; never disturbs gain/point[3]/score.
-    void fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes);
     // Log per-node score over the final tree once (avoids per-batch re-logging).
     void logTreeNodes();
 
@@ -224,13 +217,6 @@ private:
     double camera_pitch_deg; 
     double camera_pitch;   // downward camera pitch [rad], loaded from camera/pitch [deg]
 
-    // Ancestor-culling mode (item 1): 0=off, 1=2D, 2=3D. Default off -> behaviour unchanged.
-    int ancestor_cull_mode = 0;
-    // Ancestor-selection method: false = walk the parent chain (default, fastest for bushy trees),
-    // true = whole-tree nanoflann radius query + O(1) Euler ancestor test (kept as a future option).
-    bool ancestor_cull_kd = false;
-    std::unordered_map<const rrt_star::Node*, int> euler_in_, euler_out_;   // KD path: Euler intervals
-    std::vector<rrt_star::Node*> cull_near_;                                // KD path: radius-query scratch
 
     // Planner Parameters
     double uav_radius;
