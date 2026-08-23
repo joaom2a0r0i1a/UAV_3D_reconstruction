@@ -3,7 +3,7 @@
 // Constructors
 rrt_star::rrt_star() {}
 
-rrt_star::Node::Node(const Eigen::Vector4d& p) : point(p), parent(nullptr), cost(0), gain(0), absolute_gain(-1.0), absolute_yaw(0.0), score(0) {}
+rrt_star::Node::Node(const Eigen::Vector4d& p) : point(p), parent(nullptr), cost(0), gain(0), absolute_gain(-1.0), absolute_yaw(0.0), score(0), cum_gain(0) {}
 
 // Add and clear Nodes
 void rrt_star::KDTree_data::clear() {
@@ -117,17 +117,17 @@ void rrt_star::steer(Node* fromNode, const Eigen::Vector3d& toPoint, double step
     }
 }
 
-void rrt_star::steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node, bool fixed_step) {
-    double dist = (toPoint - fromNode->point.head<3>()).norm();
-    if (dist < stepSize && !fixed_step) {   // variable step (default)
-        new_node = std::make_unique<Node>(Eigen::Vector4d(toPoint.x(), toPoint.y(), toPoint.z(), fromNode->point.w()));
-        new_node->parent = fromNode;
-    } else {                                 // fixed step
-        Eigen::Vector3d direction = (toPoint - fromNode->point.head<3>()).normalized();
-        Eigen::Vector3d newPoint = fromNode->point.head<3>() + stepSize * direction;
-        new_node = std::make_unique<Node>(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.w()));
-        new_node->parent = fromNode;
+void rrt_star::steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node, bool fixed_step, double minEdge) {
+    Eigen::Vector3d from = fromNode->point.head<3>();
+    double dist = (toPoint - from).norm();
+    double edge = stepSize;
+    if (!fixed_step && dist < stepSize) {
+        edge = dist;
+        if (edge < minEdge) edge = minEdge;
     }
+    Eigen::Vector3d newPoint = from + edge * (toPoint - from).normalized();
+    new_node = std::make_unique<Node>(Eigen::Vector4d(newPoint.x(), newPoint.y(), newPoint.z(), fromNode->point.w()));
+    new_node->parent = fromNode;
 }
 
 bool rrt_star::collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles) {
@@ -179,6 +179,8 @@ void rrt_star::chooseParent(Node* new_node, const std::vector<Node*>& nearbyNode
     double minCost = std::numeric_limits<double>::infinity();
     Node* parent = nullptr;
     for (const auto& node : nearbyNodes) {
+        // Reject candidate parents whose connecting edge passes through an obstacle.
+        if (edge_free_ && !edge_free_(node->point.head<3>(), new_node->point.head<3>())) continue;
         double cost = node->cost + (node->point.head<3>() - new_node->point.head<3>()).norm();
         if (cost < minCost) {
             minCost = cost;
@@ -193,6 +195,8 @@ void rrt_star::rewire(Node* new_node, std::vector<Node*>& nearby_nodes, double r
     for (Node* node : nearby_nodes) {
         double new_cost = new_node->cost + (node->point.head<3>() - new_node->point.head<3>()).norm();
         if (new_cost < node->cost) {
+            // Only re-parent through new_node if that edge is actually collision-free.
+            if (edge_free_ && !edge_free_(new_node->point.head<3>(), node->point.head<3>())) continue;
             if (node->parent) {
                 std::vector<Node*>& siblings = node->parent->children;
                 siblings.erase(std::remove(siblings.begin(), siblings.end(), node), siblings.end());

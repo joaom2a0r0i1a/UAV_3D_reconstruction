@@ -187,6 +187,8 @@ class GainEvaluator {
 
   void computeScore(rrt_star::Node* new_node, double lambda);
 
+  void setObjective(const std::string& objective) { objective_ = objective; }
+
   void computeCostTwo(kino_rrt_star::Trajectory* new_trajectory);
 
   void computeScore(kino_rrt_star::Trajectory* new_trajectory, double lambda1, double lambda2);
@@ -200,6 +202,8 @@ class GainEvaluator {
   const voxblox::CameraModel& getCameraModel() const;
 
  private:
+  std::string objective_ = "expdecay";
+
   // Bundle the cached map / sensor state into the launcher ABI structs.
   GpuMap gpuMap() const;
   GpuSensor gpuSensor() const;

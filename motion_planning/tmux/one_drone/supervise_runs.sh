@@ -59,13 +59,19 @@ ensure_container() {
   # (SITL) and `mavros_node` survive the tmux teardown (px4 detaches; killProcessRecursive misses it) and
   # keep holding their UDP ports, so the NEXT run's mavros never connects (State: DISARMED NO_GPS, "Have
   # not received Mavros state") -> UAV never ready -> eval_data_node times out -> run produces no data.
-  docker exec "$CONTAINER" bash -lc \
-    'tmux -L mrs kill-server 2>/dev/null; \
-     pkill -9 -x px4 2>/dev/null; pkill -9 -f mavros 2>/dev/null; \
-     pkill -9 -x gzserver 2>/dev/null; pkill -9 -x gzclient 2>/dev/null; \
-     pkill -9 -x rosmaster 2>/dev/null; pkill -9 -f roscore 2>/dev/null; \
-     pkill -9 -f "roslaunch mrs" 2>/dev/null; pkill -9 -f "roslaunch motion_planning" 2>/dev/null; \
-     rm -f '"$ONE_CTR"'/current_config.env; true' 2>/dev/null
+  # DIRECT docker exec — NOT `bash -lc 'pkill'`: a login shell silently no-ops the pkills, so stale px4/
+  # mavros survive between runs, the next take-off fails, and the run logs full CSV at ~0% coverage (a
+  # "good" run that is actually dead). See memory long-batch-takeoff-degradation.
+  docker exec "$CONTAINER" tmux -L mrs kill-server 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -x px4 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -f mavros 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -x gzserver 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -x gzclient 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -x rosmaster 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -f roscore 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -f "roslaunch mrs" 2>/dev/null
+  docker exec "$CONTAINER" pkill -9 -f "roslaunch motion_planning" 2>/dev/null
+  docker exec "$CONTAINER" rm -f "$ONE_CTR/current_config.env" 2>/dev/null
   sleep 4   # let the UDP ports (14005/14006) and master port fully release before the next launch
 }
 
@@ -89,17 +95,19 @@ while [ "$(good_runs)" -lt "$TARGET_RUNS" ]; do
     ensure_container
     pre=$(ls -1d "$LABELDIR"/2* 2>/dev/null | sort)
     echo ">>> [$LABEL] run $((have + 1))/$TARGET_RUNS — attempt $attempt ($(date +%H:%M:%S))"
-    docker exec -e EXP_CONFIG_SPEC="$SPEC" -e AEP_EARLY_STOP="${AEP_EARLY_STOP:-false}" -e AEP_EARLY_STOP_GRACE="${AEP_EARLY_STOP_GRACE:-60.0}" -w "$ONE_CTR" "$CONTAINER" bash -lc "./run_experiments.sh explore 1 $SIM_TIME"
+    docker exec -e EXP_CONFIG_SPEC="$SPEC" -e AEP_EARLY_STOP="${AEP_EARLY_STOP:-false}" -e AEP_EARLY_STOP_GRACE="${AEP_EARLY_STOP_GRACE:-60.0}" -e VOXEL_SIZE="${VOXEL_SIZE:-0.2}" -w "$ONE_CTR" "$CONTAINER" bash -lc "./run_experiments.sh explore 1 $SIM_TIME"
     rc=$?
     post=$(ls -1d "$LABELDIR"/2* 2>/dev/null | sort)
     newdir=$(comm -13 <(printf '%s\n' "$pre") <(printf '%s\n' "$post") | tail -1)
     cup=$(docker ps --filter name="$CONTAINER" --format '{{.Names}}')
     rows=0; [ -n "$newdir" ] && rows=$(csv_rows "$newdir")
-    if [ -n "$newdir" ] && [ "$rows" -gt 1 ]; then
+    crashed=0; [ -n "$newdir" ] && [ -f "$newdir/.crashed" ] && crashed=1
+    if [ -n "$newdir" ] && [ "$rows" -gt 1 ] && [ "$crashed" = 0 ]; then
       echo ">>> SUCCESS: $(basename "$newdir") rows=$rows maps=$(ls "$newdir/voxblox_maps" 2>/dev/null | wc -l)"
       break
     fi
-    echo ">>> DROP (rc=$rc container='${cup:-DOWN}' newdir='${newdir:-none}' rows=$rows) — discarding & retrying"
+    [ "$crashed" = 1 ] && echo ">>> CRASHED (disarmed mid-run = wall hit) — discarding & retrying"
+    echo ">>> DROP (rc=$rc container='${cup:-DOWN}' newdir='${newdir:-none}' rows=$rows crashed=$crashed) — discarding & retrying"
     [ -n "$newdir" ] && [ -d "$newdir" ] && rm -rf "$newdir"
   done
 done

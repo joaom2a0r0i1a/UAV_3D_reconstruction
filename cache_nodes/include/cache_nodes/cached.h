@@ -2,9 +2,12 @@
 #define CACHED_H
 
 #include <ros/ros.h>
+#include <ros/callback_queue.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <mrs_msgs/UavState.h>
+#include <mutex>
+#include <memory>
 
 #include <cache_nodes/Node.h>
 #include <cache_nodes/BestNode.h>
@@ -33,6 +36,7 @@ namespace bg = boost::geometry;
 namespace bgi = boost::geometry::index;
 
 typedef bg::model::point<float, 3, bg::cs::cartesian> Point;
+typedef bg::model::box<Point> Box;
 typedef std::pair<Point, cache_nodes::Node> RTreeValue;
 
 class Cached {
@@ -71,9 +75,14 @@ private:
     ros::Subscriber sub_uav_state;
     ros::Timer reevaluate_timer;
 
+    ros::CallbackQueue fast_queue_;
+    std::unique_ptr<ros::AsyncSpinner> fast_spinner_;
+    std::mutex rtree_mutex_;
+
     double g_zero;
     double range;
     int num_yaw_samples;
+    double dedup_radius_;
 
     double horizontal_fov;
     double vertical_fov;

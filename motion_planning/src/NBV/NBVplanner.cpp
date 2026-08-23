@@ -32,7 +32,9 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("rrt/N_yaw_samples", num_yaw_samples);
     param_loader.loadParam("rrt/radius", radius);
     param_loader.loadParam("rrt/step_size", step_size);
+    param_loader.loadParam("rrt/min_edge_length", min_edge_length_, 0.2);
     param_loader.loadParam("rrt/fixed_step", fixed_step, false);
+    param_loader.loadParam("rrt/execution_horizon", execution_horizon_, 1);
     param_loader.loadParam("rrt/tolerance", tolerance);
     param_loader.loadParam("rrt/rrt_star", local_rrt_star, false);
 
@@ -40,6 +42,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("evaluation/optimize_yaw", optimize_yaw, false);
     param_loader.loadParam("evaluation/compute", eval_compute, std::string("cpu"));
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
+    param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
 
     // Benchmark / X2 timing
     param_loader.loadParam("benchmark/enabled", benchmark_mode, false);
@@ -55,6 +58,12 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
 
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
+    param_loader.loadParam("path/collision_check_resolution", collision_check_resolution_, 0.1);
+    param_loader.loadParam("path/optimistic_iterations", optimistic_iterations_, 5);
+    param_loader.loadParam("path/recovery_enabled", recovery_enabled_, true);
+    param_loader.loadParam("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    param_loader.loadParam("path/recovery_min_tree", recovery_min_tree_, 10);
+    param_loader.loadParam("path/recovery_timeout", recovery_timeout_, 12.0);
     param_loader.loadParam("path/lambda", lambda);
 
     // Timer
@@ -73,6 +82,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     // Get vertical FoV and setup camera
     vertical_fov = segment_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
     segment_evaluator.setCameraModelParametersFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
+    segment_evaluator.setObjective(objective_);
 
     // Setup Voxblox
     tsdf_map_ = voxblox_server_.getTsdfMapPtr();
@@ -91,6 +101,9 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     // Setup Collision Avoidance
     voxblox_server_.setTraversabilityRadius(uav_radius);
     voxblox_server_.publishTraversable();
+    // Edges (not just nodes) must clear obstacles -> give the RRT* library a straight-segment collision test.
+    RRTStar.setEdgeCollisionChecker(
+        [this](const Eigen::Vector3d& a, const Eigen::Vector3d& b){ return isEdgeCollisionFree(a, b); });
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
@@ -145,6 +158,25 @@ bool NBVPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) c
     for (rrt_star::Node* node : path) {
         if (getMapDistance(node->point.head(3)) < uav_radius) {
             return false;
+        }
+    }
+    return true;
+}
+
+// Sample the segment; require clearance >= uav_radius at each point. When optimistic_edges_ (first replans),
+// unknown space is traversable (block only observed-and-close) to bootstrap away from spawn. Otherwise unknown
+// counts as blocked (getMapDistance returns 0 for unobserved) so the tree can't route through unmapped pockets.
+bool NBVPlanner::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const {
+    const Eigen::Vector3d d = to - from;
+    const int n = std::max(1, static_cast<int>(std::ceil(d.norm() / collision_check_resolution_)));
+    for (int i = 0; i <= n; ++i) {
+        const Eigen::Vector3d p = from + d * (static_cast<double>(i) / n);
+        if (optimistic_edges_) {
+            const auto esdf = voxblox_server_.getEsdfMapPtr();
+            double dist = 0.0;
+            if (esdf && esdf->getDistanceAtPosition(p, &dist) && dist < uav_radius) return false;
+        } else if (getMapDistance(p) < uav_radius) {
+            return false;   // unobserved (0.0) or too close to a mapped obstacle
         }
     }
     return true;
@@ -475,21 +507,20 @@ void NBVPlanner::NBV() {
     flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
     segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
 
-    // Root gain at its fixed yaw; NBVP scores the root by its own gain. Clear its depth buffer so
-    // children don't subtract the root's view (matches AEP, where the root is never evaluated).
-    { std::vector<rrt_star::Node*> only_root = {root_ptr}; evaluateGains(only_root); }
     root_ptr->depth_buffer.clear();
-    root_ptr->score = root_ptr->gain;
     best_score_ = root_ptr->score;
     best_node = root_ptr;
     visualize_node(root_ptr->point, ns);
 
     int j = 1;
 
-    // PHASE A: re-add the previous best branch as a fixed chain (each node keeps its cached yaw).
-    if (prev_best_branch.size() > 2) {
+    // PHASE A: re-add the UN-executed remainder of the previous best branch as a fixed chain. The drone
+    // executed exec_horizon_limit_ steps last plan, so the new root is prev_best_branch[exec_horizon_limit_];
+    // re-add from the next node (exec_horizon_limit_+1). For horizon 1 this is index 2 (the original value).
+    const size_t reAddStart = (size_t)exec_horizon_limit_ + 1;
+    if (prev_best_branch.size() > reAddStart) {
         std::vector<rrt_star::Node*> branch_candidates;
-        for (size_t i = 2; i < prev_best_branch.size(); ++i) {
+        for (size_t i = reAddStart; i < prev_best_branch.size(); ++i) {
             const Eigen::Vector4d& node_position = prev_best_branch[i];
             rrt_star::Node* nearest_node_best = nullptr;
             RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
@@ -505,7 +536,6 @@ void NBVPlanner::NBV() {
             for (rrt_star::Node* node : branch_candidates) {
                 segment_evaluator.computeScore(node, lambda);
                 if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
-                visualize_node(node->point, ns); visualize_edge(node, ns);
             }
             j += (int)branch_candidates.size();
         }
@@ -521,17 +551,28 @@ void NBVPlanner::NBV() {
     // Full-algorithm timing (tree creation + gain eval + scoring), independent of the benchmark passes.
     double x2_tree_ms = 0.0, x2_eval_ms = 0.0, x2_score_ms = 0.0, x2_kernel_ms = 0.0;
 
+    ros::WallTime plan_start_ = ros::WallTime::now();   // bound the tree build so NBV() can never spin (single-threaded timer)
+
     while (j < N_max || best_score_ == 0.0) {
-        if (collision_id_counter_ > 10000 * j) {
-            if (previous_node) {
+        // In-planner backtrack (wall-clock bounded; replaces the old collisions>10000*j cap that could spin
+        // for millions of tries). boxed-in = tree still tiny after a short deadline; timed-out = hard cap.
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) executed_path_.pop_back();   // remove the node we're on
+            if (!executed_path_.empty()) {
+                retreating_ = true;                                  // timerMain flies back to executed_path_.back()
                 logTreeNodes();
-                ROS_INFO("[NBVPlanner]: Backtracking to [%f, %f, %f]", previous_node->point[0], previous_node->point[1], previous_node->point[2]);
-                next_best_node = previous_node.get();
+                ROS_WARN("[NBVPlanner]: Backtracking (%s after %.1fs, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", plan_elapsed, j, executed_path_.size());
                 best_branch.clear();
+                prev_best_branch.clear();
                 return;
             } else {
                 ROS_INFO("[NBVPlanner]: Backtrack Rotation");
                 rotate();
+                plan_start_ = ros::WallTime::now();
                 collision_id_counter_ = 0;
             }
         }
@@ -543,6 +584,12 @@ void NBVPlanner::NBV() {
         std::vector<rrt_star::Node*> batch_nodes;
         auto x2_tree0 = std::chrono::high_resolution_clock::now();
         for (int k = 0; k < cap && j <= N_termination; ++k) {
+            // Boxed-in guard: when every sample collides, k-- keeps this inner loop spinning and the
+            // outer WallTime check above is never reached. Bail to the outer loop so the backtrack fires.
+            if (recovery_enabled_) {
+                const double e = (ros::WallTime::now() - plan_start_).toSec();
+                if ((e > recovery_boxed_deadline_ && j < recovery_min_tree_) || e > recovery_timeout_) break;
+            }
             Eigen::Vector4d rand_point_yaw;
             RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
             Eigen::Vector3d rand_point = rand_point_yaw.head(3) + root_ptr->point.head(3);
@@ -550,7 +597,7 @@ void NBVPlanner::NBV() {
             rrt_star::Node* nearest_node = nullptr;
             RRTStar.findNearestKD(rand_point, nearest_node);
             std::unique_ptr<rrt_star::Node> new_node;
-            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node, fixed_step);
+            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node, fixed_step, min_edge_length_);
 
             if (new_node->point[0] > max_x || new_node->point[0] < min_x ||
                 new_node->point[1] < min_y || new_node->point[1] > max_y ||
@@ -558,9 +605,11 @@ void NBVPlanner::NBV() {
 
             std::vector<rrt_star::Node*> seg = {new_node.get()};
             if (!isPathCollisionFree(seg)) { collision_id_counter_++; k--; continue; }
+            // Endpoints are free; also require the whole PARENT EDGE to be clear (nodes-only misses walls between them).
+            if (!isEdgeCollisionFree(nearest_node->point.head<3>(), new_node->point.head<3>())) { collision_id_counter_++; k--; continue; }
 
             new_node->point[3] = rand_point_yaw[3];   // random sampled yaw (kept as-is unless optimize_yaw re-picks it in evaluateGains)
-            new_node->gain = 0.0; new_node->score = 0.0;
+            new_node->gain = 0.0; new_node->score = 0.0; new_node->cum_gain = 0.0;
 
             rrt_star::Node* added_node;
             if (local_rrt_star) {
@@ -568,6 +617,7 @@ void NBVPlanner::NBV() {
                 RRTStar.findNearbyKD(new_node.get(), radius, nearby);
                 if (nearby.empty()) nearby.push_back(nearest_node);
                 RRTStar.chooseParent(new_node.get(), nearby);
+                if (!new_node->parent) { collision_id_counter_++; k--; continue; }  // every candidate edge blocked
                 added_node = RRTStar.addKDTreeNode(std::move(new_node));
                 RRTStar.rewire(added_node, nearby, radius);
             } else {
@@ -603,9 +653,9 @@ void NBVPlanner::NBV() {
         for (rrt_star::Node* node : score_nodes) {
             segment_evaluator.computeScore(node, lambda);
             if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
-            visualize_node(node->point, ns); visualize_edge(node, ns);
         }
         x2_score_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_score0).count();
+        visualize_tree(collectTreeNodes(), ns);
 
         if (j >= N_termination) { terminated = true; break; }
     }
@@ -669,6 +719,34 @@ double NBVPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint
 
   return mrs_lib::geometry::dist(vec3_t(waypoint->position.x, waypoint->position.y, waypoint->position.z),
                                  vec3_t(pose.position.x, pose.position.y, pose.position.z));
+}
+
+void NBVPlanner::commandWaypoint(const Eigen::Vector4d& waypoint, const Eigen::Vector4d& prev_waypoint) {
+    ROS_INFO("[NBVPlanner]: horizon step %zu/%d (plan %d) -> [%.2f, %.2f, %.2f] yaw=%.2f", exec_index_, exec_horizon_limit_, iteration_, waypoint[0], waypoint[1], waypoint[2], waypoint[3]);
+    if (!current_waypoint_) {
+        current_waypoint_ = std::make_unique<mrs_msgs::Reference>();
+    }
+    current_waypoint_->position.x = waypoint[0];
+    current_waypoint_->position.y = waypoint[1];
+    current_waypoint_->position.z = waypoint[2];
+    current_waypoint_->heading   = waypoint[3];
+
+    next_start = waypoint;
+
+    previous_node = std::make_unique<rrt_star::Node>(prev_waypoint);
+    previous_node->parent = nullptr;
+
+    mrs_msgs::ReferenceStamped initial_reference;
+    initial_reference.header.frame_id = ns + "/" + frame_id;
+    initial_reference.header.stamp = ros::Time::now();
+    initial_reference.reference.position.x = waypoint[0];
+    initial_reference.reference.position.y = waypoint[1];
+    initial_reference.reference.position.z = waypoint[2];
+    initial_reference.reference.heading = waypoint[3];
+    pub_reference.publish(initial_reference.reference);
+    pub_initial_reference.publish(initial_reference);
+
+    ros::Duration(1).sleep();
 }
 
 void NBVPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
@@ -854,7 +932,17 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
-            NBV();
+            // Optimistic edges (plan through unknown) only for the first optimistic_iterations_ replans to
+            // bootstrap away from spawn; afterwards unknown counts as blocked so we never drive into a pocket.
+            optimistic_edges_ = (iteration_ < optimistic_iterations_);
+
+            retreating_ = false;   // a boxed-in backtrack inside NBV() re-sets this
+
+            {
+                auto plan_t0 = std::chrono::high_resolution_clock::now();
+                NBV();
+                total_planning_ms_ += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - plan_t0).count();
+            }
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
@@ -863,43 +951,40 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
 
             iteration_ += 1;
 
-            if (!current_waypoint_) {
-                current_waypoint_ = std::make_unique<mrs_msgs::Reference>();
+            // Boxed-in retreat (AEP-style): fly one step back along the executed path, bypassing horizon
+            // execution, so the drone leaves the boxed-in spot instead of re-planning in place.
+            if (retreating_ && !executed_path_.empty()) {
+                retreat_node_ = std::make_unique<rrt_star::Node>(executed_path_.back());
+                exec_horizon_limit_ = 1;
+                exec_index_ = 1;
+                commandWaypoint(retreat_node_->point, pose);
+                changeState(STATE_MOVING);
+                break;
             }
 
-            current_waypoint_->position.x = next_best_node->point[0];
-            current_waypoint_->position.y = next_best_node->point[1];
-            current_waypoint_->position.z = next_best_node->point[2];
-            current_waypoint_->heading   = next_best_node->point[3];
+            exec_waypoints_ = best_branch;
+            if (exec_waypoints_.size() < 2) {
+                changeState(STATE_PLANNING);
+                break;
+            }
+            exec_horizon_limit_ = execution_horizon_;
+            if (exec_horizon_limit_ > (int)exec_waypoints_.size() - 1) {
+                exec_horizon_limit_ = (int)exec_waypoints_.size() - 1;
+            }
+            exec_index_ = 1;
 
-            next_start[0] = current_waypoint_->position.x;
-            next_start[1] = current_waypoint_->position.y;
-            next_start[2] = current_waypoint_->position.z;
-            next_start[3] = current_waypoint_->heading;
+            // Record the executed (forward) path so a later backtrack can retreat along it.
+            if (executed_path_.empty()) executed_path_.push_back(exec_waypoints_[0]);
+            for (int i = 1; i <= exec_horizon_limit_; ++i) executed_path_.push_back(exec_waypoints_[i]);
 
-            visualize_frustum(next_best_node);
-            visualize_unknown_voxels(next_best_node);
-
-            mrs_msgs::Reference reference;
-
-            if (next_best_node && next_best_node->parent) {
-                previous_node = std::make_unique<rrt_star::Node>(*next_best_node->parent);
+            for (size_t i = 1; i <= (size_t)exec_horizon_limit_; ++i) {
+                visualize_frustum(exec_waypoints_[i], (int)i);
+                visualize_unknown_voxels(exec_waypoints_[i], (int)i * 100000);
             }
 
-            mrs_msgs::ReferenceStamped initial_reference;
-            initial_reference.header.frame_id = ns + "/" + frame_id;
-            initial_reference.header.stamp = ros::Time::now();
-
-            initial_reference.reference.position.x = next_best_node->point[0];
-            initial_reference.reference.position.y = next_best_node->point[1];
-            initial_reference.reference.position.z = next_best_node->point[2];
-            initial_reference.reference.heading = next_best_node->point[3];
-            pub_reference.publish(initial_reference.reference);
-            pub_initial_reference.publish(initial_reference);
+            commandWaypoint(exec_waypoints_[exec_index_], exec_waypoints_[exec_index_ - 1]);
 
             best_branch.clear();
-            ros::Duration(1).sleep();
-
             changeState(STATE_MOVING);
             break;
 
@@ -909,19 +994,29 @@ void NBVPlanner::timerMain(const ros::TimerEvent& event) {
                 ROS_INFO("[NBVPlanner]: tracker has goal");
                 mrs_msgs::UavState::ConstPtr uav_state_here = sub_uav_state.getMsg();
                 geometry_msgs::Pose current_pose = uav_state_here->pose;
-                double current_yaw = mrs_lib::getYaw(current_pose);
-
                 double dist = distance(current_waypoint_, current_pose);
-                double yaw_difference = fabs(atan2(sin(current_waypoint_->heading - current_yaw), cos(current_waypoint_->heading - current_yaw)));
                 ROS_INFO("[NBVPlanner]: Distance to waypoint: %.2f", dist);
             } else {
-                ROS_INFO("[NBVPlanner]: waiting for command");
-                changeState(STATE_PLANNING);
+                if (exec_index_ < (size_t)exec_horizon_limit_) {
+                    exec_index_++;
+                    commandWaypoint(exec_waypoints_[exec_index_], exec_waypoints_[exec_index_ - 1]);
+                } else {
+                    changeState(STATE_PLANNING);
+                }
             }
             break;
         }
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[NBVPlanner]: Total Iterations: %d", iteration_);
+            if (!stats_written_) {
+                std::string log_dir;
+                if (nh_private_.getParam("performance_log_dir", log_dir) && !log_dir.empty()) {
+                    std::ofstream dl(log_dir + "/data_log.txt", std::ios::app);
+                    if (dl.is_open())
+                        dl << "total_planning_time_ms=" << total_planning_ms_ << " iterations=" << iteration_ << "\n";
+                }
+                stats_written_ = true;
+            }
             ROS_INFO("[NBVPlanner]: Shutting down.");
             ros::shutdown();
             return;
@@ -982,6 +1077,45 @@ void NBVPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& n
     n.lifetime = ros::Duration(30.0);
     n.frame_locked = false;
     pub_markers.publish(n);
+}
+
+void NBVPlanner::visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns) {
+    visualization_msgs::Marker edges;
+    edges.header.stamp = ros::Time::now();
+    edges.header.frame_id = ns + "/" + frame_id;
+    edges.ns = "tree_branches";
+    edges.id = 0;
+    edges.type = visualization_msgs::Marker::LINE_LIST;
+    edges.action = visualization_msgs::Marker::ADD;
+    edges.pose.orientation.w = 1.0;
+    edges.scale.x = 0.06;
+    edges.color.r = 1.0; edges.color.g = 0.3; edges.color.b = 0.7; edges.color.a = 1.0;
+    edges.lifetime = ros::Duration(30.0);
+
+    visualization_msgs::Marker pts;
+    pts.header = edges.header;
+    pts.ns = "nodes";
+    pts.id = 0;
+    pts.type = visualization_msgs::Marker::SPHERE_LIST;
+    pts.action = visualization_msgs::Marker::ADD;
+    pts.pose.orientation.w = 1.0;
+    pts.scale.x = pts.scale.y = pts.scale.z = 0.2;
+    pts.color.r = 0.4; pts.color.g = 0.7; pts.color.b = 0.2; pts.color.a = 1.0;
+    pts.lifetime = ros::Duration(30.0);
+
+    for (rrt_star::Node* node : nodes) {
+        geometry_msgs::Point p;
+        p.x = node->point[0]; p.y = node->point[1]; p.z = node->point[2];
+        pts.points.push_back(p);
+        if (node->parent) {
+            geometry_msgs::Point pp;
+            pp.x = node->parent->point[0]; pp.y = node->parent->point[1]; pp.z = node->parent->point[2];
+            edges.points.push_back(pp);
+            edges.points.push_back(p);
+        }
+    }
+    pub_markers.publish(edges);
+    pub_markers.publish(pts);
 }
 
 void NBVPlanner::visualize_edge(rrt_star::Node* node, const std::string& ns) {
@@ -1072,16 +1206,16 @@ void NBVPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
     }
 }
 
-void NBVPlanner::visualize_frustum(rrt_star::Node* position) {
+void NBVPlanner::visualize_frustum(const Eigen::Vector4d& waypoint, int id) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    trajectory_point_visualize.position_W = waypoint.head(3);
+    trajectory_point_visualize.setFromYaw(waypoint[3]);
 
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
     frustum.header.stamp = ros::Time::now();
     frustum.ns = "camera_frustum";
-    frustum.id = 0;
+    frustum.id = id;
     frustum.type = visualization_msgs::Marker::LINE_LIST;
     frustum.action = visualization_msgs::Marker::ADD;
 
@@ -1101,10 +1235,10 @@ void NBVPlanner::visualize_frustum(rrt_star::Node* position) {
     pub_frustum.publish(frustum);
 }
 
-void NBVPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
+void NBVPlanner::visualize_unknown_voxels(const Eigen::Vector4d& waypoint, int id_base) {
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    trajectory_point_visualize.position_W = waypoint.head(3);
+    trajectory_point_visualize.setFromYaw(waypoint[3]);
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
@@ -1115,7 +1249,7 @@ void NBVPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
         unknown_voxel.header.frame_id = ns + "/" + frame_id;
         unknown_voxel.header.stamp = ros::Time::now();
         unknown_voxel.ns = "unknown_voxels";
-        unknown_voxel.id = i;
+        unknown_voxel.id = id_base + (int)i;
         unknown_voxel.type = visualization_msgs::Marker::CUBE;
         unknown_voxel.action = visualization_msgs::Marker::ADD;
 

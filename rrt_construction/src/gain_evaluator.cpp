@@ -2381,7 +2381,13 @@ void GainEvaluator::computeCost(rrt_star::Node* new_node) {
 }
 
 void GainEvaluator::computeScore(rrt_star::Node* new_node, double lambda) {
-    new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
+    if (objective_ == "rate_L") {
+        new_node->cum_gain = new_node->parent->cum_gain + new_node->gain;
+        double L = new_node->cost < 0.1 ? 0.1 : new_node->cost;
+        new_node->score = new_node->cum_gain / L;
+    } else {
+        new_node->score = new_node->parent->score + new_node->gain * exp(-lambda * new_node->cost);
+    }
 }
 
 void GainEvaluator::computeCostTwo(kino_rrt_star::Trajectory* new_trajectory) {

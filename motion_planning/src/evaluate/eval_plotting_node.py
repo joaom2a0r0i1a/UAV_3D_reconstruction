@@ -49,6 +49,20 @@ class EvalPlotting(object):
             '~unobservable_points_pct', 0.0)  # Exlude unobservable points
         # from the plots (in percent of total)
 
+        # Coverage-% denominator = per-world bounded_box volume (from eval_voxblox_node).
+        try:
+            bx = rospy.get_param(self.ns_voxblox + '/bounded_box')
+            box_volume = ((bx['max_x'] - bx['min_x']) *
+                          (bx['max_y'] - bx['min_y']) *
+                          (bx['max_z'] - bx['min_z']))
+            # Subtract unobservable structure (<World>.yaml 'unobservable_volume', 0 for open envs).
+            unobs = float(rospy.get_param(self.ns_voxblox + '/unobservable_volume', 0.0))
+            self.map_volume = box_volume - unobs
+            rospy.loginfo("map_volume: box=%.1f - unobservable=%.1f => observable GT=%.1f m3",
+                          box_volume, unobs, self.map_volume)
+        except Exception:
+            self.map_volume = 20 * 18 * 2.6  # fallback (legacy default)
+
         # Check for valid params
         methods = {
             'single': 'single',
@@ -274,12 +288,7 @@ class EvalPlotting(object):
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
-        # Method folders to compare. Order defines legend/color order.
-        #   1. explicit list via the '~series_labels' param (comma-separated or rosparam list), else
-        #   2. auto-discovered: every subfolder of target_dir holding >=1 timestamped run.
-        # Legacy hardcoded sets kept for reference:
-        #series_dir = ["RH-NBVP", "AEP", "KRH-NBVP", "KAEP"]
-        #series_dir = ["Cost", "Gain", "Score"]
+        # Series to compare (legend/color order): '~series_labels' param, else auto-discovered subfolders.
         series_dir = self._resolve_series_dirs(target_dir)
         if not series_dir:
             rospy.logwarn("No method folders found under '%s' for multi_series eval.", target_dir)
@@ -325,11 +334,7 @@ class EvalPlotting(object):
                 self.eval_log_file.close()
                 return
 
-            # Create common data timeline by averaging measurement times (these
-            # should be similar)
-            #data_file = open(
-            #    os.path.join(target_dir, folder_name, "multi_series_data_%s.csv" % series), 'w')
-            # MultiUAV version
+            # Common timeline by averaging measurement times across runs.
             data_file = open(
                 os.path.join(target_dir, folder_name, "multi_series_data_%d.csv" % idx), 'w')
             data_writer = csv.writer(data_file,
@@ -457,9 +462,7 @@ class EvalPlotting(object):
                 #axes[0, 1].set_ylim(0, 1)
                 axes[0, 1].set_ylim(0, 100)
 
-                # bounds_error=False so a milestone a (high-variance) series never
-                # reaches (e.g. RH-NBVP's upper std band at 95%) yields nan instead
-                # of aborting the whole multi-series comparison.
+                # bounds_error=False -> unreached milestones yield nan instead of aborting the comparison.
                 interp_function = interp1d(unknown, x, bounds_error=False, fill_value=np.nan)
                 std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'], x, bounds_error=False, fill_value=np.nan)
                 std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'], x, bounds_error=False, fill_value=np.nan)
@@ -483,8 +486,8 @@ class EvalPlotting(object):
 
             else:
                 known = means['Volume']
-                unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
-                std_deviations = 100 * ((std_devs['Volume']/ (20 * 18 * 2.6)))
+                unknown = 100 * (1 - (known / self.map_volume))
+                std_deviations = 100 * ((std_devs['Volume']/ self.map_volume))
                 axes[0, 1].plot(x, unknown, color=colors[idx], label=series)
                 axes[0, 1].fill_between(x,
                                         unknown - std_deviations,
@@ -506,6 +509,10 @@ class EvalPlotting(object):
                 x_std_value_50 = np.max([np.fabs(x_value_50 - std_interp_function_1(y_value_50)), np.fabs(x_value_50 - std_interp_function_2(y_value_50))]) 
                 print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes.")
                 print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes.")
+                y_value_75 = 25
+                x_value_75 = interp_function(y_value_75)
+                x_std_value_75 = np.max([np.fabs(x_value_75 - std_interp_function_1(y_value_75)), np.fabs(x_value_75 - std_interp_function_2(y_value_75))])
+                print(f"{series}: Timing corresponding to Known voxels = {100 - y_value_75}% is time = {x_value_75:.2f} +/- {x_std_value_75:.2f} minutes.")
                 #if series != "RH-NBVP":
                 x_value_95 = interp_function(y_value_95)
                 x_std_value_95 = np.max([np.fabs(x_value_95 - std_interp_function_1(y_value_95)), np.fabs(x_value_95 - std_interp_function_2(y_value_95))]) 
@@ -590,8 +597,7 @@ class EvalPlotting(object):
             self.eval_log_file.close()
             return
 
-        # Create common data timeline by averaging measurement times (these
-        # should be similar)
+        # Common timeline by averaging measurement times across runs.
         data_file = open(
             os.path.join(target_dir, folder_name, "series_data.csv"), 'w')
         data_writer = csv.writer(data_file,
@@ -730,8 +736,8 @@ class EvalPlotting(object):
             axes[0, 1].set_ylim(0, 100)
         else:
             known = means['Volume']
-            unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
-            std_deviations = 100 * ((std_devs['Volume']/ (20 * 18 * 2.6)))
+            unknown = 100 * (1 - (known / self.map_volume))
+            std_deviations = 100 * ((std_devs['Volume']/ self.map_volume))
             axes[0, 1].plot(x, unknown, 'g-')
             axes[0, 1].fill_between(x,
                                     unknown - std_deviations,
@@ -837,7 +843,7 @@ class EvalPlotting(object):
             #axes[0, 1].set_ylim(0, 1)
         else:
             known = np.array(data['Volume'], dtype=float)
-            unknown = 100 * (1 - (known / (20 * 18 * 2.6)))
+            unknown = 100 * (1 - (known / self.map_volume))
             #unknown = np.array(data['Volume'], dtype=float)
             axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
             axes[0, 1].set_ylim(0, 100)

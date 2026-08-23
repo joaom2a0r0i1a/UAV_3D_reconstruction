@@ -4,7 +4,7 @@
   
   <!-- EXP_DATA_DIR routes each config to its own data/<label>/; unset => default data dir. -->
   <arg name="data_directory" default="$(eval optenv('EXP_DATA_DIR') or find('motion_planning') + '/data')"/>
-  <arg name="data_frequency" default="30.0" />
+  <arg name="data_frequency" default="$(optenv EXP_DATA_FREQ 60.0)" />
   <arg name="time_limit" default="$(optenv EXP_TIME_LIMIT 30)" />
 
   <!-- Early stop: end the run ~grace seconds after the planner self-terminates (off by default). -->

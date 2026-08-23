@@ -61,6 +61,8 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
+    // Sample the straight segment from->to at collision_check_resolution_ and require clearance >= uav_radius at each.
+    bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
 
     void NBV();
@@ -89,9 +91,12 @@ public:
 
     void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
     void visualize_edge(rrt_star::Node* node, const std::string& ns);
+    void visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns);
     void visualize_path(rrt_star::Node* node, const std::string& ns);
-    void visualize_frustum(rrt_star::Node* position);
-    void visualize_unknown_voxels(rrt_star::Node* position);
+    void visualize_frustum(const Eigen::Vector4d& waypoint, int id);
+    void visualize_unknown_voxels(const Eigen::Vector4d& waypoint, int id_base);
+
+    void commandWaypoint(const Eigen::Vector4d& waypoint, const Eigen::Vector4d& prev_waypoint);
     void clear_node();
     void clear_all_voxels();
     void clearMarkers();
@@ -142,6 +147,7 @@ private:
     int N_termination;
     double radius;
     double step_size;
+    double min_edge_length_;
     bool fixed_step;   // false = classic RRT (edge <= step_size); true = every edge exactly step_size
     double tolerance;
     int num_yaw_samples;
@@ -152,6 +158,7 @@ private:
     bool optimize_yaw;          // false = keep each node's random sampled yaw; true = pick argmax yaw per node (like AEP)
     std::string eval_compute;   // "gpu" or "cpu"
     bool marginal_split;
+    std::string objective_;
     bool benchmark_mode;
 
     // Benchmark accumulators (reset each NBV cycle)
@@ -187,6 +194,14 @@ private:
 
     // Planner Parameters
     double uav_radius;
+    double collision_check_resolution_;   // [m] edge-sampling spacing for isEdgeCollisionFree (default 0.2)
+    // --- optimistic-edges gate + IN-PLANNER backtrack (bounds the tree-build loop so NBV() can't spin) ---
+    bool   optimistic_edges_ = true;      // set each replan: unknown=traversable only for the first replans
+    int    optimistic_iterations_;        // # of initial replans allowed to plan through unknown space
+    bool   recovery_enabled_ = true;      // master toggle for the in-planner backtrack (OFF for benchmark idle runs)
+    double recovery_boxed_deadline_;      // [s] if the tree is still tiny after this, backtrack (boxed in)
+    int    recovery_min_tree_;            // "tree still empty" node count for the boxed-in check
+    double recovery_timeout_;             // [s] hard deadline: backtrack after this no matter what
     double lambda;
 
     // Tree variables
@@ -195,8 +210,16 @@ private:
     std::vector<Eigen::Vector4d> best_branch;
     rrt_star::Node* next_best_node = nullptr;
     std::unique_ptr<rrt_star::Node> previous_node;  // owning copy, survives clearKDTree()
+    std::vector<Eigen::Vector4d> executed_path_;    // flown poses (forward moves); boxed-in backtrack retreats along it
+    bool retreating_ = false;                       // set only by a backtrack, cleared each STATE_PLANNING cycle
+    std::unique_ptr<rrt_star::Node> retreat_node_;  // holds the current retreat pose
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
+
+    int execution_horizon_;
+    std::vector<Eigen::Vector4d> exec_waypoints_;
+    size_t exec_index_ = 0;
+    int exec_horizon_limit_ = 0;
 
     // UAV variables
     bool is_initialized = false;
@@ -215,6 +238,8 @@ private:
     int path_id_counter_;
     int collision_id_counter_;
     int iteration_;
+    double total_planning_ms_ = 0.0;
+    bool stats_written_ = false;
 
     // Instances
     rrt_star RRTStar;

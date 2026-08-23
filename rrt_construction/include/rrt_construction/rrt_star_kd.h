@@ -8,6 +8,7 @@
 #include <limits>
 #include <vector>
 #include <memory>
+#include <functional>
 
 #include <rrt_construction/libs/nanoflann.hpp>
 
@@ -23,6 +24,7 @@ public:
         double absolute_gain;   // own-view gain, invariant under RRT* rewire; -1.0 = not yet computed
         double absolute_yaw;    // heading for absolute_gain; command this (not point[3]) when using absolute_gain
         double score;
+        double cum_gain;
 
         // Voxels that were unknown but are now seen (packed index -> flag); excludes global-map voxels.
         std::unordered_map<uint64_t, uint8_t> observed_unknown_voxels;
@@ -79,6 +81,11 @@ public:
     
     rrt_star();
 
+    // Optional straight-edge collision check (set by the planner). Empty => skip edge checks (open envs).
+    // chooseParent()/rewire() will refuse any edge for which this returns false.
+    using EdgeChecker = std::function<bool(const Eigen::Vector3d&, const Eigen::Vector3d&)>;
+    void setEdgeCollisionChecker(EdgeChecker fn) { edge_free_ = std::move(fn); }
+
     // Takes ownership of node and returns a non-owning observer to it.
     Node* addKDTreeNode(std::unique_ptr<Node> node);
 
@@ -103,7 +110,7 @@ public:
 
     void steer(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& result);
 
-    void steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node, bool fixed_step = false);
+    void steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node, bool fixed_step = false, double minEdge = 0.0);
 
     bool collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles);
 
@@ -136,6 +143,7 @@ public:
 private:
     std::unique_ptr<Tree> kdtree_;
     KDTree_data tree_data_;
+    EdgeChecker edge_free_;   // straight-edge collision test; empty => edges are not checked
 };
 
 #endif // RRT_STAR_H

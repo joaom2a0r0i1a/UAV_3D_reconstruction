@@ -1,0 +1,11 @@
+# Experiment (Multi Story) specific parameters
+
+bounded_box:
+  min_x: -10.0 # [m]
+  max_x: 10.0 # [m]
+  min_y: -8.0 # [m]
+  max_y: 8.0 # [m]
+  min_z: 0 # [m]
+  max_z: 9.9 # [m]
+  
+unobservable_volume: 88.5  # [m3]

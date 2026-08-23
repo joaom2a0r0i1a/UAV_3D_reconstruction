@@ -8,8 +8,10 @@ typedef std::pair<Point, cache_nodes::Node> RTreeValue;
 
 Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     
-    ss_best_node = nh_private_.advertiseService("best_node_in", &Cached::callbackBestNode, this);
-    
+    ros::AdvertiseServiceOptions best_node_ops = ros::AdvertiseServiceOptions::create<cache_nodes::BestNode>(
+        "best_node_in", boost::bind(&Cached::callbackBestNode, this, _1, _2), ros::VoidConstPtr(), &fast_queue_);
+    ss_best_node = nh_private_.advertiseService(best_node_ops);
+
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "cached");
 
@@ -21,6 +23,7 @@ Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh)
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("local_planning/g_zero", g_zero, 2.0);
     param_loader.loadParam("local_planning/yaw_samples", num_yaw_samples, 10);
+    param_loader.loadParam("local_planning/dedup_radius", dedup_radius_, 0.2);
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -30,7 +33,9 @@ Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh)
     param_loader.loadParam("camera/max_distance", max_distance);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
 
-    sub_gain = nh_private_.subscribe("tree_node_in", 10, &Cached::callbackGain, this);
+    ros::SubscribeOptions tree_node_ops = ros::SubscribeOptions::create<cache_nodes::Node>(
+        "tree_node_in", 10, boost::bind(&Cached::callbackGain, this, _1), ros::VoidConstPtr(), &fast_queue_);
+    sub_gain = nh_private_.subscribe(tree_node_ops);
     sub_uav_state = nh_private_.subscribe("uav_state_in", 10, &Cached::callbackUavState, this);
 
     tsdf_map_ = voxblox_server_.getTsdfMapPtr();
@@ -48,7 +53,10 @@ Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh)
     evaluator.setCameraModelParametersFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
     GetTransformation();
 
-    reevaluate_timer = nh.createTimer(ros::Duration(3), &Cached::timerReevaluate, this);
+    reevaluate_timer = nh.createTimer(ros::Duration(5), &Cached::timerReevaluate, this);
+
+    fast_spinner_ = std::make_unique<ros::AsyncSpinner>(1, &fast_queue_);
+    fast_spinner_->start();
 }
 
 void Cached::GetTransformation() {
@@ -80,13 +88,16 @@ void Cached::timerReevaluate(const ros::TimerEvent&) {
     ROS_INFO("Reevaluate Start");
 
     std::vector<RTreeValue> result_s;
-    rtree.query(bgi::satisfies([this](RTreeValue const& v) {
-        Point current_point(x, y, z);
-        Point node_point(v.second.position.x, v.second.position.y, v.second.position.z);
-        return(bg::distance(current_point, node_point) <= 2*max_distance);
-    }), std::back_inserter(result_s));
-
-    size_t numNodesBefore = rtree.size();
+    size_t numNodesBefore;
+    {
+        std::lock_guard<std::mutex> lock(rtree_mutex_);
+        rtree.query(bgi::satisfies([this](RTreeValue const& v) {
+            Point current_point(x, y, z);
+            Point node_point(v.second.position.x, v.second.position.y, v.second.position.z);
+            return(bg::distance(current_point, node_point) <= 2*max_distance);
+        }), std::back_inserter(result_s));
+        numNodesBefore = rtree.size();
+    }
 
     for (const auto& node : result_s) {
         Eigen::Vector3d pos(node.second.position.x, node.second.position.y, node.second.position.z);
@@ -103,14 +114,19 @@ void Cached::timerReevaluate(const ros::TimerEvent&) {
         updated_node.gain = result.first;
         updated_node.yaw = result.second;
 
+        std::lock_guard<std::mutex> lock(rtree_mutex_);
         rtree.remove(node);
         if (updated_node.gain > g_zero) {
             rtree.insert(std::make_pair(node.first, updated_node));
         }
     }
 
-    size_t numNodesAfter = rtree.size();
-    
+    size_t numNodesAfter;
+    {
+        std::lock_guard<std::mutex> lock(rtree_mutex_);
+        numNodesAfter = rtree.size();
+    }
+
     ROS_INFO("[Cached]: Nodes in the RTree Before: %lu", numNodesBefore);
     ROS_INFO("[Cached]: Search List Size: %lu", result_s.size());
     ROS_INFO("[Cached]: Nodes in the RTree After: %lu", numNodesAfter);
@@ -120,16 +136,32 @@ void Cached::timerReevaluate(const ros::TimerEvent&) {
 
 void Cached::callbackGain(const cache_nodes::Node::ConstPtr& msg) {
     Point point(msg->position.x, msg->position.y, msg->position.z);
+    std::lock_guard<std::mutex> lock(rtree_mutex_);
+    
+    // Spatial de-duplication
+    const float r = dedup_radius_;
+    Box query_box(Point(msg->position.x - r, msg->position.y - r, msg->position.z - r),
+                  Point(msg->position.x + r, msg->position.y + r, msg->position.z + r));
+    std::vector<RTreeValue> nearby;
+    rtree.query(bgi::intersects(query_box) && bgi::satisfies([&](RTreeValue const& v) {
+        Point np(v.second.position.x, v.second.position.y, v.second.position.z);
+        return bg::distance(point, np) <= r;
+    }), std::back_inserter(nearby));
+    
+    for (const auto& v : nearby) rtree.remove(v);
     rtree.insert(std::make_pair(point, *msg));
 }
 
 bool Cached::callbackBestNode(cache_nodes::BestNode::Request& req, cache_nodes::BestNode::Response& res) {
     std::vector<RTreeValue> result_n;
 
-    rtree.query(bgi::satisfies([this](RTreeValue const& v) {
-        bool above_g_zero = v.second.gain > g_zero;
-        return(above_g_zero);
-    }), std::back_inserter(result_n));
+    {
+        std::lock_guard<std::mutex> lock(rtree_mutex_);
+        rtree.query(bgi::satisfies([this](RTreeValue const& v) {
+            bool above_g_zero = v.second.gain > g_zero;
+            return(above_g_zero);
+        }), std::back_inserter(result_n));
+    }
 
     for (const auto& value : result_n) {
         if (value.second.gain > req.threshold) {

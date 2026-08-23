@@ -16,6 +16,7 @@ from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String, Bool
 from std_srvs.srv import SetBool, Trigger
 from voxblox_msgs.srv import FilePath
+from mrs_msgs.msg import HwApiStatus
 
 
 class EvalData(object):
@@ -96,6 +97,15 @@ class EvalData(object):
                                                self.points_callback,
                                                queue_size=10)
 
+            # Crash detection: unexpected disarm after /start (not takeoff, not teardown) => wall hit.
+            self.armed = True
+            self.crash_check_active = False
+            self.hw_status_sub = rospy.Subscriber("hw_api/status", HwApiStatus,
+                                                  self.hw_status_callback,
+                                                  queue_size=1)
+            self.crash_timer = rospy.Timer(rospy.Duration(1.0),
+                                           self.crash_check_callback)
+
             # Finish
             self.writelog("Data folder created at '%s'." % self.eval_directory)
             rospy.loginfo("Data folder created at '%s'." % self.eval_directory)
@@ -148,6 +158,9 @@ class EvalData(object):
             self.ns_planner + "/start", Trigger)
         run_planner_srv()
 
+        # Planner is now exploring -> arm the crash detector.
+        self.crash_check_active = True
+
         # Setup first measurements
         self.eval_walltime_0 = time.time()
         self.eval_rostime_0 = rospy.get_time()
@@ -165,23 +178,26 @@ class EvalData(object):
             self.eval_n_maps = 0
             self.eval_n_pointclouds = 1
 
-            # Keep track of the (most recent) rosbag
+            # Register the most recent rosbag; poll ~20s since the recorder may not have created it yet.
             bag_expr = re.compile(
-                r'tmp_bag_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.bag.'
-            )  # Default names
-            bags = [
-                b for b in os.listdir(
-                    os.path.join(os.path.dirname(self.eval_directory),
-                                 "tmp_bags")) if bag_expr.match(b)
-            ]
-            bags.sort(reverse=True)
+                r'tmp_bag_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.bag.')
+            tmp_bags_dir = os.path.join(os.path.dirname(self.eval_directory),
+                                        "tmp_bags")
+            bags = []
+            for _ in range(40):  # up to ~20 s for the recorder to create the .active bag
+                bags = sorted(
+                    [b for b in os.listdir(tmp_bags_dir) if bag_expr.match(b)],
+                    reverse=True)
+                if bags:
+                    break
+                rospy.sleep(0.5)
             if bags:
                 self.writelog("Registered '%s' as bag for this simulation." %
                               bags[0])
                 self.eval_log_file.write("[FLAG] Rosbag: %s\n" %
                                          bags[0].split('.')[0])
             else:
-                rospy.logwarn("No tmpbag found. Is rosbag recording?")
+                rospy.logwarn("No tmpbag found after ~20 s. Is rosbag recording?")
 
         # Periodic evaluation (call once for initial measurement)
         self.eval_callback(None)
@@ -252,8 +268,7 @@ class EvalData(object):
         wt = time.time() - self.eval_walltime_0
         target = self.time_limit * 60.0
         pad_rows = 0
-        # Add rows until the last one reaches/just passes target, so the curve spans
-        # the full budget (matches full-length runs, whose last row lands ~= target).
+        # Repeat the final map's coverage at rising t until the curve spans the full budget.
         while t < target:
             t += self.eval_frequency
             self.eval_writer.writerow([last_map, t, wt, 0])
@@ -283,8 +298,7 @@ class EvalData(object):
                       (n_maps, self.eval_n_maps))
         self.eval_log_file.close()
         rospy.loginfo("On eval_data_node shutdown: closing data files.")
-        # Sentinel (written LAST, after CSV closed): tells run_experiments.sh the
-        # run finished cleanly so it can tear down the sim without racing the flush.
+        # Sentinel written last (after CSV closed): signals run_experiments.sh the run finished cleanly.
         try:
             open(os.path.join(os.path.dirname(self.eval_directory),
                               ".run_complete"), "w").close()
@@ -303,9 +317,26 @@ class EvalData(object):
         if self.evaluate:
             self.eval_n_pointclouds += 1
 
+    def hw_status_callback(self, msg):
+        self.armed = msg.armed
+
+    def crash_check_callback(self, event):
+        # Unexpected disarm between /start and stop => wall hit: drop '.crashed' (supervisor retries) and stop.
+        if not self.crash_check_active or self.armed:
+            return
+        self.crash_check_active = False
+        try:
+            open(os.path.join(self.eval_directory, ".crashed"), "w").close()
+        except Exception:
+            pass
+        self.writelog("Disarmed mid-run (likely wall hit) -> run flagged '.crashed'.")
+        rospy.logwarn("[eval] Disarmed mid-run (likely wall hit) -> discarding run.")
+        self.stop_experiment("Disarmed mid-run (likely wall hit).")
+
     def stop_experiment(self, reason):
         # Shutdown the node with proper logging, only required when experiment
         # is performed
+        self.crash_check_active = False  # any stop disables the detector (teardown disarm is expected)
         reason = "Stopping the experiment: " + reason
         if self.evaluate:
             self.writelog(reason)

@@ -70,6 +70,8 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
+    // Sample the straight segment from->to at collision_check_resolution_ and require clearance >= uav_radius at each.
+    bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
 
     void AEP();
@@ -131,6 +133,7 @@ public:
 
     void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
     void visualize_edge(rrt_star::Node* node, const std::string& ns);
+    void visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns);
     void visualize_path(rrt_star::Node* node, const std::string& ns);
     void visualize_frustum(rrt_star::Node* position);
     void visualize_unknown_voxels(rrt_star::Node* position);
@@ -184,6 +187,7 @@ private:
     int N_termination;
     double radius;
     double step_size;
+    double min_edge_length_;
     double tolerance;
     int num_yaw_samples;
     double g_zero;
@@ -198,6 +202,7 @@ private:
     bool marginal_gain;             // true: marginal gain (path sum in global); false: absolute gain
     std::string eval_compute;       // "gpu" (batched) or "cpu" (sequential)
     bool marginal_split;            // marginal+gpu: false = fused kernel, true = split kernel
+    std::string objective_;
     bool benchmark_mode;            // also time all methods + per-node v2-vs-cpuhash, report local+global
 
     // Benchmark accumulators (reset each AEP cycle; cover local + global)
@@ -230,6 +235,15 @@ private:
 
     // Planner Parameters
     double uav_radius;
+    double collision_check_resolution_;   // [m] edge-sampling spacing for isEdgeCollisionFree (default 0.2)
+    double waypoint_reach_distance_;      // [m] advance to next waypoint within this dist; smaller in clutter cuts corner-cutting
+    // --- optimistic-edges gate + IN-PLANNER backtrack (bounds the tree-build loop so AEP() can't spin) ---
+    bool   optimistic_edges_ = true;      // set each replan: unknown=traversable only for the first replans
+    int    optimistic_iterations_;        // # of initial replans allowed to plan through unknown space
+    bool   recovery_enabled_ = true;      // master toggle for the in-planner backtrack (OFF for benchmark idle runs)
+    double recovery_boxed_deadline_;      // [s] if the tree is still tiny after this, backtrack (boxed in)
+    int    recovery_min_tree_;            // "tree still empty" node count for the boxed-in check
+    double recovery_timeout_;             // [s] hard deadline: backtrack after this no matter what
     double lambda;
     double global_lambda;
 
@@ -246,10 +260,13 @@ private:
     std::vector<mrs_msgs::Reference> waypoints_;
     int waypoint_index_ = 0;
 
-    // Local Planner variables. best_branch / previous_node own their nodes (outlive clearKDTree()); next_best_node is non-owning.
+    // Local Planner variables. best_branch owns its nodes (outlives clearKDTree()); next_best_node is non-owning.
     std::vector<std::unique_ptr<rrt_star::Node>> best_branch;
-    std::unique_ptr<rrt_star::Node> previous_node;
     rrt_star::Node* next_best_node = nullptr;
+
+    std::vector<Eigen::Vector4d> executed_path_;      // flown poses (forward moves); boxed-in backtrack retreats along it
+    bool retreating_ = false;                         // set only by a backtrack, cleared each STATE_PLANNING cycle
+    std::unique_ptr<rrt_star::Node> retreat_node_;    // holds the current retreat pose (Node has no default ctor)
     eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
     Eigen::Vector4d next_start;
 
@@ -272,6 +289,8 @@ private:
     int path_id_counter_;
     int collision_id_counter_;
     int iteration_;
+    double total_planning_ms_ = 0.0;
+    bool stats_written_ = false;
 
     // Instances
     rrt_star RRTStar;

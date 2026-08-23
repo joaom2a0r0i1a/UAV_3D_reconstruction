@@ -1,6 +1,7 @@
 local_planning:
   g_zero: 5.0
   num_yaw_samples: 10
+  dedup_radius: 0.2 # [m]
 
 frame_id: "world_origin"
 

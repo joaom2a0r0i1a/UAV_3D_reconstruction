@@ -51,7 +51,9 @@ LOGDIR="$REPO/motion_planning/tmux/one_drone/variants_logs"
 mkdir -p "$LOGDIR"
 
 # ---- campaign defaults, then load ----
-WORLD=school; PLANNER=aep; N=10; T=1850; EARLY_STOP=false; GRACE=60.0
+# T="" => derive per-world budget from lib_campaign world_time_limit after the conf is sourced.
+WORLD=school; PLANNER=aep; N=10; T=""; EARLY_STOP=false; GRACE=60.0
+VOXEL_SIZE="${VOXEL_SIZE:-0.2}"   # voxblox resolution (auto-propagates map+planner+buffers); conf may override
 KEEP_FOLDER=multi_series_evaluation; SUMMARY=DECISION_SUMMARY.txt; RESTORE=true
 CONDITIONS=()
 # shellcheck disable=SC1090
@@ -67,22 +69,32 @@ if [ "$DRY" = 1 ]; then
   cp "$REPO/motion_planning/config/AEPlanner.yaml"      "$TMPD/AEPlanner.yaml"
   cp "$REPO/motion_planning/config/NBVPlanner.yaml"     "$TMPD/NBVPlanner.yaml"
   cp "$REPO/rrt_construction/config/GainConfig.yaml"    "$TMPD/GainConfig.yaml"
+  cp "$REPO/cache_nodes/config/config.yaml"             "$TMPD/cache_config.yaml"
   cp "$REPO/motion_planning/tmux/one_drone/session.yml" "$TMPD/session.yml"
   YAML="$TMPD/AEPlanner.yaml"; NYAML="$TMPD/NBVPlanner.yaml"
-  GCFG="$TMPD/GainConfig.yaml"; SESS="$TMPD/session.yml"
+  GCFG="$TMPD/GainConfig.yaml"; SESS="$TMPD/session.yml"; CCFG="$TMPD/cache_config.yaml"
   echo "### DRY-RUN — editing temp copies in $TMPD, no launches, no real writes ###"
 else
   YAML="$REPO/motion_planning/config/AEPlanner.yaml"
   NYAML="$REPO/motion_planning/config/NBVPlanner.yaml"
   GCFG="$REPO/rrt_construction/config/GainConfig.yaml"
   SESS="$REPO/motion_planning/tmux/one_drone/session.yml"
+  CCFG="$REPO/cache_nodes/config/config.yaml"
 fi
 
 # shellcheck disable=SC1091
 source "$REPO/motion_planning/tmux/one_drone/lib_campaign.sh"
 
+# T budget: conf/-T value if set, else the per-world default (minutes -> seconds).
+# +STARTUP_TOL_S: eval_data_node's time_limit counts from sim-ready (t=0), but the planner only
+# activates ~20-30 s later; without this tolerance we'd terminate before the planner finishes and
+# drop the final map. (This is the original 1850s = 30min + 50s tolerance, now per-world.)
+STARTUP_TOL_S=50
+[ -n "$T" ] || T=$(( $(world_time_limit "$WORLD") * 60 + STARTUP_TOL_S ))
+export VOXEL_SIZE   # forwarded to the container by supervise_runs.sh -> run_experiments.sh write_env
+
 echo "==========================================================" | tee "$SUMMARY"
-log "CAMPAIGN $(basename "$CONF"): world=$WORLD planner=$PLANNER N=$N T=${T}s early_stop=$EARLY_STOP" | tee -a "$SUMMARY"
+log "CAMPAIGN $(basename "$CONF"): world=$WORLD planner=$PLANNER N=$N T=${T}s voxel=${VOXEL_SIZE}m early_stop=$EARLY_STOP" | tee -a "$SUMMARY"
 log "conditions: ${#CONDITIONS[@]}  keep=$KEEP_FOLDER" | tee -a "$SUMMARY"
 echo "==========================================================" | tee -a "$SUMMARY"
 
@@ -102,17 +114,19 @@ ALL_LABELS="${ALL_LABELS# }"
 # ---- run each condition ----
 if [ "$DO_RUN" = 1 ]; then
   for c in "${CONDITIONS[@]}"; do
-    IFS='|' read -r f1 f2 f3 f4 f5 f6 f7 <<< "$c"
+    IFS='|' read -r f1 f2 f3 f4 f5 f6 f7 f8 f9 <<< "$c"
     label="$f1"; gain="$f2"
     if [ "$PLANNER" = aep ]; then
       rrt="${f4:-false}"   # f3 (legacy variant field) is ignored; absolute is always the path-union baseline
       set_aep_gain "$gain"
+      set_key "$YAML" objective "${f5:-expdecay}"
+      log "AEP objective=${f5:-expdecay}"
       preflight "$WORLD" "$PLANNER"
       case "$gain" in marg) mspec=true ;; *) mspec=false ;; esac
       run_cond "$label" "$mspec" "$rrt"
     else  # nbvp
-      nmax="$f3"; nterm="$f4"; step="$f5"; fixed="$f6"; optyaw="${f7:-true}"
-      set_nbvp "$optyaw" "$nmax" "$nterm" "$step" "$fixed"
+      nmax="$f3"; nterm="$f4"; step="$f5"; fixed="$f6"; optyaw="${f7:-true}"; objective="${f8:-expdecay}"; horizon="${f9:-1}"
+      set_nbvp "$optyaw" "$nmax" "$nterm" "$step" "$fixed" "$objective" "$horizon"
       preflight "$WORLD" "$PLANNER"
       case "$gain" in marg) mspec=true ;; *) mspec=false ;; esac
       run_cond "$label" "$mspec" false
@@ -139,11 +153,12 @@ fi
 
 if [ "$DRY" = 1 ]; then
   echo; echo "### DRY-RUN diffs (temp copies vs repo) ###"
-  for f in AEPlanner.yaml NBVPlanner.yaml GainConfig.yaml session.yml; do
+  for f in AEPlanner.yaml NBVPlanner.yaml GainConfig.yaml cache_config.yaml session.yml; do
     case "$f" in
-      GainConfig.yaml) real="$REPO/rrt_construction/config/$f" ;;
-      session.yml)     real="$REPO/motion_planning/tmux/one_drone/$f" ;;
-      *)               real="$REPO/motion_planning/config/$f" ;;
+      GainConfig.yaml)   real="$REPO/rrt_construction/config/$f" ;;
+      cache_config.yaml) real="$REPO/cache_nodes/config/config.yaml" ;;
+      session.yml)       real="$REPO/motion_planning/tmux/one_drone/$f" ;;
+      *)                 real="$REPO/motion_planning/config/$f" ;;
     esac
     d=$(diff "$real" "$TMPD/$f" 2>/dev/null)
     [ -n "$d" ] && { echo "--- $f ---"; echo "$d"; }
