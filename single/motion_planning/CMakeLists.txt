@@ -65,8 +65,9 @@ include_directories(
   )
 
  # Add library targets
-add_library(NBVPlanner 
+add_library(NBVPlanner
   src/NBV/NBVplanner.cpp
+  src/planner_helpers.cpp
 )
 
  # Add library targets
@@ -75,8 +76,9 @@ add_library(NBVPlanner
  )
 
  # Add library targets
-add_library(AEPlanner 
+add_library(AEPlanner
   src/AEP/AEPlanner.cpp
+  src/planner_helpers.cpp
   )
 
   # Add library targets

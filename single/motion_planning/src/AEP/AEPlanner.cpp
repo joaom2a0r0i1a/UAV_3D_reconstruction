@@ -1,4 +1,5 @@
 #include "motion_planning/AEP/AEPlanner.h"
+#include "motion_planning/planner_helpers.h"
 
 AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
@@ -137,44 +138,14 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     is_initialized = true;
 }
 
-double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const {
-    if (!voxblox_server_.getEsdfMapPtr()) {
-        return 0.0;
-    }
-    double distance = 0.0;
-    if (!voxblox_server_.getEsdfMapPtr()->getDistanceAtPosition(position, &distance)) {
-        return 0.0;
-    }
-    return distance;
-}
+double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const { return planner_helpers::getMapDistance(voxblox_server_, position); }
 
-bool AEPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const {
-    for (rrt_star::Node* node : path) {
-        if (getMapDistance(node->point.head(3)) < uav_radius) {
-            return false;
-        }
-    }
-    return true;
-}
+bool AEPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const { return planner_helpers::isPathCollisionFree(voxblox_server_, path, uav_radius); }
 
 // Sample the segment; require clearance >= uav_radius at each point. When optimistic_edges_ (first replans),
 // unknown space is traversable (block only observed-and-close) to bootstrap away from spawn. Otherwise unknown
 // counts as blocked (getMapDistance returns 0 for unobserved) so the tree can't route through unmapped pockets.
-bool AEPlanner::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const {
-    const Eigen::Vector3d d = to - from;
-    const int n = std::max(1, static_cast<int>(std::ceil(d.norm() / collision_check_resolution_)));
-    for (int i = 0; i <= n; ++i) {
-        const Eigen::Vector3d p = from + d * (static_cast<double>(i) / n);
-        if (optimistic_edges_) {
-            const auto esdf = voxblox_server_.getEsdfMapPtr();
-            double dist = 0.0;
-            if (esdf && esdf->getDistanceAtPosition(p, &dist) && dist < uav_radius) return false;
-        } else if (getMapDistance(p) < uav_radius) {
-            return false;   // unobserved (0.0) or too close to a mapped obstacle
-        }
-    }
-    return true;
-}
+bool AEPlanner::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const { return planner_helpers::isEdgeCollisionFree(voxblox_server_, from, to, uav_radius, collision_check_resolution_, optimistic_edges_); }
 
 void AEPlanner::GetTransformation() {
     // From Body Frame to Camera Frame
@@ -1072,13 +1043,7 @@ double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw) 
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
 void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { segment_evaluator.sortByDepth(nodes); }
 
-std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() {
-    std::vector<rrt_star::Node*> nodes;
-    const auto& all = RRTStar.getNodes();
-    nodes.reserve(all.size());
-    for (const auto& up : all) if (up->parent) nodes.push_back(up.get());   // skip root (no parent)
-    return nodes;
-}
+std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() { return planner_helpers::collectTreeNodes(RRTStar); }
 
 // Telescoped path-union root->node: path_sum[n] = path_sum[parent] + (use_marginal ? gain : absolute_gain). Local scratch for global scoring.
 std::unordered_map<rrt_star::Node*, double> AEPlanner::pathUnion(rrt_star::Node* root_ptr, bool use_marginal) {
@@ -1104,13 +1069,7 @@ void AEPlanner::cacheHighGainNodes() {
 }
 
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
-void AEPlanner::logTreeNodes() {
-    if (benchmark_mode) return;
-    for (const auto& up : RRTStar.getNodes())
-        if (up->parent)
-            ROS_INFO("[Node] gain=%.3f score_contribution=%.3f score=%.3f",
-                     up->gain, up->gain * exp(-lambda * up->cost), up->score);
-}
+void AEPlanner::logTreeNodes() { if (benchmark_mode) return; planner_helpers::logTreeNodes(RRTStar, lambda); }
 
 void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
     if (nodes.empty()) return;
@@ -1418,11 +1377,7 @@ void AEPlanner::cacheNode(rrt_star::Node* Node, double gain, double yaw) {
     pub_node.publish(cached_node);
 }
 
-double AEPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) {
-
-  return mrs_lib::geometry::dist(vec3_t(waypoint->position.x, waypoint->position.y, waypoint->position.z),
-                                 vec3_t(pose.position.x, pose.position.y, pose.position.z));
-}
+double AEPlanner::distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose) { return planner_helpers::distance(waypoint, pose); }
 
 void AEPlanner::initialize(mrs_msgs::ReferenceStamped initial_reference) {
     initial_reference.header.frame_id = ns + "/" + frame_id;
