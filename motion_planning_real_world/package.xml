@@ -19,7 +19,6 @@
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>visualization_msgs</depend>
-  <depend>trajectory_generation</depend>
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
   <depend>std_srvs</depend>

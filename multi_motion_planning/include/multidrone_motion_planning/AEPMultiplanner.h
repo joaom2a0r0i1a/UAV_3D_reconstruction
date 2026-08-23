@@ -34,7 +34,6 @@
 #include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
-#include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
 #include <multiagent_collision_check/Segment.h>
@@ -182,7 +181,7 @@ private:
     std::vector<std::unique_ptr<rrt_star::Node>> best_branch;
     std::unique_ptr<rrt_star::Node> previous_root;
     rrt_star::Node* next_best_node = nullptr;
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d trajectory_point;
 
     // Global Planner variables
     rrt_star::Node* best_global_node = nullptr;

@@ -216,8 +216,7 @@ void KinoNBVPMultiPlanner::KinoNBV() {
 
             visualize_node(raw_best->TrajectoryPoints.back()->point, node_size, ns);
 
-            trajectory_point.position_W = raw_best->TrajectoryPoints.back()->point.head(3);
-            trajectory_point.setFromYaw(raw_best->TrajectoryPoints.back()->point[3]);
+            trajectory_point = raw_best->TrajectoryPoints.back()->point;
 
             double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point);
             raw_best->gain = result_best;
@@ -292,9 +291,7 @@ void KinoNBVPMultiPlanner::KinoNBV() {
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
 
-            eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-            trajectory_point_gain.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
-            trajectory_point_gain.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
+            Eigen::Vector4d trajectory_point_gain = new_trajectory->TrajectoryPoints.back()->point;
             double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain);
             new_trajectory->gain = result;
 
@@ -811,9 +808,7 @@ void KinoNBVPMultiPlanner::visualize_best_trajectory(kino_rrt_star::Trajectory* 
 }
 
 void KinoNBVPMultiPlanner::visualize_frustum(kino_rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
     
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
@@ -840,9 +835,7 @@ void KinoNBVPMultiPlanner::visualize_frustum(kino_rrt_star::Node* position) {
 }
 
 void KinoNBVPMultiPlanner::visualize_unknown_voxels(kino_rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

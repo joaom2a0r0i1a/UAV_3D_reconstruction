@@ -275,8 +275,7 @@ void KinoAEPlanner::localPlanner() {
             new_trajectory_best->parent = nearest_trajectory_best;
             visualize_node(new_trajectory_best->TrajectoryPoints.back()->point, node_size, ns);
 
-            trajectory_point.position_W = new_trajectory_best->TrajectoryPoints.back()->point.head(3);
-            trajectory_point.setFromYaw(new_trajectory_best->TrajectoryPoints.back()->point[3]);
+            trajectory_point = new_trajectory_best->TrajectoryPoints.back()->point;
             std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
             new_trajectory_best->gain = result_best.first;
 
@@ -347,8 +346,7 @@ void KinoAEPlanner::localPlanner() {
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
 
-            trajectory_point.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
-            trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
+            trajectory_point = new_trajectory->TrajectoryPoints.back()->point;
             std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
             new_trajectory->gain = result.first;
 
@@ -581,9 +579,7 @@ bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFron
     }
 
     if ((nearest_goal - trajectory->TrajectoryPoints.back()->point.head(3)).norm() < tolerance) {
-        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
-        trajectory_point_global.position_W = trajectory->TrajectoryPoints.back()->point.head(3);
-        trajectory_point_global.setFromYaw(trajectory->TrajectoryPoints.back()->point[3]);
+        Eigen::Vector4d trajectory_point_global = trajectory->TrajectoryPoints.back()->point;
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         trajectory->gain = result.first;
 
@@ -1081,9 +1077,7 @@ void KinoAEPlanner::visualize_best_trajectory(kino_rrt_star::Trajectory* traject
 }
 
 void KinoAEPlanner::visualize_frustum(kino_rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
@@ -1110,9 +1104,7 @@ void KinoAEPlanner::visualize_frustum(kino_rrt_star::Node* position) {
 }
 
 void KinoAEPlanner::visualize_unknown_voxels(kino_rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

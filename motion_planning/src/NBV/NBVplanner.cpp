@@ -302,8 +302,7 @@ void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
                 if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
                 r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, optimize_yaw ? NAN : nd->point[3]);
             } else {
-                eth_mav_msgs::EigenTrajectoryPoint pose;
-                pose.position_W = nd->point.head(3);
+                Eigen::Vector4d pose = nd->point;
                 r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose, optimize_yaw ? NAN : nd->point[3]);
             }
             nd->gain = r.first;
@@ -1207,9 +1206,7 @@ void NBVPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
 }
 
 void NBVPlanner::visualize_frustum(const Eigen::Vector4d& waypoint, int id) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = waypoint.head(3);
-    trajectory_point_visualize.setFromYaw(waypoint[3]);
+    Eigen::Vector4d trajectory_point_visualize = waypoint;
 
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
@@ -1236,9 +1233,7 @@ void NBVPlanner::visualize_frustum(const Eigen::Vector4d& waypoint, int id) {
 }
 
 void NBVPlanner::visualize_unknown_voxels(const Eigen::Vector4d& waypoint, int id_base) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = waypoint.head(3);
-    trajectory_point_visualize.setFromYaw(waypoint[3]);
+    Eigen::Vector4d trajectory_point_visualize = waypoint;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

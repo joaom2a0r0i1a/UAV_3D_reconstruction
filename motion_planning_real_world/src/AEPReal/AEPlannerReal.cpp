@@ -191,8 +191,7 @@ void AEPlanner::localPlanner() {
     } else {
         root_owned = std::make_unique<rrt_star::Node>(pose);
     }
-    trajectory_point.position_W = root_owned->point.head(3);
-    trajectory_point.setFromYaw(root_owned->point[3]);
+    trajectory_point = root_owned->point;
     std::pair<double, double> result_root = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
     root_owned->gain = result_root.first;
     root_owned->point[3] = result_root.second;
@@ -234,8 +233,7 @@ void AEPlanner::localPlanner() {
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
-            trajectory_point.position_W = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
+            trajectory_point = new_node_best->point;
             std::pair<double, double> result_bb = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
             new_node_best->gain = result_bb.first;
             new_node_best->point[3] = result_bb.second;
@@ -293,8 +291,7 @@ void AEPlanner::localPlanner() {
         trajectory_segment.clear();
         visualize_node(new_node->point, ns);
 
-        trajectory_point.position_W = new_node->point.head(3);
-        trajectory_point.setFromYaw(new_node->point[3]);
+        trajectory_point = new_node->point;
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
@@ -447,16 +444,14 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         //ROS_INFO("[AEPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
         //ROS_INFO("[AEPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);    
 
-        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
-        trajectory_point_global.position_W = node->point.head(3);
-        trajectory_point_global.setFromYaw(node->point[3]);
+        Eigen::Vector4d trajectory_point_global = node->point;
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global, initial_offset);
 
         node->gain = result.first;
         node->point[3] = result.second;
 
-        trajectory_point_global.position_W = nearest_goal;
-        trajectory_point_global.setFromYaw(0.0);
+        trajectory_point_global.head<3>() = nearest_goal; 
+        trajectory_point_global[3] = 0.0;
         std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global, initial_offset);
         goals_tree.clearKDTreePoints();
         return true;
@@ -902,9 +897,7 @@ void AEPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
 }
 
 void AEPlanner::visualize_frustum(rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
     
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = frame_id;
@@ -931,9 +924,7 @@ void AEPlanner::visualize_frustum(rrt_star::Node* position) {
 }
 
 void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

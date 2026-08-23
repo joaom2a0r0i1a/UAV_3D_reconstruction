@@ -8,12 +8,12 @@ timer_main:
 
 # School
 bounded_box:
-  min_x: -25.0 # [m]
-  max_x: 25.0 # [m]
+  min_x: -20.0 # [m]
+  max_x: 20.0 # [m]
   min_y: -20.0 # [m]
-  max_y: 15.0 # [m]
-  min_z: 1.0 # [m]
-  max_z: 20.0 # [m]
+  max_y: 20.0 # [m]
+  min_z: 0.5 # [m]
+  max_z: 1.8 # [m]
 
 # Police Station
 #bounded_box:
@@ -34,15 +34,15 @@ bounded_box:
   #max_z: 2.5 # [m]
 
 rrt:
-  N_max: 50
-  N_termination: 300
+  N_max: 250
+  N_termination: 1000
   N_yaw_samples: 15
   radius: 2.0 # [m]
-  step_size: 2.0 # [m]
+  step_size: 1.5 # [m]
   min_edge_length: 0.2     # [m]
   execution_horizon: 1     # replan every N executed steps (stop at each); 1 = plan every step
   fixed_step: false        # false: classic RRT, edge length = min(dist, step_size); true: EVERY edge = exactly step_size
-  tolerance: 0.5 # [m]
+  tolerance: 1.0 # [m]
   rrt_star: false          # false = RRT (nearest parent); true = RRT* (choose-parent + rewire)
 
 evaluation:
@@ -50,7 +50,7 @@ evaluation:
   optimize_yaw: true       # false: keep each node's random sampled yaw (classic NBVP); true: pick argmax yaw per node (like AEP)
   compute: "gpu"           # "gpu" (batched) or "cpu" (sequential; flat-map, marginal=hash)
   marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
-  objective: rate_L      # expdecay | rate_L
+  objective: expdecay      # expdecay | rate_L
 
 benchmark:
   enabled: false           # time all gain variants (G_all / single-parent / absolute, gpu & cpu) per replan
@@ -66,7 +66,7 @@ camera:
   max_distance: 5 # [m]
 
 path:
-  uav_radius: 1.5 # [m] (per-world; set by lib_campaign world tables)
+  uav_radius: 0.8 # [m] (per-world; set by lib_campaign world tables)
   collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)
   optimistic_iterations: 5 # edges may plan through UNKNOWN only for the first N replans (bootstrap); then unknown=blocked (no pocket traps)
   recovery_enabled: true # master toggle for the in-planner backtrack (set FALSE for benchmark runs that idle on purpose)

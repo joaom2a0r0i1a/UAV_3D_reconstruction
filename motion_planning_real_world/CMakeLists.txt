@@ -24,7 +24,6 @@ set(CATKIN_DEPENDENCIES
   std_msgs
   geometry_msgs
   visualization_msgs
-  trajectory_generation
   voxblox_ros
   minkindr_conversions
   motion_planning

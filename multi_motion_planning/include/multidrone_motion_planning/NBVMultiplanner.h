@@ -28,7 +28,6 @@
 #include <voxblox/utils/planning_utils.h>
 
 #include <minkindr_conversions/kindr_msg.h>
-#include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
 #include <multiagent_collision_check/Segment.h>
@@ -158,7 +157,7 @@ private:
     std::vector<Eigen::Vector4d> best_branch;
     rrt_star::Node* next_best_node = nullptr;
     std::unique_ptr<rrt_star::Node> previous_root;
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d trajectory_point;
 
     // UAV variables
     bool is_initialized = false;

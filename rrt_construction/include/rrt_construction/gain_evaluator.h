@@ -1,12 +1,13 @@
 #ifndef VOXBLOX_PLANNING_GAIN_EVALUATOR_H_
 #define VOXBLOX_PLANNING_GAIN_EVALUATOR_H_
 
-#include <eth_mav_msgs/eigen_mav_msgs.h>
+#include <Eigen/Dense>
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox/core/esdf_map.h>
 #include <voxblox/utils/camera_model.h>
 
 #include <sensor_msgs/PointCloud2.h>
+#include <geometry_msgs/Point.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -69,10 +70,10 @@ class GainEvaluator {
   VoxelStatus getVoxelStatus(const Eigen::Vector3d& position) const;
 
   // Visualize the camera frustum at a given pose.
-  void visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& pose, std::vector<geometry_msgs::Point>& points);
+  void visualize_frustum(const Eigen::Vector4d& pose, std::vector<geometry_msgs::Point>& points);
 
   // Initialization for visualization of unknown voxels.
-  void visualizeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels);
+  void visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointcloud& voxels);
 
 
   /*              GPU-BASED SETUP FUNCTIONS                 */
@@ -139,45 +140,45 @@ class GainEvaluator {
   std::pair<double, double> computeMarginalGainCPU_AllAncestors(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw = NAN, bool one_parent_only = false, bool commit_observed = false);
 
   // [Validation] CPU calculation using Flat Map Data
-  std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose, double fixed_yaw = NAN);
+  std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw = NAN);
 
   // [Validation] CPU calculation using DDA algorithm
-  std::pair<double, double> computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  std::pair<double, double> computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose);
 
   // [Validation] Live-map twin of computeGainCPU_DDA (reads voxblox instead of the flat map)
-  std::pair<double, double> computeGainCPU_DDA_Voxblox(const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  std::pair<double, double> computeGainCPU_DDA_Voxblox(const Eigen::Vector4d& pose);
 
   // [Validation] CPU calculation using Naive Raycasting
-  std::pair<double, double> computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  std::pair<double, double> computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose);
 
 
   /*              GAIN COMPUTATION FUNCTIONS                 */
   
   // Use raycasting to calculate volume of unknown voxels for fixed angle.
-  double computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  double computeFixedGainRaycasting(const Eigen::Vector4d& pose);
 
   // Use raycasting to calculate volume of unknown voxels for fixed angle (Real-World Experiment Pose Initial Offset).
-  double computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset);
+  double computeFixedGainRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset);
 
   // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
   // corresponds to the biggest gain given the camera frustum, with uniform yaw optimization.
-  std::pair<double, double> computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  std::pair<double, double> computeGainRaycasting(const Eigen::Vector4d& pose);
 
   // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
   // corresponds to the biggest gain given the camera frustum, with informative yaw optimization.
-  std::pair<double, double> computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose);
+  std::pair<double, double> computeGainOptimizedRaycasting(const Eigen::Vector4d& pose);
 
   // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
   // corresponds to the biggest gain given the camera frustum, with informative yaw optimization (Real-World Experiment Pose Initial Offset).
-  std::pair<double, double> computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset);
+  std::pair<double, double> computeGainOptimizedRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset);
   
   // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
   // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (uniform yaw optimization).
-  std::pair<double, double> computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
+  std::pair<double, double> computeGainRaycastingFromSampledYaw(Eigen::Vector4d& position);
   
   // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
   // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (informative yaw optimization).
-  std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position);
+  std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(Eigen::Vector4d& position);
 
 
   /*              COST AND SCORE FUNCTIONS                 */

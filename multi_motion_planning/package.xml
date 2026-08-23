@@ -16,7 +16,6 @@
   <depend>mrs_msgs</depend>
   <depend>mrs_lib</depend>
   <depend>visualization_msgs</depend>
-  <depend>trajectory_generation</depend>
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
   <depend>std_srvs</depend>

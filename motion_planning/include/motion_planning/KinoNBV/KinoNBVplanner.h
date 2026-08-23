@@ -30,7 +30,6 @@
 #include <voxblox/utils/planning_utils.h>
 
 #include <minkindr_conversions/kindr_msg.h>
-#include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
 #include <rrt_construction/kino_rrt_star_kd.h>
@@ -161,8 +160,8 @@ private:
     std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory;
     std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent_cache_;
     kino_rrt_star::Trajectory* next_best_trajectory = nullptr;
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
-    eth_mav_msgs::EigenTrajectoryPoint previous_trajectory_point;
+    Eigen::Vector4d trajectory_point;
+    Eigen::Vector4d previous_trajectory_point;
     Eigen::Vector4d next_start;
 
     // UAV variables

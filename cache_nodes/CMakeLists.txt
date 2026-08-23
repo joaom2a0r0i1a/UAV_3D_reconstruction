@@ -15,7 +15,6 @@ set(CATKIN_DEPENDENCIES
   mrs_msgs
   mrs_lib
   visualization_msgs
-  trajectory_generation
   voxblox_ros
   minkindr_conversions
   message_generation

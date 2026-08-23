@@ -203,8 +203,7 @@ void NBVPlanner::NBV() {
             new_node_best->parent = nearest_node_best;
             visualize_node(new_node_best->point, ns);
 
-            trajectory_point.position_W = new_node_best->point.head(3);
-            trajectory_point.setFromYaw(new_node_best->point[3]);
+            trajectory_point = new_node_best->point;
 
             double result_best = segment_evaluator.computeFixedGainRaycasting(trajectory_point, initial_offset);
             new_node_best->gain = result_best;
@@ -266,9 +265,7 @@ void NBVPlanner::NBV() {
         visualize_node(new_node->point, ns);
 
         new_node->point[3] = rand_point_yaw[3];
-        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_gain;
-        trajectory_point_gain.position_W = new_node->point.head(3);
-        trajectory_point_gain.setFromYaw(new_node->point[3]);
+        Eigen::Vector4d trajectory_point_gain = new_node->point;
         double result = segment_evaluator.computeFixedGainRaycasting(trajectory_point_gain, initial_offset);
         new_node->gain = result;
 
@@ -674,9 +671,7 @@ void NBVPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
 }
 
 void NBVPlanner::visualize_frustum(rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
     
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = frame_id;
@@ -703,9 +698,7 @@ void NBVPlanner::visualize_frustum(rrt_star::Node* position) {
 }
 
 void NBVPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

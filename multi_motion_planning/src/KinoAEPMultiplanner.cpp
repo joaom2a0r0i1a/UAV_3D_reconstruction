@@ -278,8 +278,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             raw_best->parent = nearest_trajectory_best;
             visualize_node(raw_best->TrajectoryPoints.back()->point, node_size, ns);
 
-            trajectory_point.position_W = raw_best->TrajectoryPoints.back()->point.head(3);
-            trajectory_point.setFromYaw(raw_best->TrajectoryPoints.back()->point[3]);
+            trajectory_point = raw_best->TrajectoryPoints.back()->point;
             std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
             raw_best->gain = result_best.first;
 
@@ -361,8 +360,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             visualize_node(new_trajectory->TrajectoryPoints.back()->point, node_size, ns);
             ++accel_iteration;
 
-            trajectory_point.position_W = new_trajectory->TrajectoryPoints.back()->point.head(3);
-            trajectory_point.setFromYaw(new_trajectory->TrajectoryPoints.back()->point[3]);
+            trajectory_point = new_trajectory->TrajectoryPoints.back()->point;
             std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
             new_trajectory->gain = result.first;
 
@@ -559,9 +557,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
         //ROS_INFO("[KinoAEPMultiPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
         //ROS_INFO("[KinoAEPMultiPlanner]: RRT* Goal: [%f, %f, %f]", trajectory->TrajectoryPoints.back()->point[0], trajectory->TrajectoryPoints.back()->point[1], trajectory->TrajectoryPoints.back()->point[2]);
 
-        eth_mav_msgs::EigenTrajectoryPoint trajectory_point_global;
-        trajectory_point_global.position_W = trajectory->TrajectoryPoints.back()->point.head(3);
-        trajectory_point_global.setFromYaw(trajectory->TrajectoryPoints.back()->point[3]);
+        Eigen::Vector4d trajectory_point_global = trajectory->TrajectoryPoints.back()->point;
         std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         trajectory->gain = result.first;
 
@@ -576,8 +572,8 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
         // Make sure the heading of the last node is correct
         trajectory->TrajectoryPoints.back()->point[3] = result.second;
 
-        trajectory_point_global.position_W = nearest_goal;
-        trajectory_point_global.setFromYaw(0.0);
+        trajectory_point_global.head<3>() = nearest_goal; 
+        trajectory_point_global[3] = 0.0;
         std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
         ROS_INFO("[KinoAEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
@@ -1092,9 +1088,7 @@ void KinoAEPMultiPlanner::visualize_best_trajectory(kino_rrt_star::Trajectory* t
 }
 
 void KinoAEPMultiPlanner::visualize_frustum(kino_rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
     
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
@@ -1121,9 +1115,7 @@ void KinoAEPMultiPlanner::visualize_frustum(kino_rrt_star::Node* position) {
 }
 
 void KinoAEPMultiPlanner::visualize_unknown_voxels(kino_rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

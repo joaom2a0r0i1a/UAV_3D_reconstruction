@@ -698,8 +698,7 @@ void AEPlanner::localPlanner() {
 
         // --- RUN CPU ---
         // --- RUN CPU ---
-        trajectory_point.position_W = new_node->point.head(3);
-        trajectory_point.setFromYaw(new_node->point[3]);
+        trajectory_point = new_node->point;
 
         // 0. Prepare Separate Output Buffers
         std::vector<float> depth_buf_v1 = new_node->depth_buffer;
@@ -1188,8 +1187,7 @@ void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
                 if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
                 r = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd);
             } else {
-                eth_mav_msgs::EigenTrajectoryPoint pose;
-                pose.position_W = nd->point.head(3);
+                Eigen::Vector4d pose = nd->point;
                 r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, pose);
                 nd->absolute_gain = r.first;    // absolute mode: gain/yaw == own-view result
                 nd->absolute_yaw  = r.second;
@@ -1280,7 +1278,7 @@ void AEPlanner::fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes) {
         for (size_t i = 0; i < todo.size(); ++i) { todo[i]->absolute_gain = res[i].first; todo[i]->absolute_yaw = res[i].second; }
     } else {
         for (size_t i = 0; i < todo.size(); ++i) {
-            eth_mav_msgs::EigenTrajectoryPoint p; p.position_W = todo[i]->point.head(3);
+            Eigen::Vector4d p = todo[i]->point;
             auto r = segment_evaluator.computeGainCPU_FlatMap(flat_map_, p);
             todo[i]->absolute_gain = r.first; todo[i]->absolute_yaw = r.second;
         }
@@ -2173,9 +2171,7 @@ void AEPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
 }
 
 void AEPlanner::visualize_frustum(rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
     
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
@@ -2202,9 +2198,7 @@ void AEPlanner::visualize_frustum(rrt_star::Node* position) {
 }
 
 void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point_visualize;
-    trajectory_point_visualize.position_W = position->point.head(3);
-    trajectory_point_visualize.setFromYaw(position->point[3]);
+    Eigen::Vector4d trajectory_point_visualize = position->point;
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);

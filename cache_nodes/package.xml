@@ -20,7 +20,6 @@
   <depend>roscpp</depend>
   <depend>mrs_lib</depend>
   <depend>visualization_msgs</depend>
-  <depend>trajectory_generation</depend>
   <depend>voxblox_ros</depend>
   <depend>rrt_construction</depend>
   <depend>minkindr_conversions</depend>

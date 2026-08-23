@@ -34,7 +34,6 @@
 #include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
-#include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
 #include <rrt_construction/kino_rrt_star_kd.h>
@@ -182,7 +181,7 @@ private:
     std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent_cache_;
     kino_rrt_star::Trajectory* next_best_trajectory = nullptr;
     kino_rrt_star::Trajectory* previous_best_global_trajectory = nullptr;
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d trajectory_point;
 
     // Global Planner variables
     kino_rrt_star::Trajectory* best_global_trajectory = nullptr;

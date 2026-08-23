@@ -1,5 +1,4 @@
 #include <ros/ros.h>
-#include <eth_trajectory_generation/timing.h>
 #include <voxblox/integrator/integrator_utils.h>
 
 #include "rrt_construction/gain_evaluator.h"
@@ -177,9 +176,10 @@ VoxelStatus GainEvaluator::getVoxelStatus(const Eigen::Vector3d& position) const
   return VoxelStatus::kOccupied;
 }
 
-void GainEvaluator::visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& pose, std::vector<geometry_msgs::Point>& points) {
+void GainEvaluator::visualize_frustum(const Eigen::Vector4d& pose, std::vector<geometry_msgs::Point>& points) {
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   voxblox::Pointcloud lines;
   cam_model_.getBoundingLines(&lines);
@@ -193,16 +193,17 @@ void GainEvaluator::visualize_frustum(const eth_mav_msgs::EigenTrajectoryPoint& 
   }
 }
 
-void GainEvaluator::visualizeGain(const eth_mav_msgs::EigenTrajectoryPoint& pose, voxblox::Pointcloud& voxels) {
+void GainEvaluator::visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointcloud& voxels) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
   voxblox::Point camera_center = camera_pose.getPosition();
-  double yaw_rad = pose.getYaw();
+  double yaw_rad = pose[3];
   double yaw = yaw_rad * 180 / M_PI;
 
   double gain = 0.0;
@@ -1280,7 +1281,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
     return std::make_pair((double)max_gain, (double)center_angle);
 }
 
-std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose, double fixed_yaw) {
+std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw) {
   // 1. Setup Constants
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
@@ -1306,9 +1307,9 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
       float dir_y = sin(theta) * sin_phi;
       float dir_z = cos(phi);
 
-      float start_x = pose.position_W.x();
-      float start_y = pose.position_W.y();
-      float start_z = pose.position_W.z();
+      float start_x = pose.x();
+      float start_y = pose.y();
+      float start_z = pose.z();
 
       float gx = (start_x - cached_origin_.x()) / voxel_size_;
       float gy = (start_y - cached_origin_.y()) / voxel_size_;
@@ -1418,7 +1419,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
   return std::make_pair((double)max_gain, (double)center_angle);
 }
 
-std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose) {
   // 1. Setup Constants
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
@@ -1446,9 +1447,9 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<ui
       float dir_y = sin(theta) * sin_phi;
       float dir_z = cos(phi);
 
-      float p1x = pose.position_W.x();
-      float p1y = pose.position_W.y();
-      float p1z = pose.position_W.z();
+      float p1x = pose.x();
+      float p1y = pose.y();
+      float p1z = pose.z();
 
       float p2x = p1x + gain_range * dir_x;
       float p2y = p1y + gain_range * dir_y;
@@ -1546,7 +1547,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<ui
 }
 
 // Live-map twin of computeGainCPU_DDA: reads voxblox via getVoxelStatus instead of the flat map.
-std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const Eigen::Vector4d& pose) {
   // 1. Setup Constants
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
@@ -1572,9 +1573,9 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const eth_ma
       float dir_y = sin(theta) * sin_phi;
       float dir_z = cos(phi);
 
-      float p1x = pose.position_W.x();
-      float p1y = pose.position_W.y();
-      float p1z = pose.position_W.z();
+      float p1x = pose.x();
+      float p1y = pose.y();
+      float p1z = pose.z();
 
       float p2x = p1x + gain_range * dir_x;
       float p2y = p1y + gain_range * dir_y;
@@ -1668,7 +1669,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const eth_ma
   return std::make_pair((double)max_gain, (double)center_angle);
 }
 
-std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose) {
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
 
@@ -1698,9 +1699,9 @@ std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<
       // Iterate Ray
       for (float r = 0.2f; r < gain_range; r += voxel_size) {
         // Calculate Point
-        float px = pose.position_W.x() + r * dir_x;
-        float py = pose.position_W.y() + r * dir_y;
-        float pz = pose.position_W.z() + r * dir_z;
+        float px = pose.x() + r * dir_x;
+        float py = pose.y() + r * dir_y;
+        float pz = pose.z() + r * dir_z;
 
         /*// A. STRICT BOUNDARY CHECK (Matches GPU strict fix)
         if (px < min_x_ || px > max_x_ ||
@@ -1777,17 +1778,18 @@ std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<
 
 /* GAIN COMPUTATION FUNCTIONS */
 
-double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
   voxblox::Point camera_center = camera_pose.getPosition();
 
-  double yaw_rad = pose.getYaw();
+  double yaw_rad = pose[3];
   double yaw = yaw_rad * 180 / M_PI;
 
   double gain = 0.0;
@@ -1849,17 +1851,18 @@ double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajec
   return gain;
 }
 
-double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset) {
+double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
   voxblox::Point camera_center = camera_pose.getPosition();
 
-  double yaw_rad = pose.getYaw();
+  double yaw_rad = pose[3];
   double yaw = yaw_rad * 180 / M_PI;
 
   double gain = 0.0;
@@ -1921,11 +1924,12 @@ double GainEvaluator::computeFixedGainRaycasting(const eth_mav_msgs::EigenTrajec
   return gain;
 }
 
-std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vector4d& pose) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
@@ -2022,11 +2026,12 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const eth_mav_msg
   return std::make_pair(gain, yaw);
 }
 
-std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose) {
+std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const Eigen::Vector4d& pose) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
@@ -2162,11 +2167,12 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const et
   return std::make_pair(gain, yaw);
 }
 
-std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const eth_mav_msgs::EigenTrajectoryPoint& pose, Eigen::Vector3d offset) {
+std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
-      pose.orientation_W_B.cast<float>(), pose.position_W.cast<float>()));
+      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
+      pose.head<3>().cast<float>()));
 
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
@@ -2302,14 +2308,13 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const et
   return std::make_pair(gain, yaw);
 }
 
-std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position) {
+std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(Eigen::Vector4d& position) {
   double best_gain = 0;
   double best_yaw = 0;
 
   for (int k = 0; k < yaw_samples_; ++k) {
     double yaw = k * 2 * M_PI / yaw_samples_;
-    //position.position_W = node->point.head(3);
-    position.setFromYaw(yaw);
+    position[3] = yaw;
     double gain = computeFixedGainRaycasting(position);
     if (gain > best_gain) {
       best_gain = gain;
@@ -2320,7 +2325,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(eth
   return std::make_pair(best_gain, best_yaw);
 }
 
-std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampledYaw(eth_mav_msgs::EigenTrajectoryPoint& position) {
+std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampledYaw(Eigen::Vector4d& position) {
   double best_gain = 0;
   double best_yaw = 0;
 
@@ -2334,7 +2339,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
 
   for (int k = 0; k < min_yaw_samples; ++k) {
     double yaw = k * min_yaw_step;
-    position.setFromYaw(yaw);
+    position[3] = yaw;
     double gain = computeFixedGainRaycasting(position);
 
     yaws.push_back(yaw);
@@ -2361,7 +2366,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampl
   for (int j = 0; j < filteredYaws.size(); ++j) {
     for (int l = 0; l < aditional_angles; ++l) {
       double yaw = filteredYaws[j] + yaw_step * (l + 1);
-      position.setFromYaw(yaw);
+      position[3] = yaw;
       double gain = computeFixedGainRaycasting(position);
 
       if (gain > best_gain) {

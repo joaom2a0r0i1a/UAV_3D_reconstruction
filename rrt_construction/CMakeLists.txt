@@ -31,7 +31,6 @@ set(CATKIN_DEPENDENCIES
   mrs_msgs
   mrs_lib
   std_srvs
-  trajectory_generation
   voxblox_ros
   )
   

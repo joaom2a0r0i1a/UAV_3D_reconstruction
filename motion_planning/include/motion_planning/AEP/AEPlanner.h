@@ -35,7 +35,6 @@
 #include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
-#include <eth_mav_msgs/eigen_mav_msgs.h>
 
 #include <Eigen/Core>
 #include <rrt_construction/rrt_star_kd.h>
@@ -267,7 +266,7 @@ private:
     std::vector<Eigen::Vector4d> executed_path_;      // flown poses (forward moves); boxed-in backtrack retreats along it
     bool retreating_ = false;                         // set only by a backtrack, cleared each STATE_PLANNING cycle
     std::unique_ptr<rrt_star::Node> retreat_node_;    // holds the current retreat pose (Node has no default ctor)
-    eth_mav_msgs::EigenTrajectoryPoint trajectory_point;
+    Eigen::Vector4d trajectory_point;
     Eigen::Vector4d next_start;
 
     // Global Planner variables
