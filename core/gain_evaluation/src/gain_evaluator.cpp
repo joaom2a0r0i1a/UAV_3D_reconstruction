@@ -427,43 +427,6 @@ sensor_msgs::PointCloud2 GainEvaluator::visualizeGpuMap(const std::vector<uint8_
 
 /* GPU-BASED GAIN COMPUTATION FUNCTIONS */
 
-std::pair<double, double> GainEvaluator::computeGainGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z) {
-    // 0. Safety Check
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {0.0, 0.0};
-    }
-  
-    // 1. Number of Candidates
-    int num_candidates = pos_x.size();
-    if (num_candidates == 0) return {0.0, 0.0};
-
-    // 2. Data Marshalling (Double -> Float)
-    // The GPU prefers floats. We convert the vectors here.
-    std::vector<float> x_f(num_candidates);
-    std::vector<float> y_f(num_candidates);
-    std::vector<float> z_f(num_candidates);
-
-    for(int i=0; i<num_candidates; ++i) {
-        x_f[i] = static_cast<float>(pos_x[i]);
-        y_f[i] = static_cast<float>(pos_y[i]);
-        z_f[i] = static_cast<float>(pos_z[i]);
-    }
-
-    // 3. Prepare Output Buffers
-    std::vector<float> results_gain(num_candidates);
-    std::vector<float> results_yaw(num_candidates);
-
-    // 4. LAUNCH THE KERNEL DIRECTLY
-    GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
-    GpuResult out = {results_gain.data(), results_yaw.data(), nullptr};
-    launch_gain_kernel_batch(gpuMap(), cands, out, gpuSensor(), nullptr);
-
-    // 5. Return Result
-    // For now, we assume the user passed 1 candidate and wants 1 result.
-    return { (double)results_gain[0], (double)results_yaw[0] };
-}
-
 std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws, float* kernel_ms) {
     // 0. Safety Check
     if (d_map_ == nullptr) {
@@ -492,24 +455,8 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     // 3. Launch Kernel
     GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
     GpuResult out = {results_gain.data(), results_yaw.data(), nullptr};
-    if (fixed_yaws) launch_gain_kernel_batch_fixed(gpuMap(), cands, out, gpuSensor(), fixed_yaws->data(), kernel_ms);
-    else            launch_gain_kernel_batch(gpuMap(), cands, out, gpuSensor(), kernel_ms);
-
-    /*const float DTHETA_RAD = 2.0f * M_PI / 180.0f;
-    const float DPHI_RAD   = 2.0f * M_PI / 180.0f;
-
-    int win_w = (int)((float)fov_y_rad_ / DTHETA_RAD);
-    if (win_w < 1) win_w = 1;
-
-    int win_h = (int)((float)fov_p_rad_ / DPHI_RAD);
-    if (win_h < 1) win_h = 1;
-
-    int total_floats = num_candidates * win_w * win_h;
-    std::vector<float> results_depths(total_floats);
-
-    GpuCandidates cands = {x_f.data(), y_f.data(), z_f.data(), num_candidates};
-    GpuResult out = {results_gain.data(), results_yaw.data(), results_depths.data()};
-    launch_gain_kernel_batch_depth(gpuMap(), cands, out, gpuSensor());*/
+    if (fixed_yaws) launch_absolute_gain_batch_fixed(gpuMap(), cands, out, gpuSensor(), fixed_yaws->data(), kernel_ms);
+    else            launch_absolute_gain_batch(gpuMap(), cands, out, gpuSensor(), kernel_ms);
 
     // 4. Return Results
     std::vector<std::pair<double, double>> results;
@@ -520,28 +467,7 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     return results;
 }
 
-std::pair<double, double> GainEvaluator::computeSingleGainGPU(const double pos_x, const double pos_y, const double pos_z) {
-    // 0. Safety Check
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {0.0, 0.0};
-    }
-
-    // 1. Launch The Kernel Wrapper
-    // Note: We use the member variables we cached earlier for the parent state
-    float results_gain = 0.0f;
-    float results_yaw = 0.0f;
-
-    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
-    GpuResult out = {&results_gain, &results_yaw, nullptr};
-    launch_gain_kernel_single(gpuMap(), cand, out, gpuSensor());
-
-    // 2. Return Result
-    // For now, we assume the user passed 1 candidate and wants 1 result.
-    return { (double)results_gain, (double)results_yaw };
-}
-
-std::pair<double, double> GainEvaluator::computeMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
+std::pair<double, double> GainEvaluator::computeSingleParentMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
     // 0. Safety Check
     if (d_map_ == nullptr) {
         ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
@@ -567,117 +493,24 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU(const double pos
     float results_yaw = 0.0f;
 
     // 2. Launch The Kernel Wrapper
-    // Note: We use the member variables we cached earlier for the parent state
+    // The single parent is packed as a one-ancestor chain (count=1) so it rides the shared
+    // single-node GPU path (identical result: with one ancestor the span merge is a no-op).
     GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
-    GpuParent parent = {{(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()},
-                        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data()};
-    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    launch_marginal_gain_kernel(gpuMap(), cand, parent, out, gpuSensor());
-
-    // 3. Return Result
-    // For now, we assume the user passed 1 candidate and wants 1 result.
-    return { (double)results_gain, (double)results_yaw };
-}
-
-std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
-    // 0. Safety Check
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {0.0, 0.0};
-    }
-
-    float dtheta_rad = 2.0f * M_PI / 180.0f;
-    float dphi_rad   = 2.0f * M_PI / 180.0f;
-
-    //int window_width  = std::max(1, (int)(fov_y_rad_ / dtheta_rad));
-    //int window_height = std::max(1, (int)(fov_p_rad_ / dphi_rad));
-
-    int p_width = ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
-    int p_height = ceil((2.0f * r_max_ * tanf(fov_p_rad_ * 0.5f)) / dr_);
-    
-    // Resize the vector to fit the result
-    size_t required_size = p_width * p_height;
-    if (result_depths.size() != required_size) {
-        result_depths.resize(required_size);
-    }
-    // 1. Prepare Output Buffers
-    float results_gain = 0.0f;
-    float results_yaw = 0.0f;
-
-    // 2. Launch The Kernel Wrapper
-    // Note: We use the member variables we cached earlier for the parent state
-    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
-    GpuParent parent = {{(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()},
-                        (float)parent_yaw, parent_R.data(), (float*)parent_depth.data()};
-    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    if (std::isnan(fixed_yaw)) launch_marginal_gain_kernel_v2(gpuMap(), cand, parent, out, gpuSensor());
-    else launch_marginal_gain_kernel_v2_fixed(gpuMap(), cand, parent, out, gpuSensor(), (float)fixed_yaw);
-
-    // 3. Return Result
-    // For now, we assume the user passed 1 candidate and wants 1 result.
-    return { (double)results_gain, (double)results_yaw };
-}
-
-std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v3(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
-    // 0. Safety Check
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {0.0, 0.0};
-    }
-
-    int num_ancestors = (int)parent_positions.size();
-    if (num_ancestors == 0) {
-        // No ancestors -> no marginal subtraction possible; nothing to evaluate against.
-        return {0.0, 0.0};
-    }
-
-    float dtheta_rad = 2.0f * M_PI / 180.0f;
-    float dphi_rad   = 2.0f * M_PI / 180.0f;
-
-    //int window_width  = std::max(1, (int)(fov_y_rad_ / dtheta_rad));
-    //int window_height = std::max(1, (int)(fov_p_rad_ / dphi_rad));
-
-    int p_width = ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
-    int p_height = ceil((2.0f * r_max_ * tanf(fov_p_rad_ * 0.5f)) / dr_);
-
-    // Resize the vector to fit the result
-    size_t required_size = p_width * p_height;
-    if (result_depths.size() != required_size) {
-        result_depths.resize(required_size);
-    }
-
-    // Flatten the per-ancestor pose/yaw inputs into contiguous float arrays
-    // that match the kernel's expected layout (x,y,z per ancestor; one yaw each).
-    std::vector<float> parent_pos_flat(3 * num_ancestors);
-    std::vector<float> parent_yaw_flat(num_ancestors);
-    for (int i = 0; i < num_ancestors; ++i) {
-        parent_pos_flat[3*i + 0] = (float)parent_positions[i].x();
-        parent_pos_flat[3*i + 1] = (float)parent_positions[i].y();
-        parent_pos_flat[3*i + 2] = (float)parent_positions[i].z();
-        parent_yaw_flat[i] = (i < (int)parent_yaws.size()) ? (float)parent_yaws[i] : 0.0f;
-    }
-
-    // 1. Prepare Output Buffers
-    float results_gain = 0.0f;
-    float results_yaw = 0.0f;
-
-    // 2. Launch The Kernel Wrapper
-    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
-    GpuAncestors ancestors = {num_ancestors,
-                              parent_pos_flat.data(),
-                              parent_yaw_flat.data(),
-                              parent_R.data(),
+    float parent_pos_flat[3] = {(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()};
+    float parent_yaw_flat[1] = {(float)parent_yaw};
+    GpuAncestors ancestors = {1, parent_pos_flat, parent_yaw_flat, parent_R.data(),
                               parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
     GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    launch_marginal_gain_kernel_v3(gpuMap(), cand, ancestors, out, gpuSensor());
+    if (std::isnan(fixed_yaw)) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
+    else launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)fixed_yaw);
 
     // 3. Return Result
     // For now, we assume the user passed 1 candidate and wants 1 result.
     return { (double)results_gain, (double)results_yaw };
 }
 
-std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v4(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
-    // v4 shares v3's data preparation exactly; only the launcher (marcher) differs.
+std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
+    // Flatten the ancestor chain and run the single-node kernel (traverse marcher) over all of them.
     // 0. Safety Check
     if (d_map_ == nullptr) {
         ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
@@ -722,7 +555,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainGPU_v4(const double 
                               parent_R.data(),
                               parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
     GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    launch_marginal_gain_kernel_v4(gpuMap(), cand, ancestors, out, gpuSensor());
+    launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
 
     // 3. Return Result
     return { (double)results_gain, (double)results_yaw };

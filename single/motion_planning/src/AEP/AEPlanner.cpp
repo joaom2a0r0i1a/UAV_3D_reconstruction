@@ -534,7 +534,7 @@ void AEPlanner::localPlanner() {
                 (float)new_node_best->parent->point[3], camera_pitch_rad /*pitch*/
             );
 
-            std::pair<double, double> result = segment_evaluator.computeMarginalGainGPU(
+            std::pair<double, double> result = segment_evaluator.computeSingleParentMarginalGainGPU(
                 new_node_best->point.x(), new_node_best->point.y(), new_node_best->point.z(),
                 parent_cam_pos, new_node_best->parent->point[3], parent_R, new_node_best->parent->depth_buffer, new_node_best->depth_buffer);
 
@@ -670,17 +670,13 @@ void AEPlanner::localPlanner() {
         trajectory_point = new_node->point;
 
         // 0. Prepare Separate Output Buffers
-        std::vector<float> depth_buf_v1 = new_node->depth_buffer;
         std::vector<float> depth_buf_v2 = new_node->depth_buffer;
-        std::vector<float> depth_buf_v3 = new_node->depth_buffer;
         std::vector<float> depth_buf_v4 = new_node->depth_buffer;
 
         // --- DECLARE RESULTS OUTSIDE THE TRACKING BLOCK ---
         std::pair<double, double> res_cpu = {0.0, 0.0};
         std::pair<double, double> res_cpu_hash = {0.0, 0.0};
-        std::pair<double, double> res_gpu_marg = {0.0, 0.0};
         std::pair<double, double> res_gpu_marg_v2 = {0.0, 0.0};
-        std::pair<double, double> res_gpu_marg_v3 = {0.0, 0.0};
         std::pair<double, double> res_gpu_marg_v4 = {0.0, 0.0};
 
         // --- 0. STATIC TRACKERS ---
@@ -712,15 +708,8 @@ void AEPlanner::localPlanner() {
         res_cpu_hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, new_node.get());
         auto end_cpu_hash = std::chrono::high_resolution_clock::now();
 
-        auto start_gpu_marg = std::chrono::high_resolution_clock::now();
-        res_gpu_marg = segment_evaluator.computeMarginalGainGPU(
-            new_node->point.x(), new_node->point.y(), new_node->point.z(),
-            parent_cam_pos, new_node->parent->point[3], parent_R, 
-            new_node->parent->depth_buffer, depth_buf_v1); 
-        auto end_gpu_marg = std::chrono::high_resolution_clock::now();
-
         auto start_gpu_marg_v2 = std::chrono::high_resolution_clock::now();
-        res_gpu_marg_v2 = segment_evaluator.computeMarginalGainGPU_v2(
+        res_gpu_marg_v2 = segment_evaluator.computeSingleParentMarginalGainGPU(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
             parent_cam_pos, new_node->parent->point[3], parent_R, 
             new_node->parent->depth_buffer, depth_buf_v2); 
@@ -754,16 +743,9 @@ void AEPlanner::localPlanner() {
             }
         }
 
-        auto start_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
-        res_gpu_marg_v3 = segment_evaluator.computeMarginalGainGPU_v3(
-            new_node->point.x(), new_node->point.y(), new_node->point.z(),
-            anc_positions, anc_yaws, anc_R_flat,
-            anc_depth_flat, depth_buf_v3);
-        auto end_gpu_marg_v3 = std::chrono::high_resolution_clock::now();
-
         // v4: same ancestor chain as v3, but the marcher traverses skip spans.
         auto start_gpu_marg_v4 = std::chrono::high_resolution_clock::now();
-        res_gpu_marg_v4 = segment_evaluator.computeMarginalGainGPU_v4(
+        res_gpu_marg_v4 = segment_evaluator.computeMultiAncestorMarginalGainGPU(
             new_node->point.x(), new_node->point.y(), new_node->point.z(),
             anc_positions, anc_yaws, anc_R_flat,
             anc_depth_flat, depth_buf_v4);
@@ -800,14 +782,8 @@ void AEPlanner::localPlanner() {
         if (res_cpu_hash.first > absolute_baseline + EPSILON) {
             log_anomaly("CPU_Hash_Map", res_cpu_hash.first);
         }
-        if (res_gpu_marg.first > absolute_baseline + EPSILON) {
-            log_anomaly("GPU_Marg_V1", res_gpu_marg.first);
-        }
         if (res_gpu_marg_v2.first > absolute_baseline + EPSILON) {
             log_anomaly("GPU_Marg_V2", res_gpu_marg_v2.first);
-        }
-        if (res_gpu_marg_v3.first > absolute_baseline + EPSILON) {
-            log_anomaly("GPU_Marg_V3", res_gpu_marg_v3.first);
         }
         if (res_gpu_marg_v4.first > absolute_baseline + EPSILON) {
             log_anomaly("GPU_Marg_V4", res_gpu_marg_v4.first);
@@ -817,25 +793,19 @@ void AEPlanner::localPlanner() {
         if (nodes_evaluated < NODE_LIMIT) {
             double ms_cpu       = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
             double ms_cpu_hash  = std::chrono::duration<double, std::milli>(end_cpu_hash - start_cpu_hash).count();
-            double ms_gpu_marg  = std::chrono::duration<double, std::milli>(end_gpu_marg - start_gpu_marg).count();
             double ms_gpu_marg_v2 = std::chrono::duration<double, std::milli>(end_gpu_marg_v2 - start_gpu_marg_v2).count();
-            double ms_gpu_marg_v3 = std::chrono::duration<double, std::milli>(end_gpu_marg_v3 - start_gpu_marg_v3).count();
             double ms_gpu_marg_v4 = std::chrono::duration<double, std::milli>(end_gpu_marg_v4 - start_gpu_marg_v4).count();
 
             ROS_INFO(
                 "\n--- GAIN EVALUATION TRIPLE THREAT ---\n"
                 "1. CPU (Abs):  Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms\n"
                 "2. CPU (Hash): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-                "3. GPU (Marg): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-                "4. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-                "5. GPU (Marg_v3): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
-                "6. GPU (Marg_v4): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "3. GPU (Marg_v2): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
+                "4. GPU (Marg_v4): Gain=%6.2f | Yaw=%5.2f | Time=%7.4f ms | Speedup (vs CPU): %.1fx\n"
                 "---------------------------------------",
                 res_cpu.first,      res_cpu.second,      ms_cpu,
                 res_cpu_hash.first, res_cpu_hash.second, ms_cpu_hash, (ms_cpu / (ms_cpu_hash + 1e-5)),
-                res_gpu_marg.first, res_gpu_marg.second, ms_gpu_marg, (ms_cpu / (ms_gpu_marg + 1e-5)),
                 res_gpu_marg_v2.first, res_gpu_marg_v2.second, ms_gpu_marg_v2, (ms_cpu / (ms_gpu_marg_v2 + 1e-5)),
-                res_gpu_marg_v3.first, res_gpu_marg_v3.second, ms_gpu_marg_v3, (ms_cpu / (ms_gpu_marg_v3 + 1e-5)),
                 res_gpu_marg_v4.first, res_gpu_marg_v4.second, ms_gpu_marg_v4, (ms_cpu / (ms_gpu_marg_v4 + 1e-5))
             );
 
@@ -1010,7 +980,7 @@ double AEPlanner::computeV2SingleParent(rrt_star::Node* node) {
     if (p && (int)p->depth_buffer.size() == per) p_depth = p->depth_buffer;
     else p_depth.assign((size_t)per, -1.0f);   // no parent view (root) -> absolute
     std::vector<float> out;
-    auto r = segment_evaluator.computeMarginalGainGPU_v2(
+    auto r = segment_evaluator.computeSingleParentMarginalGainGPU(
         node->point.x(), node->point.y(), node->point.z(), p_pos, p_yaw, R, p_depth, out);
     return r.first;
 }
@@ -1033,7 +1003,7 @@ double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw) 
             anc_depth_flat.insert(anc_depth_flat.end(), (size_t)per, -1.0f);  // root/unevaluated -> unknown
     }
     std::vector<float> out;
-    auto r = segment_evaluator.computeMarginalGainGPU_v4(
+    auto r = segment_evaluator.computeMultiAncestorMarginalGainGPU(
         node->point.x(), node->point.y(), node->point.z(),
         anc_positions, anc_yaws, anc_R_flat, anc_depth_flat, out);
     if (out_yaw) *out_yaw = r.second;   // argmax yaw (free-yaw optimum); node->gain/yaw/buffer left untouched

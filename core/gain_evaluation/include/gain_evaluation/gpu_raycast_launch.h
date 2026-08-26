@@ -20,7 +20,7 @@ typedef struct {
 
 // Occupancy grid cached on the GPU: device buffer + dimensions + world origin.
 typedef struct {
-    uint8_t* d_map;     // device occupancy grid (host grid for launch_gain_kernel)
+    uint8_t* d_map;     // device occupancy grid
     int dx, dy, dz;     // grid dimensions (voxels)
     float ox, oy, oz;   // world position of voxel (0,0,0)
 } GpuMap;
@@ -49,15 +49,7 @@ typedef struct {
     float* depths;
 } GpuResult;
 
-// Single observing parent frame (v1/v2 marginal gain).
-typedef struct {
-    GpuVec3 pos;
-    float yaw;
-    float* R;       // 9 floats, row-major rotation
-    float* depth;   // p_width*p_height depth image, or null
-} GpuParent;
-
-// Full ancestor chain for multi-frustum marginal gain (v3, the live path).
+// Full ancestor chain for multi-frustum marginal gain; single-parent passes count=1.
 typedef struct {
     int count;
     float* pos;     // 3*count  (x,y,z per ancestor)
@@ -85,24 +77,15 @@ extern "C" {
 
 
 /* EXPECTED-INFORMATION-GAIN LAUNCHERS */
-void launch_gain_kernel_single(GpuMap map, GpuVec3 cand, GpuResult out, GpuSensor cfg);
-void launch_gain_kernel(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
-void launch_gain_kernel_batch(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg, float* kernel_ms);
-void launch_gain_kernel_batch_depth(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg);
+void launch_absolute_gain_batch(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg, float* kernel_ms);
 
 
-/* MARGINAL-GAIN LAUNCHERS (v3 live; v1/v2 legacy; v4 = v3 but traverses spans instead of jumping) */
-void launch_marginal_gain_kernel(GpuMap map, GpuVec3 cand, GpuParent parent,
+/* SINGLE-NODE MARGINAL-GAIN LAUNCHER (one kernel over an ancestor set: count=1 = single-parent, N = multi-ancestor) */
+void launch_marginal_gain(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
                                  GpuResult out, GpuSensor cfg);
-void launch_marginal_gain_kernel_v2(GpuMap map, GpuVec3 cand, GpuParent parent,
-                                    GpuResult out, GpuSensor cfg);
-void launch_marginal_gain_kernel_v3(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
-                                    GpuResult out, GpuSensor cfg);
-void launch_marginal_gain_kernel_v4(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
-                                    GpuResult out, GpuSensor cfg);
 
 
-/* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both v4 march; kernel_ms=device ms; fixed_yaws=NBVP per-candidate or null=AEP) */
+/* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both traverse-march; kernel_ms=device ms; fixed_yaws=NBVP per-candidate or null=AEP) */
 void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
                                       GpuSensor cfg, float* kernel_ms,
@@ -114,10 +97,10 @@ void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
 
 
 /* FIXED-YAW VARIANTS (NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
-void launch_gain_kernel_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
+void launch_absolute_gain_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
                                     GpuSensor cfg, const float* fixed_yaws, float* kernel_ms);
-void launch_marginal_gain_kernel_v2_fixed(GpuMap map, GpuVec3 cand, GpuParent parent,
-                                          GpuResult out, GpuSensor cfg, float fixed_yaw);
+void launch_marginal_gain_fixed(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
+                                       GpuResult out, GpuSensor cfg, float fixed_yaw);
 
 
 /* THIN DEVICE-MEMORY WRAPPERS (host owns the cached map buffer) */

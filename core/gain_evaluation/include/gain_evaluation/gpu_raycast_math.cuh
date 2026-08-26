@@ -86,7 +86,7 @@ struct MapContext {
     float3 origin;
 };
 
-// A single parent camera frame (single-parent kernels v1/v2, and one ancestor of the v3 chain).
+// A single parent camera frame (one ancestor of a chain; the single-node kernel reconstructs one of these per ancestor).
 struct ParentFrame {
     float3                  pos;
     const float*            depth;   // p_width * p_height planar depths
@@ -94,7 +94,7 @@ struct ParentFrame {
     gpuray::ParentCameraConfig cam;
 };
 
-// Full ancestor chain of a candidate (v3 multi-ancestor); depth_idx (opt) pools depth buffers, else contiguous.
+// Full ancestor chain of a candidate (count=1 = single-parent, N = multi-ancestor); depth_idx (opt) pools depth buffers, else contiguous.
 struct AncestorSet {
     const float3*           positions;   // [num]
     const float*            yaws;        // [num] (parity only; unused in math)
@@ -577,60 +577,6 @@ __device__ inline RayProjection project_ray_into_parent(const ParentFrame& paren
     return rp;
 }
 
-// Single-interval skip distance (v1): returns (visible_start, hit, status) in metres; x=-1 if the ray misses the frustum.
-__device__ inline float3 compute_skip_distance(const ParentFrame& parent, Ray ray, float max_dist) {
-    RayProjection rp = project_ray_into_parent(parent, ray, max_dist);
-    if (!rp.valid) return make_float3(-1.0f, -1.0f, 0.0f);
-
-    gpuray::Dda2 d = rp.dda;
-    float current_t = 0.0f;
-    float w_curr = rp.w_start;
-    bool hit_any_limit = false;
-    float status = 1.0f;
-
-    while (current_t <= 1.0f) {
-        if (d.x >= 0 && d.x < parent.cam.p_width && d.y >= 0 && d.y < parent.cam.p_height) {
-            float t_exit = fminf((d.tMaxX < d.tMaxY) ? d.tMaxX : d.tMaxY, 1.0f);
-            float w_entry = rp.w_start + current_t * (rp.w_end - rp.w_start);
-            float w_exit  = rp.w_start + t_exit   * (rp.w_end - rp.w_start);
-            float z_entry = 1.0f / w_entry;
-            float z_exit  = 1.0f / w_exit;
-
-            float parent_z = parent.depth[d.y * parent.cam.p_width + d.x];
-            if (parent_z < 0.0f) return make_float3(-1.0f, -1.0f, 0.0f);   // root / uninitialised
-
-            if (parent_z <= z_entry + 0.35f) {
-                hit_any_limit = true;
-                w_curr = w_entry;
-                if (parent_surface_is_real(parent.cam, d.x, d.y, parent_z, max_dist)) status = -1.0f;
-                break;
-            } else if (parent_z <= z_exit + 0.35f) {
-                hit_any_limit = true;
-                float dw = rp.w_end - rp.w_start;
-                float t_exact = ((1.0f / parent_z) - rp.w_start) / dw;
-                current_t = fmaxf(current_t, fminf(t_exact, t_exit));
-                w_curr = rp.w_start + current_t * dw;
-                if (parent_surface_is_real(parent.cam, d.x, d.y, parent_z, max_dist)) status = -1.0f;
-                break;
-            }
-        } else {
-            hit_any_limit = true;
-            break;
-        }
-
-        if (d.x == d.x_end && d.y == d.y_end) break;
-        if (d.tMaxX < d.tMaxY) { d.x += d.stepX; current_t = d.tMaxX; d.tMaxX += d.tDeltaX; }
-        else                   { d.y += d.stepY; current_t = d.tMaxY; d.tMaxY += d.tDeltaY; }
-    }
-
-    if (!hit_any_limit) { w_curr = rp.w_end; current_t = 1.0f; }
-
-    float t_hit;
-    if (fabsf(rp.D.z) > 1e-3f) t_hit = ((1.0f / w_curr) - rp.O.z) / rp.D.z;
-    else                       t_hit = rp.t_visible_start + current_t * (rp.t_visible_end - rp.t_visible_start);
-    return make_float3(rp.t_visible_start, t_hit, status);
-}
-
 // Walk one parent's projected ray, emitting each observed-free span (metres) and latching *status on real occlusion.
 __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, const RayProjection& rp,
                                                  const KernelParams& params, SkipBuffer skips) {
@@ -701,16 +647,7 @@ __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, cons
     }
 }
 
-// Single-parent skip set (legacy v2): project one parent and accumulate its spans.
-__device__ inline void compute_skip_intervals_single(const ParentFrame& parent, Ray ray,
-                                                     const KernelParams& params, SkipBuffer skips) {
-    *skips.count = 0;
-    *skips.status = 1.0f;
-    RayProjection rp = project_ray_into_parent(parent, ray, params.gain_range);
-    if (rp.valid) accumulate_skip_intervals(parent, rp, params, skips);
-}
-
-// Multi-ancestor skip set (v3): merge the observed-free spans of every ancestor.
+// Skip set: merge the observed-free spans of every ancestor (count=1 = single-parent, N = full chain).
 __device__ inline void compute_multi_segment_skip_distance(const AncestorSet& ancestors, Ray ray,
                                                            const KernelParams& params, SkipBuffer skips) {
     *skips.count = 0;
@@ -752,7 +689,7 @@ __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ra
         uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
         if (val == V_OCCUPIED) { *out_depth = d.t * p.voxel_size; break; }
         if (val == V_UNKNOWN) {
-            float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);   // cap last voxel at range (match CPU + v3/v4)
+            float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);   // cap last voxel at range (match CPU + traverse march)
             if (t_exit > d.t) ray_gain += ray_segment_gain(d.t, t_exit, ray.sin_phi, p);
         }
         gpuray::dda3_step(d);
@@ -760,109 +697,7 @@ __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ra
     return ray_gain;
 }
 
-// Legacy single-interval marginal march (v1): jump the one observed-free span (skip=(start,end) voxels, x<0 = none).
-__device__ inline float march_marginal_gain_single(const MapContext& m, const MarchRay& ray,
-                                                   float2 skip, const KernelParams& p,
-                                                   float* out_final_depth) {
-    float3 g0 = gpuray::world_to_voxel(ray.origin, m.origin, p.voxel_size);
-    gpuray::Dda3 d = gpuray::dda3_init(g0, ray.dir);
-    float max_t = p.gain_range / p.voxel_size;
-    float final_depth = p.gain_range;
-    bool has_jumped = false;
-    float ray_gain = 0.0f;
-
-    for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
-        if (!has_jumped && skip.x >= 0.0f && d.t >= skip.x && d.t < skip.y) {
-            if (voxel_value(m, d.ix, d.iy, d.iz) == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-            has_jumped = true;
-            float3 gj = make_float3(g0.x + ray.dir.x * skip.y, g0.y + ray.dir.y * skip.y, g0.z + ray.dir.z * skip.y);
-            gpuray::dda3_reseat(d, gj, skip.y);
-            if (voxel_value(m, d.ix, d.iy, d.iz) == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-            gpuray::dda3_step(d);
-            continue;
-        }
-
-        uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
-        if (val == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-        if (val == V_UNKNOWN)  ray_gain += ray_segment_gain(d.t, fminf(gpuray::dda3_t_exit(d), max_t), ray.sin_phi, p);  // cap at range
-        gpuray::dda3_step(d);
-    }
-    *out_final_depth = final_depth;
-    return ray_gain;
-}
-
-// Legacy multi-segment march (v2): suppress gain inside any observed-free span (no jumping).
-__device__ inline float march_marginal_gain_suppress(const MapContext& m, const MarchRay& ray,
-                                                     SkipSet skips, const KernelParams& p,
-                                                     float* out_final_depth) {
-    gpuray::Dda3 d = gpuray::dda3_init(gpuray::world_to_voxel(ray.origin, m.origin, p.voxel_size), ray.dir);
-    float max_t = p.gain_range / p.voxel_size;
-    float final_depth = p.gain_range;
-    int current_skip_idx = 0;
-    float ray_gain = 0.0f;
-
-    for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
-        uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
-        if (val == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-        if (val == V_UNKNOWN) {
-            while (current_skip_idx < skips.count && d.t >= skips.intervals[current_skip_idx].y) current_skip_idx++;
-            bool parent_sees_free = (current_skip_idx < skips.count &&
-                                     d.t >= skips.intervals[current_skip_idx].x &&
-                                     d.t <  skips.intervals[current_skip_idx].y);
-            if (!parent_sees_free) ray_gain += ray_segment_gain(d.t, fminf(gpuray::dda3_t_exit(d), max_t), ray.sin_phi, p);  // cap at range
-        }
-        gpuray::dda3_step(d);
-    }
-    *out_final_depth = final_depth;
-    return ray_gain;
-}
-
-// Canonical multi-ancestor march (v3): jump every observed-free span, clamp gain to range and to the next skip start.
-__device__ inline float march_marginal_gain(const MapContext& m, const MarchRay& ray,
-                                            SkipSet skips, const KernelParams& p,
-                                            float* out_final_depth) {
-    float3 g0 = gpuray::world_to_voxel(ray.origin, m.origin, p.voxel_size);
-    gpuray::Dda3 d = gpuray::dda3_init(g0, ray.dir);
-    float max_t = p.gain_range / p.voxel_size;
-    float final_depth = p.gain_range;
-    int current_skip_idx = 0;
-    float ray_gain = 0.0f;
-
-    for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
-        // Drop skip intervals the ray has already passed.
-        while (current_skip_idx < skips.count && d.t >= skips.intervals[current_skip_idx].y) current_skip_idx++;
-
-        // Inside an observed-free span: jump past it (unless a wall blocks first).
-        if (current_skip_idx < skips.count) {
-            float skip_start = skips.intervals[current_skip_idx].x;
-            float skip_end   = skips.intervals[current_skip_idx].y;
-            if (d.t >= skip_start && d.t < skip_end) {
-                if (voxel_value(m, d.ix, d.iy, d.iz) == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-                current_skip_idx++;
-                float3 gj = make_float3(g0.x + ray.dir.x * skip_end, g0.y + ray.dir.y * skip_end, g0.z + ray.dir.z * skip_end);
-                gpuray::dda3_reseat(d, gj, skip_end);
-                if (voxel_value(m, d.ix, d.iy, d.iz) == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-                gpuray::dda3_step(d);
-                continue;
-            }
-        }
-
-        uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
-        if (val == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
-        if (val == V_UNKNOWN) {
-            float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);                       // FIX 1: cap at range
-            if (current_skip_idx < skips.count && t_exit > skips.intervals[current_skip_idx].x) {
-                t_exit = fminf(t_exit, skips.intervals[current_skip_idx].x);        // FIX 2: no bleed into skip span
-            }
-            if (t_exit > d.t) ray_gain += ray_segment_gain(d.t, t_exit, ray.sin_phi, p);
-        }
-        gpuray::dda3_step(d);
-    }
-    *out_final_depth = final_depth;
-    return ray_gain;
-}
-
-// v4 marginal march: like v3 but never reseats the DDA -- walks every voxel, omits gain in spans, stops on OCCUPIED inside a span.
+// Single-node marginal march: traverse every voxel (never reseats the DDA), omit gain inside observed-free spans, stop on OCCUPIED inside a span.
 __device__ inline float march_marginal_gain_traverse(const MapContext& m, const MarchRay& ray,
                                                      SkipSet skips, const KernelParams& p,
                                                      float* out_final_depth) {

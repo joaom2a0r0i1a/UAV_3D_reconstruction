@@ -8,12 +8,12 @@ timer_main:
 
 # School
 bounded_box:
-  min_x: -20.0 # [m]
-  max_x: 20.0 # [m]
+  min_x: -25.0 # [m]
+  max_x: 25.0 # [m]
   min_y: -20.0 # [m]
-  max_y: 20.0 # [m]
-  min_z: 0.5 # [m]
-  max_z: 1.8 # [m]
+  max_y: 15.0 # [m]
+  min_z: 1.0 # [m]
+  max_z: 20.0 # [m]
 
 # Police Station
 #bounded_box:
@@ -34,22 +34,22 @@ bounded_box:
   #max_z: 2.5 # [m]
 
 local_planning:
-  N_max: 250
-  N_termination: 1000
+  N_max: 50
+  N_termination: 300
   N_yaw_samples: 15
-  radius: 2.0 # [m]
-  step_size: 1.5 # [m]
+  radius: 3.0 # [m]
+  step_size: 2.0 # [m]
   min_edge_length: 0.2 # [m]
-  tolerance: 1.0 # [m]
+  tolerance: 1.5 # [m]
   g_zero: 5.0
   rrt_star: false          # false = RRT (nearest parent); true = RRT* (choose-parent + rewire) in the batched local planner
 
 global_planning:
-  N_min_nodes: 1000
+  N_min_nodes: 300
   selection: "score"       # goal pick: "cost" (nearest), "gain" (most info), "score" (gain discounted by distance)
 
 evaluation:
-  marginal_gain: false      # true: marginal gain (frontier = path sum in global); false: absolute gain (original AEP)
+  marginal_gain: true      # true: marginal gain (frontier = path sum in global); false: absolute gain (original AEP)
   objective: expdecay      # expdecay | rate_L
   compute: "gpu"           # "gpu" (batched; absolute batches the whole tree) or "cpu" (sequential; marginal=hash)
   marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
@@ -65,8 +65,8 @@ camera:
   pitch: 10.0 # [deg] downward camera pitch (matches the front_pitched sensor)
 
 path:
-  uav_radius: 0.8 # [m] (per-world; set by lib_campaign world tables)
-  waypoint_reach_distance: 0.5 # [m] advance to next waypoint within this dist (per-world; 0.8 open, 0.5 clutter to cut corner-cutting)
+  uav_radius: 1.5 # [m] (per-world; set by lib_campaign world tables)
+  waypoint_reach_distance: 0.8 # [m] advance to next waypoint within this dist (per-world; 0.8 open, 0.5 clutter to cut corner-cutting)
   collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)
   optimistic_iterations: 5 # edges may plan through UNKNOWN only for the first N replans (bootstrap); then unknown=blocked (no pocket traps)
   recovery_enabled: true # master toggle for the in-planner backtrack (set FALSE for benchmark runs that idle on purpose)

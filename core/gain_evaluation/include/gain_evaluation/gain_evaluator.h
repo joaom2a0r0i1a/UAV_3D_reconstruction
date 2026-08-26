@@ -90,25 +90,16 @@ class GainEvaluator {
 
   /*              GPU-BASED GAIN COMPUTATION FUNCTIONS                 */
 
-  // Compute gain for a single pose
-  std::pair<double, double> computeGainGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z);
-
   // Compute gain for a batch of poses
   // fixed_yaws (optional, [num_candidates]): evaluate the FOV window at each yaw instead of optimizing.
   // kernel_ms (optional): receives the device kernel time (ms), same cudaEvent measurement as the marginal batch.
   std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr, float* kernel_ms = nullptr);
 
-  std::pair<double, double> computeSingleGainGPU(const double pos_x, const double pos_y, const double pos_z);
+  std::pair<double, double> computeSingleParentMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
 
-  std::pair<double, double> computeMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
-
-  std::pair<double, double> computeMarginalGainGPU_v2(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
-
-  std::pair<double, double> computeMarginalGainGPU_v3(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
-
-  // v4: same multi-ancestor marginal gain as v3, but the GPU marcher traverses the
-  // observed-free spans instead of jumping them (safer, no DDA reseat).
-  std::pair<double, double> computeMarginalGainGPU_v4(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+  // Multi-ancestor marginal gain: the GPU marcher traverses the observed-free spans
+  // (never reseats the DDA). Runs the single-node kernel over the full ancestor chain.
+  std::pair<double, double> computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
 
   // Depth-image pixel count (p_width*p_height) shared by every ancestor buffer.
   int depthImagePixels() const {

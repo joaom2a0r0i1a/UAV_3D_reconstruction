@@ -1,6 +1,6 @@
 // ============================================================================
 //  gpu_tester -- head-to-head benchmark for the two batched marginal-gain
-//  architectures (both use the v4 traverse march):
+//  architectures (both use the single-node traverse march):
 //    fused  (Option 1): one kernel per candidate, check-then-march per ray.
 //    split  (Option 2): kernel A writes merged skip intervals to global memory,
 //                       kernel B reads them back and marches (tiled).
@@ -12,7 +12,7 @@
 //  Modes:
 //    gpu_tester [nc] [max_depth] [grid]   synthetic sweep 16..nc  (default nc=500000)
 //    gpu_tester --verify [N]              cross-check the batched kernels against
-//                                         the per-candidate v3/v4 launchers
+//                                         the per-candidate single-node launcher
 //
 //  Depth buffers come from a SHARED POOL indexed per ancestor (see depth_idx),
 //  so device memory stays O(pool + slots) rather than O(candidates*depth*per) --
@@ -149,10 +149,9 @@ static void run_and_report(uint8_t* d_map, const Batch& b, int N, int iters) {
            N, total_N, f, s, f <= s ? "fused" : "split", d);
 }
 
-// Cross-check the batched kernels against the per-candidate reference launchers.
-// Both batched kernels use the v4 traverse march, so they must match v4 to
-// ~atomic-ordering noise. v3 (jump march) differs where an OCCUPIED voxel sits
-// inside a skip span (v3 jumps it, v4 stops) -- reported for reference.
+// Cross-check the batched kernels against the per-candidate reference launcher.
+// Both batched kernels use the single-node traverse march, so they must match the
+// single-node reference to ~atomic-ordering noise.
 static void verify_against_reference(uint8_t* d_map, const Batch& b, int N) {
     N = std::min(N, b.num_candidates);
     size_t per = b.per();
@@ -170,10 +169,11 @@ static void verify_against_reference(uint8_t* d_map, const Batch& b, int N) {
     launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr);
 
     // Per-candidate reference: materialize each chain with a CONTIGUOUS depth
-    // block gathered from the pool (v3/v4 expect count*per depths).
-    double mF = 0, mS = 0, mV34 = 0;
-    printf("\n  cand | anc |    v3    |    v4    |  fused   |  split\n");
-    printf("-------+-----+----------+----------+----------+----------\n");
+    // block gathered from the pool (the single-node launcher expects count*per depths).
+    double mF = 0, mS = 0, mFixed = 0, mSingle = 0;
+    int nSingle = 0;
+    printf("\n  cand | anc |  single  |  fused   |  split\n");
+    printf("-------+-----+----------+----------+----------\n");
     for (int c = 0; c < N; ++c) {
         int base = b.offsets[c], cnt = b.offsets[c + 1] - base;
         std::vector<float> pos(3 * cnt), yaw(cnt), R(9 * cnt), dep((size_t)cnt * per);
@@ -188,19 +188,30 @@ static void verify_against_reference(uint8_t* d_map, const Batch& b, int N) {
         }
         GpuVec3 cand = {b.cx[c], b.cy[c], b.cz[c]};
         GpuAncestors ga = {cnt, pos.data(), yaw.data(), R.data(), dep.data()};
-        float g3 = 0, y3 = 0, g4 = 0, y4 = 0;
-        GpuResult o3 = {&g3, &y3, nullptr};
+        float g4 = 0, y4 = 0;
         GpuResult o4 = {&g4, &y4, nullptr};
-        launch_marginal_gain_kernel_v3(map, cand, ga, o3, cfg);
-        launch_marginal_gain_kernel_v4(map, cand, ga, o4, cfg);
+        launch_marginal_gain(map, cand, ga, o4, cfg);
         mF = std::max(mF, fabs((double)gF[c] - g4));
         mS = std::max(mS, fabs((double)gS[c] - g4));
-        mV34 = std::max(mV34, fabs((double)g3 - g4));
+
+        // Fixed-yaw launcher parity: evaluating the FOV window at the optimizer's own
+        // yaw must reproduce its gain (validates launch_marginal_gain_fixed + pick_yaw_window).
+        float gfx = 0, yfx = 0;
+        GpuResult ofx = {&gfx, &yfx, nullptr};
+        launch_marginal_gain_fixed(map, cand, ga, ofx, cfg, y4);
+        mFixed = std::max(mFixed, fabs((double)gfx - g4));
+
+        // Single-parent (count=1) explicit track vs the batched path.
+        if (cnt == 1) {
+            mSingle = std::max(mSingle, std::max(fabs((double)gF[c] - g4), fabs((double)gS[c] - g4)));
+            ++nSingle;
+        }
         if (c < 12)
-            printf("%6d | %3d | %8.3f | %8.3f | %8.3f | %8.3f\n", c, cnt, g3, g4, gF[c], gS[c]);
+            printf("%6d | %3d | %8.3f | %8.3f | %8.3f\n", c, cnt, g4, gF[c], gS[c]);
     }
-    printf("\nmax|batched - v4| : fused=%.2e  split=%.2e   (expect ~1e-5, atomic order)\n", mF, mS);
-    printf("max|v3 - v4|      : %.2e   (nonzero BY DESIGN: v3 jumps occupied voxels inside skip spans)\n", mV34);
+    printf("\nmax|batched - single| : fused=%.2e  split=%.2e   (expect ~1e-5, atomic order)\n", mF, mS);
+    printf("single-parent (count=1): %d candidates,  max|batched - single| = %.2e\n", nSingle, mSingle);
+    printf("fixed-yaw launcher parity: max|fixed(opt yaw) - optimize| = %.2e   (expect ~0, same window)\n", mFixed);
 }
 
 int main(int argc, char** argv) {

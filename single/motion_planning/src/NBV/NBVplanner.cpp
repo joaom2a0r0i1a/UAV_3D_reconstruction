@@ -189,7 +189,7 @@ double NBVPlanner::computeSingleParentGainGPU(rrt_star::Node* node) {
     if (p && (int)p->depth_buffer.size() == per) p_depth = p->depth_buffer;
     else p_depth.assign((size_t)per, -1.0f);
     std::vector<float> out;
-    auto r = segment_evaluator.computeMarginalGainGPU_v2(
+    auto r = segment_evaluator.computeSingleParentMarginalGainGPU(
         node->point.x(), node->point.y(), node->point.z(), p_pos, p_yaw, R, p_depth, out, node->point[3]);
     return r.first;
 }
