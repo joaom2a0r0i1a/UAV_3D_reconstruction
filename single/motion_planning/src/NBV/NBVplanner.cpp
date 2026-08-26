@@ -37,7 +37,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("rrt/fixed_step", fixed_step, false);
     param_loader.loadParam("rrt/execution_horizon", execution_horizon_, 1);
     param_loader.loadParam("rrt/tolerance", tolerance);
-    param_loader.loadParam("rrt/rrt_star", local_rrt_star, false);
 
     param_loader.loadParam("evaluation/marginal_gain", marginal_gain, false);
     param_loader.loadParam("evaluation/optimize_yaw", optimize_yaw, false);
@@ -321,65 +320,89 @@ void NBVPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const
     }
 }
 
+bool NBVPlanner::inBoundingBox(const Eigen::Vector4d& p) const {
+    return p[0] >= min_x && p[0] <= max_x &&
+           p[1] >= min_y && p[1] <= max_y &&
+           p[2] >= min_z && p[2] <= max_z;
+}
+
+// Sample a point, steer from the nearest node, and add it to the tree; returns nullptr if it lands
+// outside the box or the node/parent-edge collides (edge check catches walls between free endpoints).
+rrt_star::Node* NBVPlanner::expandTreeNode(rrt_star::Node* root_ptr) {
+    Eigen::Vector4d rand_point_yaw;
+    RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
+    Eigen::Vector3d rand_point = rand_point_yaw.head(3) + root_ptr->point.head(3);
+
+    rrt_star::Node* nearest_node = nullptr;
+    RRTStar.findNearestKD(rand_point, nearest_node);
+    std::unique_ptr<rrt_star::Node> new_node;
+    RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node, fixed_step, min_edge_length_);
+
+    if (!inBoundingBox(new_node->point)) return nullptr;
+
+    std::vector<rrt_star::Node*> seg = {new_node.get()};
+    if (!isPathCollisionFree(seg)) { collision_id_counter_++; return nullptr; }
+    if (!isEdgeCollisionFree(nearest_node->point.head<3>(), new_node->point.head<3>())) { collision_id_counter_++; return nullptr; }
+
+    new_node->point[3] = rand_point_yaw[3];   // sampled yaw; optimize_yaw may re-pick it in evaluateGains
+    new_node->gain = 0.0; new_node->score = 0.0; new_node->cum_gain = 0.0;
+    segment_evaluator.computeCost(new_node.get());
+    return RRTStar.addKDTreeNode(std::move(new_node));
+}
+
 void NBVPlanner::NBV() {
     best_score_ = 0;
     ++replan_count_;
-    // Only benchmark once sim-time >= threshold, so early collision-heavy replans don't skew timings.
+
+    // X2 timing: only benchmark once sim-time passes the threshold (early collision-heavy replans skew timings).
     double sim_now = ros::Time::now().toSec();
     bool x2_was_open = x2_timing_window_;
     x2_timing_window_ = (sim_now >= timing_after_s_);
     if (x2_timing_window_ && !x2_was_open)
         ROS_WARN("[X2] timing window OPEN at sim_t=%.1fs (threshold=%.1fs, replan=%d)", sim_now, timing_after_s_, replan_count_);
-    // One capture = one whole replan (both phases); the cap counts replans, incremented at the end.
     bool x2_do_capture = benchmark_mode && x2_timing_window_ && (x2_capture_count_ < x2_capture_max_);
-    rrt_star::Node* best_node = nullptr;
+
     if (benchmark_mode) {
         bench_ms_gall_gpu = bench_ms_gall_split = bench_ms_g1p_cpu = bench_ms_abs_gpu = bench_ms_abs_cpu = 0.0;
         bench_g1p_err_sum = bench_g1p_err_max = 0.0; bench_nodes = 0;
         bench_kernel_gall_gpu_ = bench_kernel_abs_gpu_ = 0.0;
     }
+
     auto tree_t0 = std::chrono::high_resolution_clock::now();
 
+    // Root = next executed pose (or the drone's current pose on the first plan).
     std::unique_ptr<rrt_star::Node> root;
-    if (current_waypoint_) {
-        root = std::make_unique<rrt_star::Node>(next_start);
-    } else if (best_branch.size() > 1) {
-        root = std::make_unique<rrt_star::Node>(prev_best_branch[1]);
-    } else {
-        root = std::make_unique<rrt_star::Node>(pose);
-    }
+    if (current_waypoint_)           root = std::make_unique<rrt_star::Node>(next_start);
+    else if (best_branch.size() > 1) root = std::make_unique<rrt_star::Node>(prev_best_branch[1]);
+    else                             root = std::make_unique<rrt_star::Node>(pose);
     root->cost = 0;
 
     RRTStar.clearKDTree();
     rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
     clearMarkers();
 
-    // Cache the map (needed for the fixed-yaw gpu + cpu-flatmap eval).
-    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);       // for the fixed-yaw GPU + CPU-flatmap eval
     segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
 
     root_ptr->depth_buffer.clear();
     best_score_ = root_ptr->score;
-    best_node = root_ptr;
+    rrt_star::Node* best_node = root_ptr;
     visualize_node(root_ptr->point, ns);
 
     int j = 1;
 
-    // PHASE A: re-add the UN-executed remainder of the previous best branch as a fixed chain. The drone
-    // executed exec_horizon_limit_ steps last plan, so the new root is prev_best_branch[exec_horizon_limit_];
-    // re-add from the next node (exec_horizon_limit_+1). For horizon 1 this is index 2 (the original value).
+    // PHASE A: re-add the un-executed remainder of the previous best branch as a fixed chain. The drone executed
+    // exec_horizon_limit_ steps, so the new root is prev_best_branch[exec_horizon_limit_]; re-add from the next node.
     const size_t reAddStart = (size_t)exec_horizon_limit_ + 1;
     if (prev_best_branch.size() > reAddStart) {
         std::vector<rrt_star::Node*> branch_candidates;
         for (size_t i = reAddStart; i < prev_best_branch.size(); ++i) {
-            const Eigen::Vector4d& node_position = prev_best_branch[i];
             rrt_star::Node* nearest_node_best = nullptr;
-            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
-            auto new_node_best = std::make_unique<rrt_star::Node>(node_position);
+            RRTStar.findNearestKD(prev_best_branch[i].head(3), nearest_node_best);
+            auto new_node_best = std::make_unique<rrt_star::Node>(prev_best_branch[i]);
             new_node_best->parent = nearest_node_best;
             segment_evaluator.computeCost(new_node_best.get());
-            rrt_star::Node* added = RRTStar.addKDTreeNode(std::move(new_node_best));
-            branch_candidates.push_back(added);
+            branch_candidates.push_back(RRTStar.addKDTreeNode(std::move(new_node_best)));
         }
         if (!branch_candidates.empty()) {
             evaluateGains(branch_candidates);
@@ -394,24 +417,21 @@ void NBVPlanner::NBV() {
     prev_best_branch.clear();
     best_branch.clear();
 
-    // PHASE B: batched RRT/RRT* expansion with fixed-yaw gain.
+    // PHASE B: batched RRT expansion with fixed-yaw gain.
     const int BATCH_SIZE = 2 * N_max;
     collision_id_counter_ = 0;
     bool terminated = false;
-
-    // Full-algorithm timing (tree creation + gain eval + scoring), independent of the benchmark passes.
     double x2_tree_ms = 0.0, x2_eval_ms = 0.0, x2_score_ms = 0.0, x2_kernel_ms = 0.0;
-
-    ros::WallTime plan_start_ = ros::WallTime::now();   // bound the tree build so NBV() can never spin (single-threaded timer)
+    ros::WallTime plan_start_ = ros::WallTime::now();   // bounds the tree build so NBV() can never spin (single-threaded timer)
 
     while (j < N_max || best_score_ == 0.0) {
-        // In-planner backtrack (wall-clock bounded; replaces the old collisions>10000*j cap that could spin
-        // for millions of tries). boxed-in = tree still tiny after a short deadline; timed-out = hard cap.
+
+        // Wall-clock-bounded backtrack: boxed-in = tree still tiny past a short deadline; timed-out = hard cap.
         const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
         const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
         const bool timed_out = plan_elapsed > recovery_timeout_;
         if (recovery_enabled_ && (boxed_in || timed_out)) {
-            if (!executed_path_.empty()) executed_path_.pop_back();   // remove the node we're on
+            if (!executed_path_.empty()) executed_path_.pop_back();   // drop the node we're on
             if (!executed_path_.empty()) {
                 retreating_ = true;                                  // timerMain flies back to executed_path_.back()
                 logTreeNodes();
@@ -420,12 +440,11 @@ void NBVPlanner::NBV() {
                 best_branch.clear();
                 prev_best_branch.clear();
                 return;
-            } else {
-                ROS_INFO("[NBVPlanner]: Backtrack Rotation");
-                rotate();
-                plan_start_ = ros::WallTime::now();
-                collision_id_counter_ = 0;
             }
+            ROS_INFO("[NBVPlanner]: Backtrack Rotation");
+            rotate();
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
         }
 
         int nodes_needed = (j < N_max) ? (N_max - j) : (N_termination - j);
@@ -435,46 +454,14 @@ void NBVPlanner::NBV() {
         std::vector<rrt_star::Node*> batch_nodes;
         auto x2_tree0 = std::chrono::high_resolution_clock::now();
         for (int k = 0; k < cap && j <= N_termination; ++k) {
-            // Boxed-in guard: when every sample collides, k-- keeps this inner loop spinning and the
-            // outer WallTime check above is never reached. Bail to the outer loop so the backtrack fires.
+
+            // Boxed-in guard: when every sample collides, k-- spins this inner loop and the outer check never runs.
             if (recovery_enabled_) {
                 const double e = (ros::WallTime::now() - plan_start_).toSec();
                 if ((e > recovery_boxed_deadline_ && j < recovery_min_tree_) || e > recovery_timeout_) break;
             }
-            Eigen::Vector4d rand_point_yaw;
-            RRTStar.computeSamplingDimensionsNBV(bounded_radius, rand_point_yaw);
-            Eigen::Vector3d rand_point = rand_point_yaw.head(3) + root_ptr->point.head(3);
-
-            rrt_star::Node* nearest_node = nullptr;
-            RRTStar.findNearestKD(rand_point, nearest_node);
-            std::unique_ptr<rrt_star::Node> new_node;
-            RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node, fixed_step, min_edge_length_);
-
-            if (new_node->point[0] > max_x || new_node->point[0] < min_x ||
-                new_node->point[1] < min_y || new_node->point[1] > max_y ||
-                new_node->point[2] < min_z || new_node->point[2] > max_z) { k--; continue; }
-
-            std::vector<rrt_star::Node*> seg = {new_node.get()};
-            if (!isPathCollisionFree(seg)) { collision_id_counter_++; k--; continue; }
-            // Endpoints are free; also require the whole PARENT EDGE to be clear (nodes-only misses walls between them).
-            if (!isEdgeCollisionFree(nearest_node->point.head<3>(), new_node->point.head<3>())) { collision_id_counter_++; k--; continue; }
-
-            new_node->point[3] = rand_point_yaw[3];   // random sampled yaw (kept as-is unless optimize_yaw re-picks it in evaluateGains)
-            new_node->gain = 0.0; new_node->score = 0.0; new_node->cum_gain = 0.0;
-
-            rrt_star::Node* added_node;
-            if (local_rrt_star) {
-                std::vector<rrt_star::Node*> nearby;
-                RRTStar.findNearbyKD(new_node.get(), radius, nearby);
-                if (nearby.empty()) nearby.push_back(nearest_node);
-                RRTStar.chooseParent(new_node.get(), nearby);
-                if (!new_node->parent) { collision_id_counter_++; k--; continue; }  // every candidate edge blocked
-                added_node = RRTStar.addKDTreeNode(std::move(new_node));
-                RRTStar.rewire(added_node, nearby, radius);
-            } else {
-                segment_evaluator.computeCost(new_node.get());
-                added_node = RRTStar.addKDTreeNode(std::move(new_node));
-            }
+            rrt_star::Node* added_node = expandTreeNode(root_ptr);
+            if (!added_node) { k--; continue; }
             batch_nodes.push_back(added_node);
             j++;
         }
@@ -482,21 +469,13 @@ void NBVPlanner::NBV() {
 
         if (batch_nodes.empty()) continue;
 
-        // Fixed yaw is tree-independent, so RRT scores only the new batch. RRT* rewires -> rescore the
-        // whole tree (costs changed); recompute marginal gains too (ancestry changed), absolute does not.
+        // Fixed yaw is tree-independent, so RRT scores and re-raycasts only the new batch.
         std::vector<rrt_star::Node*> score_nodes = batch_nodes;
         std::vector<rrt_star::Node*> gain_nodes  = batch_nodes;
-        if (local_rrt_star) {
-            score_nodes = collectTreeNodes();
-            sortByDepth(score_nodes);
-            best_score_ = root_ptr->score; best_node = root_ptr;
-            if (marginal_gain) gain_nodes = score_nodes;
-        }
 
         auto x2_eval0 = std::chrono::high_resolution_clock::now();
         evaluateGains(gain_nodes);
         x2_eval_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_eval0).count();
-        
         if (eval_compute == "gpu" && marginal_gain) x2_kernel_ms += last_marg_kernel_ms_;
         if (x2_do_capture) benchmarkGains(gain_nodes);
 

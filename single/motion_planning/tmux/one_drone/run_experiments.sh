@@ -6,7 +6,6 @@
 # Each config is pushed to the planner via env vars written to
 # ./current_config.env, which session.yml sources in its pre_window. The four
 # planner knobs map to AEPlanner.yaml as:
-#   AEP_RRT_STAR       -> local_planning/rrt_star     (false=RRT, true=RRT*)
 #   AEP_MARGINAL_GAIN  -> evaluation/marginal_gain    (false=absolute, true=marginal/hash)
 #   AEP_COMPUTE        -> evaluation/compute          (cpu | gpu)
 #   AEP_MARGINAL_SPLIT -> evaluation/marginal_split   (false=fused, true=split)
@@ -63,9 +62,8 @@ BENCHMARK_CONFIGS=(
 
 # ------------------------------------------------------------------ helpers --
 write_env() {
-  # $1=rrt_star $2=marginal_gain $3=compute $4=split $5=benchmark $6=datadir $7=time_limit_min
+  # $1=(unused, formerly rrt_star) $2=marginal_gain $3=compute $4=split $5=benchmark $6=datadir $7=time_limit_min
   cat > "$ENV_FILE" <<EOF
-export AEP_RRT_STAR=$1
 export AEP_MARGINAL_GAIN=$2
 export AEP_COMPUTE=$3
 export AEP_MARGINAL_SPLIT=$4

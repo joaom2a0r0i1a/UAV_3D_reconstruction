@@ -34,8 +34,8 @@ bounded_box:
   #max_z: 2.5 # [m]
 
 rrt:
-  N_max: 250
-  N_termination: 500
+  N_max: 50
+  N_termination: 300
   N_yaw_samples: 15
   radius: 2.0 # [m]
   step_size: 2.0 # [m]
@@ -43,7 +43,6 @@ rrt:
   execution_horizon: 1     # replan every N executed steps (stop at each); 1 = plan every step
   fixed_step: false        # false: classic RRT, edge length = min(dist, step_size); true: EVERY edge = exactly step_size
   tolerance: 0.5 # [m]
-  rrt_star: false          # false = RRT (nearest parent); true = RRT* (choose-parent + rewire)
 
 evaluation:
   marginal_gain: true      # true: marginal gain; false: absolute gain

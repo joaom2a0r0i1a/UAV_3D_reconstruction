@@ -61,7 +61,6 @@ typedef enum
 
 const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
 
-using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class AEPlanner {
 public:
@@ -69,6 +68,7 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
+
     // Sample the straight segment from->to at collision_check_resolution_ and require clearance >= uav_radius at each.
     bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
@@ -78,33 +78,37 @@ public:
     void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);
 
-    // Generation-ordered batched marginal-gain eval; sets node->gain/yaw/depth_buffer. use_fixed_yaw keeps each node's point[3].
+    // Generation-ordered batched marginal-gain eval; sets node->gain/yaw/depth_buffer (use_fixed_yaw keeps point[3]).
     void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool use_fixed_yaw = false);
 
     // Evaluate node gains per the configured (marginal_gain, eval_compute); sets node->gain and yaw.
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
-    // Benchmark: time all methods + per-node v2-vs-cpuhash on the same nodes; accumulate into bench_* members.
+
+    // Benchmark: time all methods + per-node single-parent-vs-cpuhash; accumulate into bench_* members.
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
-    // World<-camera rotation rows (row-major, 9 floats) for an ancestor yaw (matches the GPU kernel).
-    std::vector<float> parentCamRows(float yaw);
-    // GPU single-parent marginal (v2) using the node's immediate parent's stored depth buffer.
+
+    std::vector<float> parentCamRows(float yaw);   // world<-camera rotation rows (9 floats) for an ancestor yaw
+
+    // GPU single-parent marginal gain using the node's immediate parent's stored depth buffer.
     double computeV2SingleParent(rrt_star::Node* node);
-    // GPU multi-ancestor marginal (v4, per-node non-batched) over the node's full ancestor chain. Optimizes yaw
-    // (free); if out_yaw != null it receives the argmax yaw. Does NOT overwrite node->gain/yaw/depth_buffer.
+
+    // GPU multi-ancestor marginal gain over the full ancestor chain; optimizes yaw (out_yaw = argmax if non-null).
     double computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw = nullptr);
-    // Non-owning observers to every non-root node currently in the tree.
-    std::vector<rrt_star::Node*> collectTreeNodes();
-    // Order nodes shallow-first (parents before children) for cumulative scoring.
-    void sortByDepth(std::vector<rrt_star::Node*>& nodes);
-    // Telescoped path-union (root->node) of each node's marginal (or own-view absolute) gain. Local scratch for global scoring.
+
+    std::vector<rrt_star::Node*> collectTreeNodes();        // non-owning observers to every non-root tree node
+    void sortByDepth(std::vector<rrt_star::Node*>& nodes);  // shallow-first (parents before children)
+
+    // Telescoped path-union (root->node) of each node's marginal (or own-view absolute) gain; scratch for global scoring.
     std::unordered_map<rrt_star::Node*, double> pathUnion(rrt_star::Node* root_ptr, bool use_marginal);
-    // Publish every node whose ABSOLUTE gain > g_zero as a global-frontier candidate. Reads the node's
-    // absolute_gain field so a spot with new space is still cached when an ancestor covers its marginal.
+
+    // Publish every node whose ABSOLUTE gain > g_zero as a global-frontier candidate (own-view, so a spot with
+    // new space is still cached when an ancestor covers its marginal).
     void cacheHighGainNodes();
-    // Lazily fill node->absolute_gain + node->absolute_yaw (own-view result, position-only => rewire-
-    // invariant) for any node still at the -1 sentinel. Computed once per node; never disturbs gain/point[3]/score.
-    // Log per-node score over the final tree once (avoids per-batch re-logging).
-    void logTreeNodes();
+
+    void logTreeNodes();   // log per-node score over the final tree once
+
+    bool inBoundingBox(const Eigen::Vector4d& p) const;   // point inside the bounded_box
+    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);  // sample+steer+collision-check+add; nullptr if rejected
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
     bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node);
@@ -183,7 +187,6 @@ private:
     double tolerance;
     int num_yaw_samples;
     double g_zero;
-    bool local_rrt_star;   // false = RRT (nearest parent); true = RRT* (choose-parent + rewire) in batched local planner
 
     // RRT* Parameters
     int N_min_nodes;

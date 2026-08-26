@@ -52,7 +52,6 @@ typedef enum
 
 const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
 
-using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class NBVPlanner {
 public:
@@ -60,6 +59,7 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
+
     // Sample the straight segment from->to at collision_check_resolution_ and require clearance >= uav_radius at each.
     bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
@@ -74,6 +74,9 @@ public:
     std::vector<rrt_star::Node*> collectTreeNodes();
     void sortByDepth(std::vector<rrt_star::Node*>& nodes);
     void logTreeNodes();
+
+    bool inBoundingBox(const Eigen::Vector4d& p) const;   // point inside the bounded_box
+    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);  // sample+steer+collision-check+add; nullptr if rejected
 
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
@@ -149,7 +152,6 @@ private:
     bool fixed_step;   // false = classic RRT (edge <= step_size); true = every edge exactly step_size
     double tolerance;
     int num_yaw_samples;
-    bool local_rrt_star;   // false = RRT (nearest parent); true = RRT* (choose-parent + rewire)
 
     // Gain-evaluation options
     bool marginal_gain;
@@ -175,7 +177,6 @@ private:
     double     timing_after_s_;
     bool       nbv_started_;
     bool       x2_timing_window_;
-    ros::Time  nbv_start_time_;
     int        x2_capture_count_;
     int        x2_capture_max_;
 

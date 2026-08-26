@@ -42,7 +42,6 @@ local_planning:
   min_edge_length: 0.2 # [m]
   tolerance: 1.5 # [m]
   g_zero: 5.0
-  rrt_star: false          # false = RRT (nearest parent); true = RRT* (choose-parent + rewire) in the batched local planner
 
 global_planning:
   N_min_nodes: 300
