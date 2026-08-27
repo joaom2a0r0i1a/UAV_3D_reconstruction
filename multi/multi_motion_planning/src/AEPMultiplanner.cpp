@@ -201,7 +201,7 @@ void AEPMultiPlanner::localPlanner() {
         root = std::make_unique<rrt_star::Node>(pose);
     }
     trajectory_point = root->point;
-    std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point);
+    std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, false);
     root->gain = result.first;
     root->point[3] = result.second;
 
@@ -261,7 +261,7 @@ void AEPMultiPlanner::localPlanner() {
             visualize_node(new_node_best->point, ns);
 
             trajectory_point = new_node_best->point;
-            std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, false);
             new_node_best->gain = result.first;
             new_node_best->point[3] = result.second;
 
@@ -322,7 +322,7 @@ void AEPMultiPlanner::localPlanner() {
         visualize_node(new_node->point, ns);
 
         trajectory_point = new_node->point;
-        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, false);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
@@ -481,15 +481,15 @@ bool AEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFr
         //ROS_INFO("[AEPMultiPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);
 
         Eigen::Vector4d trajectory_point_global = node->point;
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
-        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromOptimizedSampledYaw(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point_global, true);
+        //std::pair<double, double> result = segment_evaluator.computeGainRaycastingFromSampledYaw(trajectory_point_global, true);
 
         node->gain = result.first;
         node->point[3] = result.second;
 
         trajectory_point_global.head<3>() = nearest_goal; 
         trajectory_point_global[3] = 0.0;
-        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
+        std::pair<double, double> result_original = segment_evaluator.computeGainRaycasting(trajectory_point_global, true);
         ROS_INFO("[AEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;

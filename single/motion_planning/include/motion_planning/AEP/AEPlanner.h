@@ -76,7 +76,6 @@ public:
     void localPlannerGPU();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);
 
-    void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool use_fixed_yaw = false);
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
     std::vector<rrt_star::Node*> collectTreeNodes();

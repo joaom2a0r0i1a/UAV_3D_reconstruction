@@ -371,7 +371,7 @@ void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
 
 
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
-void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { segment_evaluator.sortByDepth(nodes); }
+void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { planner_helpers::sortByDepth(nodes); }
 
 std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() { return planner_helpers::collectTreeNodes(RRTStar); }
 

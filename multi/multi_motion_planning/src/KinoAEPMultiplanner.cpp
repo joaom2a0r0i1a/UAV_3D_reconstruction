@@ -279,7 +279,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             visualize_node(raw_best->TrajectoryPoints.back()->point, node_size, ns);
 
             trajectory_point = raw_best->TrajectoryPoints.back()->point;
-            std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
+            std::pair<double, double> result_best = segment_evaluator.computeGainRaycasting(trajectory_point, true);
             raw_best->gain = result_best.first;
 
             if (result_best.second > M_PI) {
@@ -361,7 +361,7 @@ void KinoAEPMultiPlanner::localPlanner() {
             ++accel_iteration;
 
             trajectory_point = new_trajectory->TrajectoryPoints.back()->point;
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, true);
             new_trajectory->gain = result.first;
 
             // Convert from [0, 2*PI[ to [-PI, PI[
@@ -558,7 +558,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
         //ROS_INFO("[KinoAEPMultiPlanner]: RRT* Goal: [%f, %f, %f]", trajectory->TrajectoryPoints.back()->point[0], trajectory->TrajectoryPoints.back()->point[1], trajectory->TrajectoryPoints.back()->point[2]);
 
         Eigen::Vector4d trajectory_point_global = trajectory->TrajectoryPoints.back()->point;
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point_global, true);
         trajectory->gain = result.first;
 
         // Convert from [0, 2*PI[ to [-PI, PI[ 
@@ -574,7 +574,7 @@ bool KinoAEPMultiPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& Glob
 
         trajectory_point_global.head<3>() = nearest_goal; 
         trajectory_point_global[3] = 0.0;
-        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
+        std::pair<double, double> result_original = segment_evaluator.computeGainRaycasting(trajectory_point_global, true);
         ROS_INFO("[KinoAEPMultiPlanner]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
         return true;

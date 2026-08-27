@@ -276,7 +276,7 @@ void KinoAEPlanner::localPlanner() {
             visualize_node(new_trajectory_best->TrajectoryPoints.back()->point, node_size, ns);
 
             trajectory_point = new_trajectory_best->TrajectoryPoints.back()->point;
-            std::pair<double, double> result_best = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
+            std::pair<double, double> result_best = segment_evaluator.computeGainRaycasting(trajectory_point, true);
             new_trajectory_best->gain = result_best.first;
 
             if (result_best.second > M_PI) {
@@ -347,7 +347,7 @@ void KinoAEPlanner::localPlanner() {
             ++accel_iteration;
 
             trajectory_point = new_trajectory->TrajectoryPoints.back()->point;
-            std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point);
+            std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, true);
             new_trajectory->gain = result.first;
 
             // Convert from [0, 2*PI[ to [-PI, PI[
@@ -580,7 +580,7 @@ bool KinoAEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFron
 
     if ((nearest_goal - trajectory->TrajectoryPoints.back()->point.head(3)).norm() < tolerance) {
         Eigen::Vector4d trajectory_point_global = trajectory->TrajectoryPoints.back()->point;
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point_global, true);
         trajectory->gain = result.first;
 
         // Convert from [0, 2*PI[ to [-PI, PI[

@@ -9,8 +9,7 @@
 #include "gain_evaluation/gain_evaluator.h"
 #include "gain_evaluation/gpu_raycast_launch.h"
 
-// Bundle the cached map / sensor state into the launcher ABI structs so each
-// GPU call passes a couple of grouped arguments instead of a dozen scalars.
+// Bundle cached map / sensor state into the launcher ABI structs (grouped args, not a dozen scalars).
 GpuMap GainEvaluator::gpuMap() const {
     return GpuMap{d_map_,
                   cached_dim_.x(), cached_dim_.y(), cached_dim_.z(),
@@ -35,12 +34,6 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0);
   nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
   nh_private.param("camera_intrinsics/pitch", camera_pitch_, 10.0);
-
-  nh_private.param("accurate_frontiers", p_accurate_frontiers_, false);
-  nh_private.param("checking_distance", p_checking_distance_, 2.0);
-
-  // dr_ (voxel size) defaults to 0.2 here and setTsdfLayer() sets it to the live map's voxel size.
-  buildNeighborOffsets();
 }
 
 // --- 1. Bit Packing (Infinite Grid Index) ---
@@ -78,7 +71,6 @@ double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, in
 void GainEvaluator::setCameraModelParametersFoV(double horizontal_fov, double vertical_fov,
                                                 double min_distance, double max_distance) {
   cam_model_.setIntrinsicsFromFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
-  prev_cam_model_.setIntrinsicsFromFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
 }
 
 void GainEvaluator::setCameraModelParametersFocalLength(
@@ -86,46 +78,10 @@ void GainEvaluator::setCameraModelParametersFocalLength(
     double max_distance) {
   cam_model_.setIntrinsicsFromFocalLength(
       resolution.cast<float>(), focal_length, min_distance, max_distance);
-  prev_cam_model_.setIntrinsicsFromFocalLength(
-      resolution.cast<float>(), focal_length, min_distance, max_distance);
 }
 
 void GainEvaluator::setCameraExtrinsics(const voxblox::Transformation& T_C_B) {
   cam_model_.setExtrinsics(T_C_B);
-  prev_cam_model_.setExtrinsics(T_C_B);
-}
-
-bool GainEvaluator::isPointInView(const voxblox::Point& point, bool first_node) const {
-  if (first_node) return false;
-  for (size_t i = 0; i < bounding_planes_.size(); i++) {
-    if (!bounding_planes_[i].isPointInside(point)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-bool GainEvaluator::isFrontierVoxel(const Eigen::Vector3d& voxel) {
-  // Check all neighboring voxels
-  VoxelStatus voxel_state;
-  if (!p_accurate_frontiers_) {
-    for (int i = 0; i < 6; ++i) {
-      voxel_state = getVoxelStatus(voxel + c_neighbor_voxels_[i]);
-      if (voxel_state == kUnknown) {
-        continue;
-      }
-      return voxel_state == kOccupied;
-    }
-  } else {
-    for (int i = 0; i < 26; ++i) {
-      voxel_state = getVoxelStatus(voxel + c_neighbor_voxels_[i]);
-      if (voxel_state == kUnknown) {
-        continue;
-      }
-      return voxel_state == kOccupied;
-    }
-  }
-  return false;
 }
 
 void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer) {
@@ -135,7 +91,6 @@ void GainEvaluator::setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer)
   voxels_per_side_ = tsdf_layer_->voxels_per_side();
   voxels_per_side_inv_ = 1.0 / voxels_per_side_;
   dr_ = voxel_size_;
-  buildNeighborOffsets();
 }
 
 // Gain-sphere angular bins: 180 (2 deg) at the 5 m / 0.2 m reference, finer with r_max and inversely with voxel; mirrors the GPU (CPU==GPU).
@@ -149,19 +104,22 @@ void GainEvaluator::angularResolution(float& dtheta_rad, float& dphi_rad, int& t
   dphi_rad = (float)(2.0 * M_PI / bins);
 }
 
-void GainEvaluator::buildNeighborOffsets() {
-  double vs = dr_ * p_checking_distance_;
-  int idx = 0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      for (int z = -1; z <= 1; z++) {
-        if (x == 0 && y == 0 && z == 0) continue;
-        if (!p_accurate_frontiers_ && std::abs(x) * std::abs(y) + std::abs(z) > 1) continue;
-        c_neighbor_voxels_[idx] = Eigen::Vector3d(x, y, z) * vs;
-        idx++;
-      }
-    }
-  }
+// CPU mirror of the GPU make_kernel_params angular block (angularResolution + pitch-centred phi start); same float ops as the originals.
+GainEvaluator::ScanParams GainEvaluator::scanParams() const {
+  ScanParams s;
+  angularResolution(s.dtheta, s.dphi, s.theta_bins);
+  float fov_p_rad = fov_p_rad_;
+  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
+  float phi_center = (M_PI / 2.0f) + camera_pitch;
+  s.phi_start = phi_center - (fov_p_rad / 2.0f);
+  return s;
+}
+
+// Unknown-voxel gain (2 r^2 dr + dr^3/6) * dtheta * sin(phi) * sin(dphi/2); r=range, dr=sub-span. Bit-matches the GPU.
+static inline float unknownVoxelGain(float r, float dr, float dtheta_rad, float sin_phi, float dphi_rad) {
+  float term1 = 2.0f * r * r * dr;
+  float term2 = (dr * dr * dr) / 6.0f;
+  return (term1 + term2) * dtheta_rad * sin_phi * sin(dphi_rad * 0.5f);
 }
 
 void GainEvaluator::setEsdfMap(voxblox::EsdfMap::Ptr esdf_map) {
@@ -269,11 +227,6 @@ void GainEvaluator::visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointclo
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
-          /*if (isFrontierVoxel(vec)) {
-            g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-          } else {
-            continue;
-          }*/
           Eigen::Vector3d Voxel;
           getVoxelCenter(&Voxel, vec);
           
@@ -390,8 +343,7 @@ sensor_msgs::PointCloud2 GainEvaluator::visualizeGpuMap(const std::vector<uint8_
     // 1. Create PCL Cloud
     pcl::PointCloud<pcl::PointXYZRGB> cloud;
     
-    // 2. Iterate (Reversing the flattening logic)
-    // CPU Flattener was: z * (dx * dy) + y * dx + x
+    // Iterate, reversing the flattening logic (z*(dx*dy) + y*dx + x).
     int total_voxels = dim.x() * dim.y() * dim.z();
     
     if (map.size() != total_voxels) {
@@ -407,8 +359,7 @@ sensor_msgs::PointCloud2 GainEvaluator::visualizeGpuMap(const std::vector<uint8_
                 int idx = z * (dim.x() * dim.y()) + y * dim.x() + x;
                 uint8_t val = map[idx];
 
-                // Only visualize OCCUPIED voxels (Value 1)
-                // If you want to see UNKNOWN, check for val == 2
+                // Only visualize OCCUPIED voxels (val 1; unknown = val 2).
                 if (val != 1) continue; 
 
                 pcl::PointXYZRGB p;
@@ -477,51 +428,8 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     return results;
 }
 
-std::pair<double, double> GainEvaluator::computeSingleParentMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
-    // 0. Safety Check
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {0.0, 0.0};
-    }
-
-    float dtheta_rad = 2.0f * M_PI / 180.0f;
-    float dphi_rad   = 2.0f * M_PI / 180.0f;
-
-    //int window_width  = std::max(1, (int)(fov_y_rad_ / dtheta_rad));
-    //int window_height = std::max(1, (int)(fov_p_rad_ / dphi_rad));
-
-    int p_width = ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
-    int p_height = ceil((2.0f * r_max_ * tanf(fov_p_rad_ * 0.5f)) / dr_);
-    
-    // Resize the vector to fit the result
-    size_t required_size = p_width * p_height;
-    if (result_depths.size() != required_size) {
-        result_depths.resize(required_size);
-    }
-    // 1. Prepare Output Buffers
-    float results_gain = 0.0f;
-    float results_yaw = 0.0f;
-
-    // 2. Launch The Kernel Wrapper
-    // The single parent is packed as a one-ancestor chain (count=1) so it rides the shared
-    // single-node GPU path (identical result: with one ancestor the span merge is a no-op).
-    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
-    float parent_pos_flat[3] = {(float)parent_pos.x(), (float)parent_pos.y(), (float)parent_pos.z()};
-    float parent_yaw_flat[1] = {(float)parent_yaw};
-    GpuAncestors ancestors = {1, parent_pos_flat, parent_yaw_flat, parent_R.data(),
-                              parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
-    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    if (std::isnan(fixed_yaw)) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
-    else launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)fixed_yaw);
-
-    // 3. Return Result
-    // For now, we assume the user passed 1 candidate and wants 1 result.
-    return { (double)results_gain, (double)results_yaw };
-}
-
 std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
-    // Flatten the ancestor chain and run the single-node kernel (traverse marcher) over all of them.
-    // 0. Safety Check
+    // Flatten the ancestor chain, run the single-node kernel over all of them (safety check first).
     if (d_map_ == nullptr) {
         ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
         return {0.0, 0.0};
@@ -542,8 +450,7 @@ std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(con
         result_depths.resize(required_size);
     }
 
-    // Flatten the per-ancestor pose/yaw inputs into contiguous float arrays
-    // that match the kernel's expected layout (x,y,z per ancestor; one yaw each).
+    // Flatten per-ancestor pose/yaw into contiguous float arrays matching the kernel layout (x,y,z + one yaw each).
     std::vector<float> parent_pos_flat(3 * num_ancestors);
     std::vector<float> parent_yaw_flat(num_ancestors);
     for (int i = 0; i < num_ancestors; ++i) {
@@ -621,7 +528,6 @@ std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& p
         float z_cam = 1.0f;
 
         // --- B. Rotate to World using Basis Vectors ---
-        // dir = x_cam*R0 + y_cam*R1 + z_cam*R2
         float dir_x = x_cam * r0x + y_cam * r1x + z_cam * r2x;
         float dir_y = x_cam * r0y + y_cam * r1y + z_cam * r2y;
         float dir_z = x_cam * r0z + y_cam * r1z + z_cam * r2z;
@@ -694,16 +600,42 @@ std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& p
   return cpu_buffer;
 }
 
-// Start bin of the FOV window centred on `yaw` (rad) -- matches gpuray::window_start_bin_at_yaw
-// exactly (same float math) so CPU and GPU fixed-yaw gains are bit-comparable.
+// Start bin of the FOV window centred on `yaw` (rad); matches gpuray::window_start_bin_at_yaw for bit-comparable CPU/GPU fixed-yaw gains.
 static int cpu_window_start_bin(double yaw, float fov_y_rad, float dtheta_rad, int theta_bins) {
     int start = (int)std::floor(((float)yaw - 0.5f * fov_y_rad + (float)M_PI) / dtheta_rad + 0.5f);
     return ((start % theta_bins) + theta_bins) % theta_bins;
 }
 
+// Pick the FOV yaw window from the per-bin histogram (CPU mirror of gpuray::pick_yaw_window): fixed_yaw!=NAN sums at that yaw, else slide for best.
+std::pair<double, double> GainEvaluator::pickYawWindow(const std::vector<float>& yaw_gains, float dtheta_rad,
+                                                       int theta_bins, double fixed_yaw,
+                                                       int* out_best_idx, int* out_sectors) const {
+    int sectors = angular_bins(fov_y_rad_, dtheta_rad);
+    if (sectors < 1) sectors = 1;
+    if (out_sectors) *out_sectors = sectors;
+
+    float max_gain = 0.0f;
+    int best_idx = 0;
+    if (!std::isnan(fixed_yaw)) {
+        best_idx = cpu_window_start_bin(fixed_yaw, fov_y_rad_, dtheta_rad, theta_bins);
+        for (int k = 0; k < sectors; ++k) max_gain += yaw_gains[(best_idx + k) % theta_bins];
+        if (out_best_idx) *out_best_idx = best_idx;
+        return std::make_pair((double)max_gain, fixed_yaw);
+    }
+
+    for (int i = 0; i < theta_bins; ++i) {
+        float current_window = 0.0f;
+        for (int k = 0; k < sectors; ++k) current_window += yaw_gains[(i + k) % theta_bins];
+        if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
+    }
+    if (out_best_idx) *out_best_idx = best_idx;
+    float center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
+    if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+    return std::make_pair((double)max_gain, (double)center_angle);
+}
+
 std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw) {
-    // --- A. Inherit History ---
-    // Start with the set of unknown voxels the parent has already cleared.
+    // Inherit history: start from the unknown voxels the parent already cleared.
     /*if (candidate_node->parent) {
         candidate_node->observed_unknown_voxels = candidate_node->parent->observed_unknown_voxels;
     }*/
@@ -721,14 +653,10 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
     int dim_z = cached_dim_.z();
 
     // Camera FoV
-    float dtheta_rad, dphi_rad; int theta_bins;
-    angularResolution(dtheta_rad, dphi_rad, theta_bins);
-
     float fov_p_rad = fov_p_rad_;
-    float camera_pitch = camera_pitch_ * M_PI / 180.0f;
-    float phi_center = (M_PI / 2.0f) + camera_pitch;
-    float phi_start  = phi_center - (fov_p_rad / 2.0f);
-    float phi_end    = phi_center + (fov_p_rad / 2.0f);
+    ScanParams sp = scanParams();
+    float dtheta_rad = sp.dtheta, dphi_rad = sp.dphi, phi_start = sp.phi_start;
+    int theta_bins = sp.theta_bins;
 
     std::vector<float> yaw_gains(theta_bins, 0.0f);
 
@@ -759,7 +687,6 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
             int iy = std::floor(gy);
             int iz = std::floor(gz);
 
-            // DDA Initialization
             int stepX = (dir_x > 0) ? 1 : ((dir_x < 0)) ? -1 : 0;
             int stepY = (dir_y > 0) ? 1 : ((dir_y < 0)) ? -1 : 0;
             int stepZ = (dir_z > 0) ? 1 : ((dir_z < 0)) ? -1 : 0;
@@ -777,23 +704,19 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
             float max_t = gain_range / voxel_size;
 
             while (t < max_t) {
-                // Bounds check against the GLOBAL map size
                 if (ix >= 0 && ix < dim_x && iy >= 0 && iy < dim_y && iz >= 0 && iz < dim_z) {
                   int flat_idx = iz * (dim_x * dim_y) + iy * dim_x + ix;
                   uint8_t global_val = flat_map[flat_idx];
 
-                  if (global_val == 1) { 
-                      // OCCUPIED (Known Obstacle) -> Stop Ray, Zero Gain
-                      break; 
-                  } else if (global_val == 2) {                      
+                  if (global_val == 1) {
+                      break;
+                  } else if (global_val == 2) {
                     uint64_t key = pack_index(ix, iy, iz);
-                    //candidate_node->observed_unknown_voxels[key] = 1;
-                    // 1. Buffer this key for this yaw bin (Used for map update later)
                     seen_keys_per_bin[t_idx].push_back(key);
 
                     bool parent_saw_it = false;
                     if (candidate_node->parent) {
-                      if (candidate_node->parent->observed_unknown_voxels.find(key) != 
+                      if (candidate_node->parent->observed_unknown_voxels.find(key) !=
                         candidate_node->parent->observed_unknown_voxels.end()) {
                         parent_saw_it = true;
                       }
@@ -806,12 +729,10 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
                       float dr = dt * voxel_size_;
 
                       float r = t * voxel_size_;
-                      float term1 = 2.0f * r * r * dr;
-                      float term2 = (dr * dr * dr) / 6.0f;
-                      ray_gain += (term1 + term2) * dtheta_rad * sin_phi * sin(dphi_rad * 0.5f);
+                      ray_gain += unknownVoxelGain(r, dr, dtheta_rad, sin_phi, dphi_rad);
                     }
                   }
-                } 
+                }
 
                 if (tMaxX < tMaxY && tMaxX < tMaxZ) {
                   ix += stepX;
@@ -833,44 +754,24 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_HashMap(const st
     }
 
     // --- D. Yaw window: fixed yaw (NBVP) sums the window at that yaw; else slide for the best window. ---
-    int sectors = angular_bins(fov_y_rad_, dtheta_rad);
-    if (sectors < 1) sectors = 1;
+    int sectors = 0, best_idx = 0;
+    std::pair<double, double> win = pickYawWindow(yaw_gains, dtheta_rad, theta_bins, fixed_yaw, &best_idx, &sectors);
+    double max_gain = win.first;
 
-    float max_gain = 0.0f;
-    int best_idx = 0;
-    if (!std::isnan(fixed_yaw)) {
-      best_idx = cpu_window_start_bin(fixed_yaw, fov_y_rad_, dtheta_rad, theta_bins);
-      for (int k = 0; k < sectors; ++k) max_gain += yaw_gains[(best_idx + k) % theta_bins];
-    } else {
-      for (int i = 0; i < theta_bins; ++i) {
-        float current_window = 0.0f;
-        for (int k = 0; k < sectors; ++k) current_window += yaw_gains[(i + k) % theta_bins];
-        if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
-      }
-    }
-
-    float center_angle = fixed_yaw;   // fixed-yaw returns the input yaw
-    if (std::isnan(fixed_yaw)) {
-      center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
-      if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-    }
-
-    // --- E. COMMIT HISTORY (Update Map) ---
-    // Now we take the voxels from the *chosen* sectors and commit them to the node's history.
+    // Commit history: store the chosen sectors' voxels into the node's history.
     for (int k = 0; k < sectors; ++k) {
       int idx = (best_idx + k) % theta_bins;
       // For every voxel seen in this slice...
       for (uint64_t key : seen_keys_per_bin[idx]) {
-        // ...mark it as seen in the candidate node.
-        // This ensures children nodes will know this area is cleared.
+        // Mark seen in the candidate node so children know this area is cleared.
         candidate_node->observed_unknown_voxels[key] = 1;
       }
     }
 
     // Save final gain to node
-    candidate_node->gain = (double)max_gain;
+    candidate_node->gain = max_gain;
 
-    return std::make_pair((double)max_gain, (double)center_angle);
+    return win;
 }
 
 void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, rrt_star::Node* node) {
@@ -911,8 +812,7 @@ void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, 
     float theta_start = parent_yaw - (fov_y_rad / 2.0f);
     float theta_end   = parent_yaw + (fov_y_rad / 2.0f);
 
-    // 4. Raycasting Loop (Only inside the specific FOV)
-    // We iterate using the same step size as the Gain Evaluator to ensure 1:1 matching
+    // Raycasting loop over the parent's FOV only, same step size as the gain evaluator (1:1 match).
     
     for (float theta = theta_start; theta < theta_end; theta += dtheta_rad) {
       for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
@@ -934,7 +834,6 @@ void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, 
         int iy = std::floor(gy);
         int iz = std::floor(gz);
 
-        // DDA Init
         int stepX = (dir_x > 0) ? 1 : ((dir_x < 0)) ? -1 : 0;
         int stepY = (dir_y > 0) ? 1 : ((dir_y < 0)) ? -1 : 0;
         int stepZ = (dir_z > 0) ? 1 : ((dir_z < 0)) ? -1 : 0;
@@ -952,16 +851,15 @@ void GainEvaluator::populateParentHistory(const std::vector<uint8_t>& flat_map, 
           if (ix >= 0 && ix < dim_x && iy >= 0 && iy < dim_y && iz >= 0 && iz < dim_z) {
             int flat_idx = iz * (dim_x * dim_y) + iy * dim_x + ix;
             uint8_t global_val = flat_map[flat_idx];
-            if (global_val == 1) { 
-              break; 
-            } 
-            else if (global_val == 2) { 
+            if (global_val == 1) {
+              break;
+            }
+            else if (global_val == 2) {
               uint64_t key = pack_index(ix, iy, iz);
               node->observed_unknown_voxels[key] = 1;
             }
-          } 
+          }
 
-          // Advance Ray
           if (tMaxX < tMaxY && tMaxX < tMaxZ) {
             ix += stepX; t = tMaxX; tMaxX += tDeltaX;
           } else if (tMaxY < tMaxZ) {
@@ -990,13 +888,10 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
     float ox = cached_origin_.x(); float oy = cached_origin_.y(); float oz = cached_origin_.z();
     int dim_x = cached_dim_.x(); int dim_y = cached_dim_.y(); int dim_z = cached_dim_.z();
 
-    float dtheta_rad, dphi_rad; int theta_bins;
-    angularResolution(dtheta_rad, dphi_rad, theta_bins);
-
     float fov_p_rad = fov_p_rad_;
-    float camera_pitch = camera_pitch_ * M_PI / 180.0f;
-    float phi_center = (M_PI / 2.0f) + camera_pitch;
-    float phi_start  = phi_center - (fov_p_rad / 2.0f);
+    ScanParams sp = scanParams();
+    float dtheta_rad = sp.dtheta, dphi_rad = sp.dphi, phi_start = sp.phi_start;
+    int theta_bins = sp.theta_bins;
 
     std::vector<float> yaw_gains(theta_bins, 0.0f);
     // Per-bin observed voxels (ALL seen, not just marginal) -> committed for the chosen window if requested.
@@ -1045,9 +940,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
                 float dt = t_exit - t;
                 float dr = dt * voxel_size_;
                 float r = t * voxel_size_;
-                float term1 = 2.0f * r * r * dr;
-                float term2 = (dr * dr * dr) / 6.0f;
-                ray_gain += (term1 + term2) * dtheta_rad * sin_phi * sin(dphi_rad * 0.5f);
+                ray_gain += unknownVoxelGain(r, dr, dtheta_rad, sin_phi, dphi_rad);
               }
             }
           }
@@ -1060,26 +953,10 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
     }
 
     // --- D. Yaw window (identical to HashMap): fixed yaw sums that window, else slide for best. ---
-    int sectors = angular_bins(fov_y_rad_, dtheta_rad);
-    if (sectors < 1) sectors = 1;
-    float max_gain = 0.0f; int best_idx = 0;
-    if (!std::isnan(fixed_yaw)) {
-      best_idx = cpu_window_start_bin(fixed_yaw, fov_y_rad_, dtheta_rad, theta_bins);
-      for (int k = 0; k < sectors; ++k) max_gain += yaw_gains[(best_idx + k) % theta_bins];
-    } else {
-      for (int i = 0; i < theta_bins; ++i) {
-        float current_window = 0.0f;
-        for (int k = 0; k < sectors; ++k) current_window += yaw_gains[(i + k) % theta_bins];
-        if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
-      }
-    }
-    float center_angle = fixed_yaw;
-    if (std::isnan(fixed_yaw)) {
-      center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
-      if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-    }
-    // --- E. Commit the chosen window's observed voxels so descendants subtract this node's
-    //        optimized-yaw view (the sequential marginal). No-op when commit_observed is false. ---
+    int sectors = 0, best_idx = 0;
+    std::pair<double, double> win = pickYawWindow(yaw_gains, dtheta_rad, theta_bins, fixed_yaw, &best_idx, &sectors);
+    double max_gain = win.first;
+    // Commit the chosen window's observed voxels so descendants subtract this node's optimized-yaw view (no-op if !commit_observed).
     if (commit_observed) {
       candidate_node->observed_unknown_voxels.clear();
       for (int k = 0; k < sectors; ++k) {
@@ -1087,7 +964,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
         for (uint64_t key : seen_keys_per_bin[idx]) candidate_node->observed_unknown_voxels[key] = 1;
       }
     }
-    return std::make_pair((double)max_gain, (double)center_angle);
+    return win;
 }
 
 
@@ -1100,12 +977,6 @@ std::vector<float> GainEvaluator::parentCamRows(float yaw) const {
     return { sin_y,          -cos_y,          0.0f,
              -sin_p * cos_y, -sin_p * sin_y, -cos_p,
               cos_p * cos_y,  cos_p * sin_y, -sin_p };
-}
-
-void GainEvaluator::sortByDepth(std::vector<rrt_star::Node*>& nodes) const {
-    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
-    std::stable_sort(nodes.begin(), nodes.end(),
-                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
 }
 
 // Batched marginal gain (pool): ancestor depth read from d_depth_pool_[depth_slot], each render written to its own slot; marginal_split = staged vs fused kernel.
@@ -1296,14 +1167,10 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
   float voxel_size = voxel_size_;
   float gain_range = r_max_;
 
-  float dtheta_rad, dphi_rad; int theta_bins;
-  angularResolution(dtheta_rad, dphi_rad, theta_bins);
-
   float fov_p_rad = fov_p_rad_;
-  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
-  float phi_center = (M_PI / 2.0f) + camera_pitch;
-  float phi_start  = phi_center - (fov_p_rad / 2.0f);
-  float phi_end    = phi_center + (fov_p_rad / 2.0f);
+  ScanParams sp = scanParams();
+  float dtheta_rad = sp.dtheta, dphi_rad = sp.dphi, phi_start = sp.phi_start;
+  int theta_bins = sp.theta_bins;
 
   std::vector<float> yaw_gains(theta_bins, 0.0f);
 
@@ -1378,9 +1245,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
             float dr = dt * voxel_size_;
 
             float r = t * voxel_size_;
-            float term1 = 2.0f * r * r * dr;
-            float term2 = (dr * dr * dr) / 6.0f;
-            ray_gain += (term1 + term2) * dtheta_rad * sin_phi * sin(dphi_rad * 0.5f);
+            ray_gain += unknownVoxelGain(r, dr, dtheta_rad, sin_phi, dphi_rad);
           }
         }
 
@@ -1405,461 +1270,11 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
     }
   }
 
-  // 4. Yaw window: fixed yaw (NBVP) sums the window at that yaw; else slide for the best window (AEP).
-  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
-  if (sectors < 1) sectors = 1;
-
-  if (!std::isnan(fixed_yaw)) {
-      int start = cpu_window_start_bin(fixed_yaw, fov_y_rad_, dtheta_rad, theta_bins);
-      float win = 0.0f;
-      for (int k = 0; k < sectors; ++k) win += yaw_gains[(start + k) % theta_bins];
-      return std::make_pair((double)win, fixed_yaw);
-  }
-
-  float max_gain = 0.0f;
-  int best_idx = 0;
-  for (int i = 0; i < theta_bins; ++i) {
-      float current_window = 0.0f;
-      for (int k = 0; k < sectors; ++k) current_window += yaw_gains[(i + k) % theta_bins];
-      if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
-  }
-
-  float center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
-  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-  return std::make_pair((double)max_gain, (double)center_angle);
-}
-
-std::pair<double, double> GainEvaluator::computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose) {
-  // 1. Setup Constants
-  float voxel_size = voxel_size_;
-  float gain_range = r_max_;
-
-  float dtheta_rad, dphi_rad; int theta_bins;
-  angularResolution(dtheta_rad, dphi_rad, theta_bins);
-
-  float fov_p_rad = fov_p_rad_;
-  float camera_pitch = camera_pitch_ * M_PI / 180.0f;    
-  float phi_center = (M_PI / 2.0f) + camera_pitch;
-  float phi_start  = phi_center - (fov_p_rad / 2.0f);
-  float phi_end    = phi_center + (fov_p_rad / 2.0f);
-
-  std::vector<float> yaw_gains(theta_bins, 0.0f);
-
-  // 3D DDA Raycasting
-  for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
-    float theta = -M_PI + (t_idx * dtheta_rad);
-
-    // Iterate Phi (Elevation)
-    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
-      // Direction Vectors
-      float sin_phi = sin(phi);
-      float dir_x = cos(theta) * sin_phi;
-      float dir_y = sin(theta) * sin_phi;
-      float dir_z = cos(phi);
-
-      float p1x = pose.x();
-      float p1y = pose.y();
-      float p1z = pose.z();
-
-      float p2x = p1x + gain_range * dir_x;
-      float p2y = p1y + gain_range * dir_y;
-      float p2z = p1z + gain_range * dir_z;
-
-      float dx = p2x - p1x;
-      float dy = p2y - p1y;
-      float dz = p2z - p1z;
-
-      float step = 0;
-      if (std::abs(dx) >= std::abs(dy) && std::abs(dx) >= std::abs(dz)) {
-          step = std::abs(dx) * voxel_size_inv_;
-      } else if (std::abs(dy) >= std::abs(dx) && std::abs(dy) >= std::abs(dz)) {
-          step = std::abs(dy) * voxel_size_inv_;
-      } else {
-          step = std::abs(dz) * voxel_size_inv_;
-      }
-
-      dx /= step;
-      dy /= step;
-      dz /= step;
-
-      float x = p1x;
-      float y = p1y;
-      float z = p1z;
-      
-      int i = 0;
-      float ray_gain = 0.0f;
-      float dist_per_step = gain_range / step;
-      float current_dist = 0.0f;
-
-      while (i <= step) {
-        int gx = std::floor((x - cached_origin_.x()) / voxel_size);
-        int gy = std::floor((y - cached_origin_.y()) / voxel_size);
-        int gz = std::floor((z - cached_origin_.z()) / voxel_size);
-
-        if (gx >= 0 && gx < cached_dim_.x() &&
-            gy >= 0 && gy < cached_dim_.y() &&
-            gz >= 0 && gz < cached_dim_.z()) {
-          int flat_idx = gz * (cached_dim_.x() * cached_dim_.y()) + gy * cached_dim_.x() + gx;
-          uint8_t val = flat_map[flat_idx];
-
-          if (val == 1) {
-            break;
-          } else if (val == 2) {
-            float r = current_dist;
-            float term1 = 2.0f * r * r * voxel_size;
-            float term2 = (voxel_size * voxel_size * voxel_size) / 6.0f;
-            float vol = term1 + term2;
-            ray_gain += vol * dtheta_rad * sin_phi * sin(dphi_rad / 2.0f);
-          }
-        }
-
-        x = x + dx;
-        y = y + dy;
-        z = z + dz;
-        current_dist += dist_per_step;
-        i = i + 1;
-      }
-
-      if (ray_gain > 0) {
-        yaw_gains[t_idx] += ray_gain;
-      }
-    }
-  }
-
-  float max_gain = 0.0f;
-  int best_idx = 0;
-
-  // How many 10-degree bins fit in the FOV?
-  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
-  if (sectors < 1) sectors = 1;
-
-  for (int i = 0; i < theta_bins; ++i) {
-      float current_window = 0.0f;
-      for (int k = 0; k < sectors; ++k) {
-          int idx = (i + k) % theta_bins;
-          current_window += yaw_gains[idx];
-      }
-
-      if (current_window > max_gain) {
-          max_gain = current_window;
-          best_idx = i;
-      }
-  }
-
-  // Calculate Best Yaw Angle
-  float start_angle = -M_PI + (best_idx * dtheta_rad);
-  float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
-
-  // Normalize -PI to PI
-  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-
-  return std::make_pair((double)max_gain, (double)center_angle);
-}
-
-// Live-map twin of computeGainCPU_DDA: reads voxblox via getVoxelStatus instead of the flat map.
-std::pair<double, double> GainEvaluator::computeGainCPU_DDA_Voxblox(const Eigen::Vector4d& pose) {
-  // 1. Setup Constants
-  float voxel_size = voxel_size_;
-  float gain_range = r_max_;
-
-  float dtheta_rad, dphi_rad; int theta_bins;
-  angularResolution(dtheta_rad, dphi_rad, theta_bins);
-
-  float fov_p_rad = fov_p_rad_;
-  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
-  float phi_center = (M_PI / 2.0f) + camera_pitch;
-  float phi_start  = phi_center - (fov_p_rad / 2.0f);
-  float phi_end    = phi_center + (fov_p_rad / 2.0f);
-
-  std::vector<float> yaw_gains(theta_bins, 0.0f);
-
-  // 3D DDA Raycasting
-  for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
-    float theta = -M_PI + (t_idx * dtheta_rad);
-
-    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
-      float sin_phi = sin(phi);
-      float dir_x = cos(theta) * sin_phi;
-      float dir_y = sin(theta) * sin_phi;
-      float dir_z = cos(phi);
-
-      float p1x = pose.x();
-      float p1y = pose.y();
-      float p1z = pose.z();
-
-      float p2x = p1x + gain_range * dir_x;
-      float p2y = p1y + gain_range * dir_y;
-      float p2z = p1z + gain_range * dir_z;
-
-      float dx = p2x - p1x;
-      float dy = p2y - p1y;
-      float dz = p2z - p1z;
-
-      float step = 0;
-      if (std::abs(dx) >= std::abs(dy) && std::abs(dx) >= std::abs(dz)) {
-          step = std::abs(dx) * voxel_size_inv_;
-      } else if (std::abs(dy) >= std::abs(dx) && std::abs(dy) >= std::abs(dz)) {
-          step = std::abs(dy) * voxel_size_inv_;
-      } else {
-          step = std::abs(dz) * voxel_size_inv_;
-      }
-
-      dx /= step;
-      dy /= step;
-      dz /= step;
-
-      float x = p1x;
-      float y = p1y;
-      float z = p1z;
-
-      int i = 0;
-      float ray_gain = 0.0f;
-      float dist_per_step = gain_range / step;
-      float current_dist = 0.0f;
-
-      while (i <= step) {
-        int gx = std::floor((x - cached_origin_.x()) / voxel_size);
-        int gy = std::floor((y - cached_origin_.y()) / voxel_size);
-        int gz = std::floor((z - cached_origin_.z()) / voxel_size);
-
-        if (gx >= 0 && gx < cached_dim_.x() &&
-            gy >= 0 && gy < cached_dim_.y() &&
-            gz >= 0 && gz < cached_dim_.z()) {
-          // ONLY difference vs computeGainCPU_DDA: live voxblox lookup instead of flat_map[flat_idx].
-          VoxelStatus st = getVoxelStatus(Eigen::Vector3d(x, y, z));
-
-          if (st == kOccupied) {          // == flat val 1
-            break;
-          } else if (st == kUnknown) {    // == flat val 2
-            float r = current_dist;
-            float term1 = 2.0f * r * r * voxel_size;
-            float term2 = (voxel_size * voxel_size * voxel_size) / 6.0f;
-            float vol = term1 + term2;
-            ray_gain += vol * dtheta_rad * sin_phi * sin(dphi_rad / 2.0f);
-          }
-          // kFree == flat val 0: contributes nothing (fall through)
-        }
-
-        x = x + dx;
-        y = y + dy;
-        z = z + dz;
-        current_dist += dist_per_step;
-        i = i + 1;
-      }
-
-      if (ray_gain > 0) {
-        yaw_gains[t_idx] += ray_gain;
-      }
-    }
-  }
-
-  float max_gain = 0.0f;
-  int best_idx = 0;
-
-  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
-  if (sectors < 1) sectors = 1;
-
-  for (int i = 0; i < theta_bins; ++i) {
-      float current_window = 0.0f;
-      for (int k = 0; k < sectors; ++k) {
-          int idx = (i + k) % theta_bins;
-          current_window += yaw_gains[idx];
-      }
-
-      if (current_window > max_gain) {
-          max_gain = current_window;
-          best_idx = i;
-      }
-  }
-
-  float start_angle = -M_PI + (best_idx * dtheta_rad);
-  float center_angle = start_angle + (fov_y_rad_ * 0.5f);
-  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-
-  return std::make_pair((double)max_gain, (double)center_angle);
-}
-
-std::pair<double, double> GainEvaluator::computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose) {
-  float voxel_size = voxel_size_;
-  float gain_range = r_max_;
-
-  float dtheta_rad, dphi_rad; int theta_bins;
-  angularResolution(dtheta_rad, dphi_rad, theta_bins);
-
-  float fov_p_rad = fov_p_rad_;
-  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
-  float phi_center = (M_PI / 2.0f) + camera_pitch;
-  float phi_start  = phi_center - (fov_p_rad / 2.0f);
-  float phi_end    = phi_center + (fov_p_rad / 2.0f);
-
-  std::vector<float> yaw_gains(theta_bins, 0.0f);
-
-    // Original Raycasting Loop 
-  for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
-    float theta = -M_PI + (t_idx * dtheta_rad);
-    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
-      // Direction Vectors
-      float sin_phi = sin(phi);
-      float dir_x = cos(theta) * sin_phi;
-      float dir_y = sin(theta) * sin_phi;
-      float dir_z = cos(phi);
-
-      float ray_gain = 0.0f;
-
-      // Iterate Ray
-      for (float r = 0.2f; r < gain_range; r += voxel_size) {
-        // Calculate Point
-        float px = pose.x() + r * dir_x;
-        float py = pose.y() + r * dir_y;
-        float pz = pose.z() + r * dir_z;
-
-        /*// A. STRICT BOUNDARY CHECK (Matches GPU strict fix)
-        if (px < min_x_ || px > max_x_ ||
-            py < min_y_ || py > max_y_ ||
-            pz < min_z_ || pz > max_z_) {
-            continue; // Skip out of bounds
-        }*/
-
-        // B. CALCULATE INDEX
-        int gx = std::floor((px - cached_origin_.x()) / voxel_size);
-        int gy = std::floor((py - cached_origin_.y()) / voxel_size);
-        int gz = std::floor((pz - cached_origin_.z()) / voxel_size);
-
-        // C. SAFETY CHECK (Should correspond to flat_map size)
-        if (gx < 0 || gx >= cached_dim_.x() ||
-            gy < 0 || gy >= cached_dim_.y() ||
-            gz < 0 || gz >= cached_dim_.z()) {
-          continue;
-        }
-
-        // D. CHECK VALUE
-        int flat_idx = gz * (cached_dim_.x() * cached_dim_.y()) + gy * cached_dim_.x() + gx;
-        uint8_t val = flat_map[flat_idx];
-
-        if (val == 1) { // Occupied
-          break;
-        }
-        else if (val == 2) { // Unknown
-          // Gain Math (Exact replica of GPU)
-          float term1 = 2.0f * r * r * voxel_size;
-          float term2 = (voxel_size * voxel_size * voxel_size) / 6.0f;
-          float vol = term1 + term2;
-
-          ray_gain += vol * dtheta_rad * sin_phi * sin(dphi_rad / 2.0f);
-        }
-      }
-
-      // Accumulate to the current Yaw Bin
-      if (ray_gain > 0) {
-          yaw_gains[t_idx] += ray_gain;
-      }
-    }
-  }
-
-  float max_gain = 0.0f;
-  int best_idx = 0;
-
-  // How many 10-degree bins fit in the FOV?
-  int sectors = angular_bins(fov_y_rad_, dtheta_rad);
-  if (sectors < 1) sectors = 1;
-
-  for (int i = 0; i < theta_bins; ++i) {
-      float current_window = 0.0f;
-      for (int k = 0; k < sectors; ++k) {
-          int idx = (i + k) % theta_bins;
-          current_window += yaw_gains[idx];
-      }
-
-      if (current_window > max_gain) {
-          max_gain = current_window;
-          best_idx = i;
-      }
-  }
-
-  // Calculate Best Yaw Angle
-  float start_angle = -M_PI + (best_idx * dtheta_rad);
-  float center_angle = start_angle + (fov_y_rad_ * 0.5f);   
-
-  // Normalize -PI to PI
-  if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
-
-  return std::make_pair((double)max_gain, (double)center_angle);
+  // Yaw window: fixed yaw (NBVP) sums the window at that yaw; else slide for the best window (AEP).
+  return pickYawWindow(yaw_gains, dtheta_rad, theta_bins, fixed_yaw);
 }
 
 /* GAIN COMPUTATION FUNCTIONS */
-
-double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
-      pose.head<3>().cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double yaw_rad = pose[3];
-  double yaw = yaw_rad * 180 / M_PI;
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi_rad = dr_ / r_max_;
-  double dtheta_rad = dr_ / r_max_;
-  double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
-  double r;
-  double phi, theta;
-  double phi_rad, theta_rad;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }
-      }
-      gain += g;
-    }
-  }
-
-  return gain;
-}
 
 double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset) {
   CHECK_NOTNULL(tsdf_layer_);
@@ -1890,12 +1305,12 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
 
   //voxblox::Point vec;
   Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
+  double min_x = static_cast<double>(min_x_) + offset[0];
+  double min_y = static_cast<double>(min_y_) + offset[1];
+  double min_z = static_cast<double>(min_z_) + offset[2];
+  double max_x = static_cast<double>(max_x_) + offset[0];
+  double max_y = static_cast<double>(max_y_) + offset[1];
+  double max_z = static_cast<double>(max_z_) + offset[2];
 
   int id = 0;
   for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
@@ -1910,9 +1325,9 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
         vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = camera_center.z() + r * cos(phi_rad);
 
-        if (vec[0] < min_x + offset[0] || vec[0] > max_x + offset[0] || 
-        vec[1] < min_y + offset[1] || vec[1] > max_y + offset[1] || 
-        vec[2] < min_z + offset[2] || vec[2] > max_z + offset[2]) {
+        if (vec[0] < min_x || vec[0] > max_x || 
+        vec[1] < min_y || vec[1] > max_y || 
+        vec[2] < min_z || vec[2] > max_z) {
           continue;
         }
 
@@ -1934,7 +1349,7 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
   return gain;
 }
 
-std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vector4d& pose) {
+std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vector4d& pose, bool optimize_yaw, const Eigen::Vector3d& offset) {
   CHECK_NOTNULL(tsdf_layer_);
 
   cam_model_.setBodyPose(voxblox::Transformation(
@@ -1962,12 +1377,13 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vect
 
   //voxblox::Point vec;
   Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
+  // offset shifts the bounding box (real-world pose initial offset); zero for the default sim case.
+  double min_x = static_cast<double>(min_x_) + offset[0];
+  double min_y = static_cast<double>(min_y_) + offset[1];
+  double min_z = static_cast<double>(min_z_) + offset[2];
+  double max_x = static_cast<double>(max_x_) + offset[0];
+  double max_y = static_cast<double>(max_y_) + offset[1];
+  double max_z = static_cast<double>(max_z_) + offset[2];
 
   int id = 0;
   for (theta = -180; theta < 180; theta += dtheta) {
@@ -2004,156 +1420,40 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vect
     }
   }
 
-  int best_yaw = 0;
-  double best_yaw_score = 0;
-  for (int yaw = -180; yaw < 180; yaw++)
-  {
-    double yaw_score = 0;
-    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++)
-    {
-      int theta = yaw + fov;
-      if (theta < -180)
-        theta += 360;
-      if (theta > 180)
-        theta -= 360;
-      yaw_score += gain_per_yaw[theta];
-    }
-
-    if (best_yaw_score < yaw_score)
-    {
-      best_yaw_score = yaw_score;
-      best_yaw = yaw;
-    }
-  }
-
-  double h_max = fov_y / M_PI * 180;
-  double v_max = fov_p / M_PI * 180;
-
-  gain = best_yaw_score;
-
-  double yaw = M_PI * best_yaw / 180.f;
-
-  return std::make_pair(gain, yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const Eigen::Vector4d& pose) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
-      pose.head<3>().cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi_rad = dr_ / r_max_;
-  double dtheta_rad = dr_ / r_max_;
-  double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
-  double r;
-  double phi, theta;
-  double phi_rad, theta_rad;
-
-  std::map<int, double> gain_per_yaw;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = -180; theta < 180; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }
-      }
-
-      gain += g;
-      gain_per_yaw[theta] += g;
-    }
-  }
-
-  double best_gain = 0;
   double best_yaw = 0;
 
-  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
+  if (!optimize_yaw) {
+    double best_yaw_score = 0;
+    for (int yaw = -180; yaw < 180; yaw++) {
+      double yaw_score = 0;
+      for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
+        int theta = yaw + fov;
+        if (theta < -180)
+          theta += 360;
+        if (theta > 180)
+          theta -= 360;
+        yaw_score += gain_per_yaw[theta];
+      }
 
-  std::vector<double> yaws;
-  std::vector<double> gains;
-  double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 1; // degree
-  int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
-
-  for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
-    double gain_optimized = 0;
-    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-      int theta = yaw_optimized + fov;
-      if (theta < -180)
-        theta += 360;
-      if (theta > 180)
-        theta -= 360;
-      gain_optimized += gain_per_yaw[theta];
+      if (best_yaw_score < yaw_score) {
+        best_yaw_score = yaw_score;
+        best_yaw = yaw;
+      }
     }
+    gain = best_yaw_score;
+  } else {
+    double best_gain = 0;
 
-    yaws.push_back(yaw_optimized);
-    gains.push_back(gain_optimized);
+    int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
 
-    if (gain_optimized > best_gain) {
-      best_gain = gain_optimized;
-      best_yaw = yaw_optimized;
-    }
-  }
+    std::vector<double> yaws;
+    std::vector<double> gains;
+    double min_yaw_step = 2 * M_PI / min_yaw_samples;
+    double yaw_step = 1; // degree
+    int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
 
-  // Create a vector to store the filtered yaws
-  std::vector<double> filteredYaws;
-
-  for (int i = 0; i < min_yaw_samples; ++i) {
-    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
-    int next = (i + 1) % min_yaw_samples;
-
-    if ((gains[i] + gains[next] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }
-  }
-
-  for (int j = 0; j < filteredYaws.size(); ++j) {
-    for (int l = 0; l < aditional_angles; ++l) {
-      double yaw_optimized = filteredYaws[j] + yaw_step * (l + 1);
+    for (int k = 0; k < min_yaw_samples; ++k) {
+      double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
       double gain_optimized = 0;
       for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
         int theta = yaw_optimized + fov;
@@ -2164,224 +1464,108 @@ std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const Ei
         gain_optimized += gain_per_yaw[theta];
       }
 
-      if (gain_optimized > best_gain) {
-        best_gain = gain_optimized;
-        best_yaw = yaw_optimized;
-      }
-    }
-  }
-
-  gain = best_gain;
-  double yaw = M_PI * best_yaw / 180.f;
-
-  return std::make_pair(gain, yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainOptimizedRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset) {
-  CHECK_NOTNULL(tsdf_layer_);
-
-  cam_model_.setBodyPose(voxblox::Transformation(
-      Eigen::Quaterniond(Eigen::AngleAxisd(pose[3], Eigen::Vector3d::UnitZ())).cast<float>(),
-      pose.head<3>().cast<float>()));
-
-  // Get the center of the camera to raycast to.
-  voxblox::Transformation camera_pose = cam_model_.getCameraPose();
-  voxblox::Point camera_center = camera_pose.getPosition();
-
-  double gain = 0.0;
-
-  // This function computes the gain
-  double fov_y = fov_y_rad_ / M_PI * 180.0f;
-  double fov_p = fov_p_rad_ / M_PI * 180.0f;
-
-  double dphi_rad = dr_ / r_max_;
-  double dtheta_rad = dr_ / r_max_;
-  double dphi = 180.0f * dphi_rad / M_PI, dtheta = 180.0f * dtheta_rad / M_PI;
-  double r;
-  double phi, theta;
-  double phi_rad, theta_rad;
-
-  std::map<int, double> gain_per_yaw;
-
-  //voxblox::Point vec;
-  Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
-  for (theta = -180; theta < 180; theta += dtheta) {
-    theta_rad = M_PI * theta / 180.0f;
-    for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
-      phi_rad = M_PI * phi / 180.0f;
-
-      double g = 0;
-      bool occupied_ray = false;
-      for (r = 0; r < r_max_; r += dr_) {
-        vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
-        vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
-        vec[2] = camera_center.z() + r * cos(phi_rad);
-
-        if (vec[0] < min_x + offset[0] || vec[0] > max_x + offset[0] || 
-        vec[1] < min_y + offset[1] || vec[1] > max_y + offset[1] || 
-        vec[2] < min_z + offset[2] || vec[2] > max_z + offset[2]) {
-          continue;
-        }
-
-        VoxelStatus node = getVoxelStatus(vec);
-
-        if (node == kOccupied) {
-          occupied_ray = true;
-          break;
-        } else if (node == kFree) {
-          continue;
-        } else if (node == kUnknown) {
-          g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
-        }
-      }
-
-      gain += g;
-      gain_per_yaw[theta] += g;
-    }
-  }
-
-  double best_gain = 0;
-  double best_yaw = 0;
-
-  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
-
-  std::vector<double> yaws;
-  std::vector<double> gains;
-  double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 1; // degree
-  int aditional_angles = (360 - min_yaw_samples) / min_yaw_samples;
-
-  for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw_optimized = k * min_yaw_step / M_PI * 180.0f;
-    double gain_optimized = 0;
-    for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-      int theta = yaw_optimized + fov;
-      if (theta < -180)
-        theta += 360;
-      if (theta > 180)
-        theta -= 360;
-      gain_optimized += gain_per_yaw[theta];
-    }
-
-    yaws.push_back(yaw_optimized);
-    gains.push_back(gain_optimized);
-
-    if (gain_optimized > best_gain) {
-      best_gain = gain_optimized;
-      best_yaw = yaw_optimized;
-    }
-  }
-
-  // Create a vector to store the filtered yaws
-  std::vector<double> filteredYaws;
-
-  for (int i = 0; i < min_yaw_samples; ++i) {
-    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
-    int next = (i + 1) % min_yaw_samples;
-
-    if ((gains[i] + gains[next] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }
-  }
-
-  for (int j = 0; j < filteredYaws.size(); ++j) {
-    for (int l = 0; l < aditional_angles; ++l) {
-      double yaw_optimized = filteredYaws[j] + yaw_step * (l + 1);
-      double gain_optimized = 0;
-      for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
-        int theta = yaw_optimized + fov;
-        if (theta < -180)
-          theta += 360;
-        if (theta > 180)
-          theta -= 360;
-        gain_optimized += gain_per_yaw[theta];
-      }
+      yaws.push_back(yaw_optimized);
+      gains.push_back(gain_optimized);
 
       if (gain_optimized > best_gain) {
         best_gain = gain_optimized;
         best_yaw = yaw_optimized;
       }
     }
+
+    // Keep only bins whose neighbourhood could still beat the current best, then refine within them.
+    std::vector<double> filteredYaws;
+    for (int i = 0; i < min_yaw_samples; ++i) {
+      int next = (i + 1) % min_yaw_samples;
+      if ((gains[i] + gains[next] > best_gain)) {
+        filteredYaws.push_back(yaws[i]);
+      }
+    }
+
+    for (int j = 0; j < filteredYaws.size(); ++j) {
+      for (int l = 0; l < aditional_angles; ++l) {
+        double yaw_optimized = filteredYaws[j] + yaw_step * (l + 1);
+        double gain_optimized = 0;
+        for (int fov = -fov_y / 2; fov < fov_y / 2; fov++) {
+          int theta = yaw_optimized + fov;
+          if (theta < -180)
+            theta += 360;
+          if (theta > 180)
+            theta -= 360;
+          gain_optimized += gain_per_yaw[theta];
+        }
+
+        if (gain_optimized > best_gain) {
+          best_gain = gain_optimized;
+          best_yaw = yaw_optimized;
+        }
+      }
+    }
+
+    gain = best_gain;
   }
 
-  gain = best_gain;
   double yaw = M_PI * best_yaw / 180.f;
 
   return std::make_pair(gain, yaw);
 }
 
-std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(Eigen::Vector4d& position) {
+std::pair<double, double> GainEvaluator::computeGainRaycastingFromSampledYaw(Eigen::Vector4d& position, bool optimize_yaw) {
   double best_gain = 0;
   double best_yaw = 0;
 
-  for (int k = 0; k < yaw_samples_; ++k) {
-    double yaw = k * 2 * M_PI / yaw_samples_;
-    position[3] = yaw;
-    double gain = computeFixedGainRaycasting(position);
-    if (gain > best_gain) {
-      best_gain = gain;
-      best_yaw = yaw;
-    }
-  }
-
-  return std::make_pair(best_gain, best_yaw);
-}
-
-std::pair<double, double> GainEvaluator::computeGainRaycastingFromOptimizedSampledYaw(Eigen::Vector4d& position) {
-  double best_gain = 0;
-  double best_yaw = 0;
-
-  int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
-
-  std::vector<double> yaws;
-  std::vector<double> gains;
-  double min_yaw_step = 2 * M_PI / min_yaw_samples;
-  double yaw_step = 2 * M_PI / yaw_samples_;
-  int aditional_angles = (yaw_samples_ - min_yaw_samples) / min_yaw_samples;
-
-  for (int k = 0; k < min_yaw_samples; ++k) {
-    double yaw = k * min_yaw_step;
-    position[3] = yaw;
-    double gain = computeFixedGainRaycasting(position);
-
-    yaws.push_back(yaw);
-    gains.push_back(gain);
-
-    if (gain > best_gain) {
-      best_gain = gain;
-      best_yaw = yaw;
-    }
-  }
-
-  // Create a vector to store the filtered yaws
-  std::vector<double> filteredYaws;
-
-  for (int i = 0; i < min_yaw_samples; ++i) {
-    //int prev = (i - 1 + min_yaw_samples) % min_yaw_samples;
-    int next = (i + 1) % min_yaw_samples;
-
-    if ((gains[i] + gains[next] > best_gain)) {
-      filteredYaws.push_back(yaws[i]);
-    }
-  }
-
-  for (int j = 0; j < filteredYaws.size(); ++j) {
-    for (int l = 0; l < aditional_angles; ++l) {
-      double yaw = filteredYaws[j] + yaw_step * (l + 1);
+  if (!optimize_yaw) {
+    for (int k = 0; k < yaw_samples_; ++k) {
+      double yaw = k * 2 * M_PI / yaw_samples_;
       position[3] = yaw;
       double gain = computeFixedGainRaycasting(position);
+      if (gain > best_gain) {
+        best_gain = gain;
+        best_yaw = yaw;
+      }
+    }
+  } else {
+    int min_yaw_samples = ceil(2 * M_PI / fov_y_rad_);
+
+    std::vector<double> yaws;
+    std::vector<double> gains;
+    double min_yaw_step = 2 * M_PI / min_yaw_samples;
+    double yaw_step = 2 * M_PI / yaw_samples_;
+    int aditional_angles = (yaw_samples_ - min_yaw_samples) / min_yaw_samples;
+
+    for (int k = 0; k < min_yaw_samples; ++k) {
+      double yaw = k * min_yaw_step;
+      position[3] = yaw;
+      double gain = computeFixedGainRaycasting(position);
+
+      yaws.push_back(yaw);
+      gains.push_back(gain);
 
       if (gain > best_gain) {
         best_gain = gain;
         best_yaw = yaw;
+      }
+    }
+
+    // Keep only bins whose neighbourhood could still beat the current best, then refine within them.
+    std::vector<double> filteredYaws;
+    for (int i = 0; i < min_yaw_samples; ++i) {
+      int next = (i + 1) % min_yaw_samples;
+      if ((gains[i] + gains[next] > best_gain)) {
+        filteredYaws.push_back(yaws[i]);
+      }
+    }
+
+    for (int j = 0; j < filteredYaws.size(); ++j) {
+      for (int l = 0; l < aditional_angles; ++l) {
+        double yaw = filteredYaws[j] + yaw_step * (l + 1);
+        position[3] = yaw;
+        double gain = computeFixedGainRaycasting(position);
+
+        if (gain > best_gain) {
+          best_gain = gain;
+          best_yaw = yaw;
+        }
       }
     }
   }

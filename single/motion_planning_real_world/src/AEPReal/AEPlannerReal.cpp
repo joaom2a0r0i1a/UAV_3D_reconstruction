@@ -192,7 +192,7 @@ void AEPlanner::localPlanner() {
         root_owned = std::make_unique<rrt_star::Node>(pose);
     }
     trajectory_point = root_owned->point;
-    std::pair<double, double> result_root = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
+    std::pair<double, double> result_root = segment_evaluator.computeGainRaycasting(trajectory_point, true, initial_offset);
     root_owned->gain = result_root.first;
     root_owned->point[3] = result_root.second;
 
@@ -234,7 +234,7 @@ void AEPlanner::localPlanner() {
             visualize_node(new_node_best->point, ns);
 
             trajectory_point = new_node_best->point;
-            std::pair<double, double> result_bb = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
+            std::pair<double, double> result_bb = segment_evaluator.computeGainRaycasting(trajectory_point, true, initial_offset);
             new_node_best->gain = result_bb.first;
             new_node_best->point[3] = result_bb.second;
 
@@ -292,7 +292,7 @@ void AEPlanner::localPlanner() {
         visualize_node(new_node->point, ns);
 
         trajectory_point = new_node->point;
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point, initial_offset);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, true, initial_offset);
         new_node->gain = result.first;
         new_node->point[3] = result.second;
 
@@ -445,14 +445,14 @@ bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         //ROS_INFO("[AEPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);    
 
         Eigen::Vector4d trajectory_point_global = node->point;
-        std::pair<double, double> result = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global, initial_offset);
+        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point_global, true, initial_offset);
 
         node->gain = result.first;
         node->point[3] = result.second;
 
         trajectory_point_global.head<3>() = nearest_goal; 
         trajectory_point_global[3] = 0.0;
-        std::pair<double, double> result_original = segment_evaluator.computeGainOptimizedRaycasting(trajectory_point_global, initial_offset);
+        std::pair<double, double> result_original = segment_evaluator.computeGainRaycasting(trajectory_point_global, true, initial_offset);
         goals_tree.clearKDTreePoints();
         return true;
     }

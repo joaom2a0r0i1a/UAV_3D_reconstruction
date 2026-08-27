@@ -65,6 +65,12 @@ std::vector<rrt_star::Node*> collectTreeNodes(rrt_star& tree) {
     return nodes;
 }
 
+void sortByDepth(std::vector<rrt_star::Node*>& nodes) {
+    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
+    std::stable_sort(nodes.begin(), nodes.end(),
+                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
+}
+
 bool inBoundingBox(const Eigen::Vector4d& p, float min_x, float max_x, float min_y, float max_y, float min_z, float max_z) {
     return p[0] >= min_x && p[0] <= max_x &&
            p[1] >= min_y && p[1] <= max_y &&
@@ -273,7 +279,7 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
 
     // CPU marginal baselines, depth-sequential so each node subtracts its ancestors' committed views.
     std::vector<rrt_star::Node*> depth_nodes = nodes;
-    seg.sortByDepth(depth_nodes);
+    sortByDepth(depth_nodes);
     rrt_star::Node* tree_root = depth_nodes.empty() ? nullptr : depth_nodes.front();
     while (tree_root && tree_root->parent) tree_root = tree_root->parent;
 

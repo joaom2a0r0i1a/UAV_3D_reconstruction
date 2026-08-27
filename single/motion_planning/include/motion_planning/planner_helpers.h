@@ -36,6 +36,9 @@ double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geom
 // All non-root nodes of the tree.
 std::vector<rrt_star::Node*> collectTreeNodes(rrt_star& tree);
 
+// Stable-sort nodes shallow-first (parents before children); stateless, walks parent pointers.
+void sortByDepth(std::vector<rrt_star::Node*>& nodes);
+
 // True iff p is inside the axis-aligned bounded box.
 bool inBoundingBox(const Eigen::Vector4d& p, float min_x, float max_x, float min_y, float max_y, float min_z, float max_z);
 

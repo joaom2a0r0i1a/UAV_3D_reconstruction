@@ -49,18 +49,10 @@ class GainEvaluator {
   // Function to set camera extrinsics.
   void setCameraExtrinsics(const voxblox::Transformation& T_C_B);
 
-  // Function to check if a point is in the camera frustum.
-  bool isPointInView(const voxblox::Point& point, bool first_node) const;
-
-  // Function to check if a voxel is a frontier voxel.
-  bool isFrontierVoxel(const Eigen::Vector3d& voxel);
-
-  // Bind the TSDF layer to one OWNED BY ANOTHER OBJECT. It is up to the user
-  // to ensure the layer exists and does not go out of scope.
+  // Bind the TSDF layer (NON-OWNED; caller keeps it alive).
   void setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer);
 
-  // Bind the ESDF map to one OWNED BY ANOTHER OBJECT. It is up to the user
-  // to ensure the map exists and does not go out of scope.
+  // Bind the ESDF map (NON-OWNED; caller keeps it alive).
   void setEsdfMap(voxblox::EsdfMap::Ptr esdf_map);
 
   // Get the voxel center position.
@@ -90,15 +82,10 @@ class GainEvaluator {
 
   /*              GPU-BASED GAIN COMPUTATION FUNCTIONS                 */
 
-  // Compute gain for a batch of poses
-  // fixed_yaws (optional, [num_candidates]): evaluate the FOV window at each yaw instead of optimizing.
-  // kernel_ms (optional): receives the device kernel time (ms), same cudaEvent measurement as the marginal batch.
+  // Batched absolute gain. fixed_yaws (optional): eval the FOV window at each yaw vs optimize. kernel_ms (optional): device time (ms).
   std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr, float* kernel_ms = nullptr);
 
-  std::pair<double, double> computeSingleParentMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const Eigen::Vector3d& parent_pos, const double parent_yaw, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
-
-  // Multi-ancestor marginal gain: the GPU marcher traverses the observed-free spans
-  // (never reseats the DDA). Runs the single-node kernel over the full ancestor chain.
+  // Multi-ancestor marginal gain: single-node GPU kernel over the full ancestor chain (traverses observed-free spans, never reseats the DDA).
   std::pair<double, double> computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
 
   // Depth-image pixel count (p_width*p_height) shared by every ancestor buffer.
@@ -111,6 +98,7 @@ class GainEvaluator {
   // Live map voxel size (= dr_), set from the tsdf layer in setTsdfLayer().
   double getVoxelSize() const { return dr_; }
 
+  // CPU depth-buffer generator (matches the GPU render) — ground truth for GPU depth-accuracy checks.
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
   // fixed_yaw (optional): evaluate the FOV window at that yaw instead of optimizing.
@@ -126,9 +114,6 @@ class GainEvaluator {
 
   // Per-node camera basis rows (Right, Forward-down-pitched, ...) for a yaw, at the configured camera pitch.
   std::vector<float> parentCamRows(float yaw) const;
-
-  // Order nodes shallow-first so each parent's view is committed before its children (marginal batching).
-  void sortByDepth(std::vector<rrt_star::Node*>& nodes) const;
 
   // Batched multi-ancestor marginal gain, GPU-resident-pool (fused/split); kernel time accumulated into kernel_ms.
   void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
@@ -150,8 +135,7 @@ class GainEvaluator {
     bool        track_absolute;  // also populate absolute_gain/absolute_yaw (AEP)
   };
 
-  // Unified gain evaluation: sets node->gain (+ point[3] when optimizing, + absolute_* when tracked).
-  // Kernel times are accumulated into marg_kernel_ms / abs_kernel_ms.
+  // Unified gain eval: sets node->gain (+point[3] when optimizing, +absolute_* when tracked); kernel times into marg/abs_kernel_ms.
   void evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
                      const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms);
 
@@ -164,43 +148,17 @@ class GainEvaluator {
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw = NAN);
 
-  // [Validation] CPU calculation using DDA algorithm
-  std::pair<double, double> computeGainCPU_DDA(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose);
-
-  // [Validation] Live-map twin of computeGainCPU_DDA (reads voxblox instead of the flat map)
-  std::pair<double, double> computeGainCPU_DDA_Voxblox(const Eigen::Vector4d& pose);
-
-  // [Validation] CPU calculation using Naive Raycasting
-  std::pair<double, double> computeGainCPU_Naive(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose);
-
 
   /*              GAIN COMPUTATION FUNCTIONS                 */
   
-  // Use raycasting to calculate volume of unknown voxels for fixed angle.
-  double computeFixedGainRaycasting(const Eigen::Vector4d& pose);
+  // Raycast unknown-voxel volume for the pose's fixed yaw; offset shifts the bounding box (real-world pose offset, default 0).
+  double computeFixedGainRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset = Eigen::Vector3d::Zero());
 
-  // Use raycasting to calculate volume of unknown voxels for fixed angle (Real-World Experiment Pose Initial Offset).
-  double computeFixedGainRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset);
+  // 360deg unknown-voxel gain + best yaw. optimize_yaw=false: uniform integer-yaw scan; true: informative search. offset shifts bbox (default 0).
+  std::pair<double, double> computeGainRaycasting(const Eigen::Vector4d& pose, bool optimize_yaw, const Eigen::Vector3d& offset = Eigen::Vector3d::Zero());
 
-  // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
-  // corresponds to the biggest gain given the camera frustum, with uniform yaw optimization.
-  std::pair<double, double> computeGainRaycasting(const Eigen::Vector4d& pose);
-
-  // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
-  // corresponds to the biggest gain given the camera frustum, with informative yaw optimization.
-  std::pair<double, double> computeGainOptimizedRaycasting(const Eigen::Vector4d& pose);
-
-  // Use raycasting to calculate volume of unknown voxels 360 deg around the robot and find angle that
-  // corresponds to the biggest gain given the camera frustum, with informative yaw optimization (Real-World Experiment Pose Initial Offset).
-  std::pair<double, double> computeGainOptimizedRaycasting(const Eigen::Vector4d& pose, Eigen::Vector3d offset);
-  
-  // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
-  // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (uniform yaw optimization).
-  std::pair<double, double> computeGainRaycastingFromSampledYaw(Eigen::Vector4d& position);
-  
-  // Use raycasting to calculate the volume of unknown voxels visible within a given yaw's camera frustum.
-  // Sample multiple discrete yaw angles and select the yaw that maximizes this gain (informative yaw optimization).
-  std::pair<double, double> computeGainRaycastingFromOptimizedSampledYaw(Eigen::Vector4d& position);
+  // Sample discrete yaws, return the one maximizing frustum gain. optimize_yaw=false: uniform; true: informative coarse-to-fine.
+  std::pair<double, double> computeGainRaycastingFromSampledYaw(Eigen::Vector4d& position, bool optimize_yaw);
 
 
   /*              COST AND SCORE FUNCTIONS                 */
@@ -231,20 +189,23 @@ class GainEvaluator {
   GpuMap gpuMap() const;
   GpuSensor gpuSensor() const;
 
-  // Build the 26 neighbour-voxel offsets scaled by dr_.
-  void buildNeighborOffsets();
-
   // Gain-sphere angular resolution (1 ray/voxel at max range).
   void angularResolution(float& dtheta_rad, float& dphi_rad, int& theta_bins) const;
+
+  // CPU mirror of the GPU make_kernel_params angular block: azimuth/polar step, bin count, pitch-centred phi start.
+  struct ScanParams { float dtheta, dphi, phi_start; int theta_bins; };
+  ScanParams scanParams() const;
+
+  // Pick the FOV yaw window from the per-bin histogram (mirrors GPU pick_yaw_window); fixed_yaw!=NAN sums at that yaw, else best. Returns {gain, center}.
+  std::pair<double, double> pickYawWindow(const std::vector<float>& yaw_gains, float dtheta_rad,
+                                          int theta_bins, double fixed_yaw,
+                                          int* out_best_idx = nullptr, int* out_sectors = nullptr) const;
 
   // NON-OWNED pointer to the tsdf layer to use for evaluating exploration gain.
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
   voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
   voxblox::EsdfMap::Ptr esdf_map_;
-  voxblox::CameraModel prev_cam_model_;
   voxblox::CameraModel cam_model_;
-
-  voxblox::AlignedVector<voxblox::Plane> bounding_planes_;
 
   // Get map Bounds
   float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;
@@ -255,10 +216,6 @@ class GainEvaluator {
   double camera_pitch_;
 
   int yaw_samples_;
-
-  bool p_accurate_frontiers_;
-  Eigen::Vector3d c_neighbor_voxels_[26];
-  double p_checking_distance_;
 
   // Cached parameters of the layer.
   float voxel_size_;

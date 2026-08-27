@@ -104,7 +104,7 @@ void Cached::timerReevaluate(const ros::TimerEvent&) {
         Eigen::Vector4d trajectory_point_gain;
         trajectory_point_gain.head<3>() = pos;
         trajectory_point_gain[3] = node.second.yaw;
-        std::pair<double, double> result = evaluator.computeGainOptimizedRaycasting(trajectory_point_gain);
+        std::pair<double, double> result = evaluator.computeGainRaycasting(trajectory_point_gain, true);
 
         ROS_INFO("[Cached]: Point position: [%f, %f, %f]", node.second.position.x, node.second.position.y, node.second.position.z);
         ROS_INFO("[Cached]: Old Point gain: %f", node.second.gain);
