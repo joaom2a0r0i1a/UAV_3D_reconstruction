@@ -179,5 +179,4 @@ if [ "$MODE" = "explore" ]; then
   echo "  roslaunch motion_planning full_voxblox_eval.launch multi_series:=true"
   echo "  (ensure eval_plotting_node.py's multi_series label list matches the swept labels)"
 else
-  echo "  python3 ../../src/evaluate/process_benchmark.py   # once benchmark CSV columns are extended"
 fi

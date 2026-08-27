@@ -148,7 +148,6 @@ class GainEvaluator {
     std::string eval_compute;    // "gpu" or "cpu"
     bool        marginal_split;  // marginal+gpu: split vs fused kernel
     bool        track_absolute;  // also populate absolute_gain/absolute_yaw (AEP)
-    bool        depth_pool_compare = false; // validation: pool vs independent v4 reference per call (~2x slower)
   };
 
   // Unified gain evaluation: sets node->gain (+ point[3] when optimizing, + absolute_* when tracked).
@@ -156,11 +155,11 @@ class GainEvaluator {
   void evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
                      const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms);
 
-  // Validation (depth_pool_compare): dual-eval current vs pool per call + v4 reference; restores current.
-  void runDepthPoolCompare(const std::vector<rrt_star::Node*>& nodes, const GainConfig& cfg, float& marg_kernel_ms);
+  // Benchmark correctness: run the batched pool, diff each node's gain vs the layered reference; returns max|dGain|, yaw_flips (out) = yaw disagreements.
+  double checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips);
 
-  // Independent layered v4 reference for one node (own yaws/renders; ignores depth_buffer/point[3]).
-  double computeV4LayeredGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only = false, bool fixed_mode = false);
+  // Independent layered reference for one node (own yaws/renders; ignores depth_buffer/point[3]).
+  double computeReferenceMarginalGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only = false, bool fixed_mode = false);
 
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw = NAN);
@@ -276,13 +275,6 @@ class GainEvaluator {
   float* d_depth_pool_ = nullptr;
   int    pool_capacity_ = 0;   // pool size in slots
   int    pool_per_ = 0;        // floats per slot (depth image pixels)
-
-  // depth_pool_compare accumulators (pool vs the independent single-node v4 reference, over the whole run).
-  long   cmp_yaw_flips_ = 0;
-  long   cmp_invariant_violations_ = 0;
-  long   cmp_calls_ = 0;
-  double cmp_max_gain_diff_v4pool_ = 0.0;
-  long   cmp_v4_samples_ = 0;
 };
 
 #endif  // VOXBLOX_PLANNING_COMMON_GAIN_EVALUATOR_H_

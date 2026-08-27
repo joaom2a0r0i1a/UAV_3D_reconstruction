@@ -34,6 +34,7 @@
 #include <Eigen/Core>
 #include <rrt_construction/rrt_star_kd.h>
 #include <gain_evaluation/gain_evaluator.h>
+#include "motion_planning/planner_helpers.h"
 
 #include <map>
 #include <chrono>
@@ -59,8 +60,6 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
-
-    // Sample the straight segment from->to at collision_check_resolution_ and require clearance >= uav_radius at each.
     bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
 
@@ -73,8 +72,8 @@ public:
     void sortByDepth(std::vector<rrt_star::Node*>& nodes);
     void logTreeNodes();
 
-    bool inBoundingBox(const Eigen::Vector4d& p) const;   // point inside the bounded_box
-    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);  // sample+steer+collision-check+add; nullptr if rejected
+    bool inBoundingBox(const Eigen::Vector4d& p) const;
+    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);
 
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
@@ -88,15 +87,12 @@ public:
     
     void changeState(const State_t new_state);
 
-    void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(rrt_star::Node* node, const std::string& ns);
     void visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns);
     void visualize_path(rrt_star::Node* node, const std::string& ns);
     void visualize_frustum(const Eigen::Vector4d& waypoint, int id);
     void visualize_unknown_voxels(const Eigen::Vector4d& waypoint, int id_base);
 
     void commandWaypoint(const Eigen::Vector4d& waypoint, const Eigen::Vector4d& prev_waypoint);
-    void clear_node();
     void clear_all_voxels();
     void clearMarkers();
 
@@ -156,16 +152,12 @@ private:
     bool optimize_yaw;          // false = keep each node's random sampled yaw; true = pick argmax yaw per node (like AEP)
     std::string eval_compute;   // "gpu" or "cpu"
     bool marginal_split;
-    bool depth_pool_compare_ = false;  // validation: pool vs independent v4 reference per call
     std::string objective_;
     bool benchmark_mode;
 
     // Benchmark accumulators (reset each NBV cycle)
-    double bench_ms_gall_gpu, bench_ms_gall_split, bench_ms_g1p_cpu, bench_ms_abs_gpu, bench_ms_abs_cpu;
-    double bench_g1p_err_sum, bench_g1p_err_max;
-    int    bench_nodes;
+    planner_helpers::BenchAccum bench_;
     float  last_marg_kernel_ms_, last_abs_kernel_ms_;
-    double bench_kernel_gall_gpu_, bench_kernel_abs_gpu_;
 
     // GPU map cache (for gpu / flat-map fixed-yaw eval)
     std::vector<uint8_t> flat_map_;

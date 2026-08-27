@@ -40,6 +40,7 @@
 #include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/kd_tree.h>
 #include <gain_evaluation/gain_evaluator.h>
+#include "motion_planning/planner_helpers.h"
 
 #include <fstream>
 #include <string>
@@ -68,39 +69,24 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
-
-    // Sample the straight segment from->to at collision_check_resolution_ and require clearance >= uav_radius at each.
     bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
 
     void AEP();
     void localPlannerGPU();
-    void localPlanner();
     void globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node);
 
-    // Generation-ordered batched marginal-gain eval; sets node->gain/yaw/depth_buffer (use_fixed_yaw keeps point[3]).
     void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool use_fixed_yaw = false);
-
-    // Evaluate node gains per the configured (marginal_gain, eval_compute); sets node->gain and yaw.
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
-
-    // Benchmark: time all methods + per-node single-parent-vs-cpuhash; accumulate into bench_* members.
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
-
-    std::vector<rrt_star::Node*> collectTreeNodes();        // non-owning observers to every non-root tree node
-    void sortByDepth(std::vector<rrt_star::Node*>& nodes);  // shallow-first (parents before children)
-
-    // Telescoped path-union (root->node) of each node's marginal (or own-view absolute) gain; scratch for global scoring.
+    std::vector<rrt_star::Node*> collectTreeNodes();
+    void sortByDepth(std::vector<rrt_star::Node*>& nodes);
     std::unordered_map<rrt_star::Node*, double> pathUnion(rrt_star::Node* root_ptr, bool use_marginal);
-
-    // Publish every node whose ABSOLUTE gain > g_zero as a global-frontier candidate (own-view, so a spot with
-    // new space is still cached when an ancestor covers its marginal).
     void cacheHighGainNodes();
+    void logTreeNodes();
 
-    void logTreeNodes();   // log per-node score over the final tree once
-
-    bool inBoundingBox(const Eigen::Vector4d& p) const;   // point inside the bounded_box
-    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);  // sample+steer+collision-check+add; nullptr if rejected
+    bool inBoundingBox(const Eigen::Vector4d& p) const;
+    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);
 
     void getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers);
     bool getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node);
@@ -110,22 +96,20 @@ public:
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
-    
+
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
+
     void changeState(const State_t new_state);
 
-    void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(rrt_star::Node* node, const std::string& ns);
     void visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns);
     void visualize_path(rrt_star::Node* node, const std::string& ns);
     void visualize_frustum(rrt_star::Node* position);
     void visualize_unknown_voxels(rrt_star::Node* position);
-    void clear_node();
+
     void clear_all_voxels();
     void clearMarkers();
 
@@ -189,15 +173,11 @@ private:
     bool marginal_gain;             // true: marginal gain (path sum in global); false: absolute gain
     std::string eval_compute;       // "gpu" (batched) or "cpu" (sequential)
     bool marginal_split;            // marginal+gpu: false = fused kernel, true = split kernel
-    bool depth_pool_compare_ = false;  // validation: pool vs independent v4 reference per call
     std::string objective_;
     bool benchmark_mode;            // also time all methods + per-node v2-vs-cpuhash, report local+global
 
     // Benchmark accumulators (reset each AEP cycle; cover local + global)
-    double bench_ms_fused, bench_ms_split, bench_ms_mcpu, bench_ms_agpu, bench_ms_acpu;
-    double bench_ms_v2, bench_ms_v4;             // per-node (non-batched) GPU single-parent / multi-ancestor
-    double bench_v2_err_sum, bench_v2_err_max;   // GPU single-parent (v2) vs CPU hash ground truth
-    int    bench_nodes;
+    planner_helpers::BenchAccum bench_;
     double bench_kernel_ms_ = 0.0;               // device (CUDA-event) ms of the last marginal-batched evaluateGains
 
     // Timer Parameters

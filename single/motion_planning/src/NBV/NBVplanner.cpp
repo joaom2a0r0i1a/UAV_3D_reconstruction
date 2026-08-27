@@ -42,7 +42,6 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("evaluation/optimize_yaw", optimize_yaw, false);
     param_loader.loadParam("evaluation/compute", eval_compute, std::string("cpu"));
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
-    param_loader.loadParam("evaluation/depth_pool_compare", depth_pool_compare_, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
 
     // Benchmark / X2 timing
@@ -148,9 +147,6 @@ double NBVPlanner::getMapDistance(const Eigen::Vector3d& position) const { retur
 
 bool NBVPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const { return planner_helpers::isPathCollisionFree(voxblox_server_, path, uav_radius); }
 
-// Sample the segment; require clearance >= uav_radius at each point. When optimistic_edges_ (first replans),
-// unknown space is traversable (block only observed-and-close) to bootstrap away from spawn. Otherwise unknown
-// counts as blocked (getMapDistance returns 0 for unobserved) so the tree can't route through unmapped pockets.
 bool NBVPlanner::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const { return planner_helpers::isEdgeCollisionFree(voxblox_server_, from, to, uav_radius, collision_check_resolution_, optimistic_edges_); }
 
 void NBVPlanner::GetTransformation() {
@@ -173,7 +169,6 @@ void NBVPlanner::GetTransformation() {
 // Evaluate node gains per (marginal_gain, eval_compute), always at each node's fixed yaw.
 void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
     GainEvaluator::GainConfig cfg{marginal_gain, optimize_yaw, eval_compute, marginal_split, /*track_absolute=*/false};
-    cfg.depth_pool_compare = depth_pool_compare_;
     segment_evaluator.evaluateGains(nodes, flat_map_, cfg, last_marg_kernel_ms_, last_abs_kernel_ms_);
 }
 
@@ -185,131 +180,12 @@ std::vector<rrt_star::Node*> NBVPlanner::collectTreeNodes() { return planner_hel
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
 void NBVPlanner::logTreeNodes() { if (benchmark_mode) return; planner_helpers::logTreeNodes(RRTStar, lambda); }
 
-// Time every gain variant (G_all / single-parent / absolute, GPU vs CPU) on the same nodes at
-// their fixed yaw, then dump per-node gains to the X1 CSV. Restores each node's gain when done.
+// Time all gain variants on `nodes`, dump the per-node X1 CSV, log X2 lines, check pool-vs-reference (shared impl).
 void NBVPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
-    if (nodes.empty()) return;
-    const size_t n = nodes.size();
-
-    auto snapshot_gains = [&]() {
-        std::vector<double> g(n);
-        for (size_t i = 0; i < n; ++i) g[i] = nodes[i]->gain;
-        return g;
-    };
-
-    const std::vector<double> saved_gain    = snapshot_gains();
-    const bool                saved_marginal = marginal_gain;
-    const std::string         saved_compute  = eval_compute;
-    const bool                saved_split    = marginal_split;
-
-    auto time_eval = [&](bool marginal, const std::string& compute, bool split) {
-        marginal_gain = marginal; eval_compute = compute; marginal_split = split;
-        auto t0 = std::chrono::high_resolution_clock::now();
-        evaluateGains(nodes);
-        return std::chrono::duration<double, std::milli>(
-            std::chrono::high_resolution_clock::now() - t0).count();
-    };
-
-    double t_gall_gpu        = time_eval(true,  "gpu", false);
-    double t_gall_gpu_kernel = last_marg_kernel_ms_;
-    std::vector<double> g_gall_gpu = snapshot_gains();
-
-    double t_gall_split = time_eval(true, "gpu", true);
-    std::vector<double> g_gall_split = snapshot_gains();
-
-    double t_g1p_cpu_hashmap = time_eval(true, "cpu", false);   // legacy HashMap pass, console summary only
-
-    double t_abs_gpu        = time_eval(false, "gpu", false);
-    double t_abs_gpu_kernel = last_abs_kernel_ms_;
-    std::vector<double> g_abs_gpu = snapshot_gains();
-
-    double t_abs_cpu = time_eval(false, "cpu", false);
-    std::vector<double> g_abs_cpu = snapshot_gains();
-
-    bench_ms_gall_gpu   += t_gall_gpu;
-    bench_ms_gall_split += t_gall_split;
-    bench_ms_g1p_cpu    += t_g1p_cpu_hashmap;
-    bench_ms_abs_gpu    += t_abs_gpu;
-    bench_ms_abs_cpu    += t_abs_cpu;
-    bench_kernel_gall_gpu_ += t_gall_gpu_kernel;
-    bench_kernel_abs_gpu_  += t_abs_gpu_kernel;
-    bench_nodes += (int)n;
-
-    // Per-replan samples for mean+/-std. transfer_ms = total wall time - device kernel time.
-    ROS_INFO("[X2rep] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
-             n, t_gall_gpu, t_gall_gpu_kernel, t_gall_gpu - t_gall_gpu_kernel);
-    ROS_INFO("[X2repABS] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
-             n, t_abs_gpu, t_abs_gpu_kernel, t_abs_gpu - t_abs_gpu_kernel);
-
-    marginal_gain = saved_marginal; eval_compute = saved_compute; marginal_split = saved_split;
-    for (size_t i = 0; i < n; ++i) nodes[i]->gain = saved_gain[i];
-
-    // CPU marginal baselines, depth-sequential so each node subtracts its ancestors' committed views.
-    // G_single-parent and G_all are separate passes; observed sets are cleared before each.
-    std::vector<rrt_star::Node*> depth_nodes = nodes;
-    sortByDepth(depth_nodes);
-    rrt_star::Node* tree_root = depth_nodes.empty() ? nullptr : depth_nodes.front();
-    while (tree_root && tree_root->parent) tree_root = tree_root->parent;
-    
-    auto clear_observed = [&]() {
-        if (tree_root) tree_root->observed_unknown_voxels.clear();
-        for (rrt_star::Node* nd : depth_nodes) nd->observed_unknown_voxels.clear();
-    };
-
-    clear_observed();
-    auto t0_g1p = std::chrono::high_resolution_clock::now();
-    for (rrt_star::Node* nd : depth_nodes) {
-        segment_evaluator.computeMarginalGainCPU_AllAncestors(flat_map_, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/true, /*commit_observed=*/true);
-    }
-    double t_g1p_cpu = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0_g1p).count();
-
-    std::unordered_map<rrt_star::Node*, double> gall_of;
-    clear_observed();
-    auto t0_gall = std::chrono::high_resolution_clock::now();
-    for (rrt_star::Node* nd : depth_nodes) {
-        gall_of[nd] = segment_evaluator.computeMarginalGainCPU_AllAncestors(flat_map_, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/false, /*commit_observed=*/true).first;
-    }
-    double t_gall_cpu = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0_gall).count();
-
-    std::vector<double> g_gall_cpu(n);
-    for (size_t i = 0; i < n; ++i) g_gall_cpu[i] = gall_of[nodes[i]];   // back to input order for the CSV
-
-    ROS_INFO("[X2cpu] nodes=%zu cpu_absolute_ms=%.3f cpu_gain_1parent_ms=%.3f", n, t_abs_cpu, t_g1p_cpu);
-    ROS_INFO("[X1cpu] nodes=%zu cpu_gain_all_ms=%.3f", n, t_gall_cpu);
-
-    // Per-node dump of all 6 gain variants -> CSV. cols: replan,depth,abs_cpu,abs_gpu,p1_cpu,p1_gpu,all_cpu,all_gpu
-    const char* x1_csv_path = std::getenv("NBV_X1_CSV");
-    std::ofstream x1;
-    if (x1_csv_path) x1.open(x1_csv_path, std::ios::app);
-    for (size_t i = 0; i < n; ++i) {
-        rrt_star::Node* nd = nodes[i];
-        // Self-contained single-parent GPU reference (re-optimizes the parent's own yaw, or fixed yaw when the run is).
-        double v4y; double g1p_gpu = segment_evaluator.computeV4LayeredGain(nd, v4y, /*one_parent_only=*/true, /*fixed_mode=*/!optimize_yaw);
-        double saved = nd->gain;
-        if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
-        double g1p_cpu = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]).first;
-        nd->gain = saved;
-
-        double err = std::fabs(g1p_gpu - g1p_cpu);
-        bench_g1p_err_sum += err;
-        if (err > bench_g1p_err_max) bench_g1p_err_max = err;
-
-        if (x1.is_open()) {
-            int depth = 0; for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++depth;
-            x1 << replan_count_ << ',' << depth << ',' << g_abs_cpu[i] << ',' << g_abs_gpu[i] << ','
-               << g1p_cpu << ',' << g1p_gpu << ',' << g_gall_cpu[i] << ',' << g_gall_gpu[i] << '\n';
-        } else {
-            ROS_INFO("[BENCH][%s] gall_gpu=%7.3f split=%7.3f | g1p_gpu=%7.3f g1p_cpu=%7.3f err=%.4f | abs_gpu=%7.3f abs_cpu=%7.3f",
-                     phase, g_gall_gpu[i], g_gall_split[i], g1p_gpu, g1p_cpu, err, g_abs_gpu[i], g_abs_cpu[i]);
-        }
-    }
+    planner_helpers::benchmarkGains(segment_evaluator, nodes, flat_map_, bench_, optimize_yaw, marginal_split, replan_count_, phase);
 }
 
-bool NBVPlanner::inBoundingBox(const Eigen::Vector4d& p) const {
-    return p[0] >= min_x && p[0] <= max_x &&
-           p[1] >= min_y && p[1] <= max_y &&
-           p[2] >= min_z && p[2] <= max_z;
-}
+bool NBVPlanner::inBoundingBox(const Eigen::Vector4d& p) const { return planner_helpers::inBoundingBox(p, min_x, max_x, min_y, max_y, min_z, max_z); }
 
 // Sample a point, steer from the nearest node, and add it to the tree; returns nullptr if it lands
 // outside the box or the node/parent-edge collides (edge check catches walls between free endpoints).
@@ -347,11 +223,7 @@ void NBVPlanner::NBV() {
         ROS_WARN("[X2] timing window OPEN at sim_t=%.1fs (threshold=%.1fs, replan=%d)", sim_now, timing_after_s_, replan_count_);
     bool x2_do_capture = benchmark_mode && x2_timing_window_ && (x2_capture_count_ < x2_capture_max_);
 
-    if (benchmark_mode) {
-        bench_ms_gall_gpu = bench_ms_gall_split = bench_ms_g1p_cpu = bench_ms_abs_gpu = bench_ms_abs_cpu = 0.0;
-        bench_g1p_err_sum = bench_g1p_err_max = 0.0; bench_nodes = 0;
-        bench_kernel_gall_gpu_ = bench_kernel_abs_gpu_ = 0.0;
-    }
+    if (benchmark_mode) bench_ = {};
 
     auto tree_t0 = std::chrono::high_resolution_clock::now();
 
@@ -372,7 +244,6 @@ void NBVPlanner::NBV() {
     root_ptr->depth_buffer.clear();
     best_score_ = root_ptr->score;
     rrt_star::Node* best_node = root_ptr;
-    visualize_node(root_ptr->point, ns);
 
     int j = 1;
 
@@ -391,7 +262,6 @@ void NBVPlanner::NBV() {
         }
         if (!branch_candidates.empty()) {
             evaluateGains(branch_candidates);
-            if (x2_do_capture) benchmarkGains(branch_candidates);
             for (rrt_star::Node* node : branch_candidates) {
                 segment_evaluator.computeScore(node, lambda);
                 if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
@@ -485,27 +355,7 @@ void NBVPlanner::NBV() {
 
     logTreeNodes();
 
-    if (benchmark_mode && bench_nodes > 0) {
-        double bn = (double)bench_nodes;
-        ROS_INFO("\n=== NBVP GAIN BENCHMARK (fixed yaw, %d nodes) ===\n"
-                 "marginal-gpu-G_all : %9.3f ms | %7.4f ms/node  total  [X2 ONLINE]\n"
-                 "  |- gain computation : %9.3f ms | %7.4f ms/node  (CPU->GPU transfer = %9.3f ms)\n"
-                 "marginal-gpu-split : %9.3f ms | %7.4f ms/node\n"
-                 "marginal-cpu-1parent : %9.3f ms | %7.4f ms/node\n"
-                 "absolute-gpu       : %9.3f ms | %7.4f ms/node  total\n"
-                 "  |- gain computation : %9.3f ms | %7.4f ms/node  (CPU->GPU transfer = %9.3f ms)\n"
-                 "absolute-cpu       : %9.3f ms | %7.4f ms/node\n"
-                 "v2(gpu 1-parent) vs cpu-hash: mean err %.4f | max err %.4f\n"
-                 "==================================================",
-                 bench_nodes,
-                 bench_ms_gall_gpu, bench_ms_gall_gpu/bn,
-                 bench_kernel_gall_gpu_, bench_kernel_gall_gpu_/bn, bench_ms_gall_gpu - bench_kernel_gall_gpu_,
-                 bench_ms_gall_split, bench_ms_gall_split/bn,
-                 bench_ms_g1p_cpu, bench_ms_g1p_cpu/bn,
-                 bench_ms_abs_gpu, bench_ms_abs_gpu/bn,
-                 bench_kernel_abs_gpu_, bench_kernel_abs_gpu_/bn, bench_ms_abs_gpu - bench_kernel_abs_gpu_,
-                 bench_ms_abs_cpu, bench_ms_abs_cpu/bn, bench_g1p_err_sum/bn, bench_g1p_err_max);
-    }
+    if (benchmark_mode) planner_helpers::logBenchSummary(bench_);
 
     if (terminated) {
         ROS_INFO("[NBVPlanner]: RH-NBVP Terminated");
@@ -856,166 +706,11 @@ void NBVPlanner::changeState(const State_t new_state) {
     state_ = new_state;
 }
 
-void NBVPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& ns) {
-    visualization_msgs::Marker n;
-    n.header.stamp = ros::Time::now();
-    n.header.seq = node_id_counter_;
-    n.header.frame_id = ns + "/" + frame_id;
-    n.id = node_id_counter_;
-    n.ns = "nodes";
-    n.type = visualization_msgs::Marker::SPHERE;
-    n.action = visualization_msgs::Marker::ADD;
-    n.pose.position.x = pos[0];
-    n.pose.position.y = pos[1];
-    n.pose.position.z = pos[2];
 
-    n.pose.orientation.x = 1;
-    n.pose.orientation.y = 0;
-    n.pose.orientation.z = 0;
-    n.pose.orientation.w = 0;
+void NBVPlanner::visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns) { planner_helpers::visualize_tree(pub_markers, frame_id, ns, nodes); }
 
-    n.scale.x = 0.2;
-    n.scale.y = 0.2;
-    n.scale.z = 0.2;
 
-    n.color.r = 0.4;
-    n.color.g = 0.7;
-    n.color.b = 0.2;
-    n.color.a = 1;
-
-    node_id_counter_++;
-
-    n.lifetime = ros::Duration(30.0);
-    n.frame_locked = false;
-    pub_markers.publish(n);
-}
-
-void NBVPlanner::visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns) {
-    visualization_msgs::Marker edges;
-    edges.header.stamp = ros::Time::now();
-    edges.header.frame_id = ns + "/" + frame_id;
-    edges.ns = "tree_branches";
-    edges.id = 0;
-    edges.type = visualization_msgs::Marker::LINE_LIST;
-    edges.action = visualization_msgs::Marker::ADD;
-    edges.pose.orientation.w = 1.0;
-    edges.scale.x = 0.06;
-    edges.color.r = 1.0; edges.color.g = 0.3; edges.color.b = 0.7; edges.color.a = 1.0;
-    edges.lifetime = ros::Duration(30.0);
-
-    visualization_msgs::Marker pts;
-    pts.header = edges.header;
-    pts.ns = "nodes";
-    pts.id = 0;
-    pts.type = visualization_msgs::Marker::SPHERE_LIST;
-    pts.action = visualization_msgs::Marker::ADD;
-    pts.pose.orientation.w = 1.0;
-    pts.scale.x = pts.scale.y = pts.scale.z = 0.2;
-    pts.color.r = 0.4; pts.color.g = 0.7; pts.color.b = 0.2; pts.color.a = 1.0;
-    pts.lifetime = ros::Duration(30.0);
-
-    for (rrt_star::Node* node : nodes) {
-        geometry_msgs::Point p;
-        p.x = node->point[0]; p.y = node->point[1]; p.z = node->point[2];
-        pts.points.push_back(p);
-        if (node->parent) {
-            geometry_msgs::Point pp;
-            pp.x = node->parent->point[0]; pp.y = node->parent->point[1]; pp.z = node->parent->point[2];
-            edges.points.push_back(pp);
-            edges.points.push_back(p);
-        }
-    }
-    pub_markers.publish(edges);
-    pub_markers.publish(pts);
-}
-
-void NBVPlanner::visualize_edge(rrt_star::Node* node, const std::string& ns) {
-    visualization_msgs::Marker e;
-    e.header.stamp = ros::Time::now();
-    e.header.seq = edge_id_counter_;
-    e.header.frame_id = ns + "/" + frame_id;
-    e.id = edge_id_counter_;
-    e.ns = "tree_branches";
-    e.type = visualization_msgs::Marker::ARROW;
-    e.action = visualization_msgs::Marker::ADD;
-    e.pose.position.x = node->parent->point[0];
-    e.pose.position.y = node->parent->point[1];
-    e.pose.position.z = node->parent->point[2];
-
-    Eigen::Quaternion<double> q;
-    Eigen::Vector3d init(1.0, 0.0, 0.0);
-    Eigen::Vector3d dir(node->point[0] - node->parent->point[0],
-                        node->point[1] - node->parent->point[1],
-                        node->point[2] - node->parent->point[2]);
-    q.setFromTwoVectors(init, dir);
-    q.normalize();
-
-    e.pose.orientation.x = q.x();
-    e.pose.orientation.y = q.y();
-    e.pose.orientation.z = q.z();
-    e.pose.orientation.w = q.w();
-
-    e.scale.x = dir.norm();
-    e.scale.y = 0.05;
-    e.scale.z = 0.05;
-
-    e.color.r = 1.0;
-    e.color.g = 0.3;
-    e.color.b = 0.7;
-    e.color.a = 1.0;
-
-    edge_id_counter_++;
-
-    e.lifetime = ros::Duration(30.0);
-    e.frame_locked = false;
-    pub_markers.publish(e);
-}
-
-void NBVPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
-    rrt_star::Node* current = node;
-
-    while (current->parent) {
-        visualization_msgs::Marker p;
-        p.header.stamp = ros::Time::now();
-        p.header.seq = path_id_counter_;
-        p.header.frame_id = ns + "/" + frame_id;
-        p.id = path_id_counter_;
-        p.ns = "path";
-        p.type = visualization_msgs::Marker::ARROW;
-        p.action = visualization_msgs::Marker::ADD;
-        p.pose.position.x = current->parent->point[0];
-        p.pose.position.y = current->parent->point[1];
-        p.pose.position.z = current->parent->point[2];
-
-        Eigen::Quaternion<double> q;
-        Eigen::Vector3d init(1.0, 0.0, 0.0);
-        Eigen::Vector3d dir(current->point[0] - current->parent->point[0],
-                            current->point[1] - current->parent->point[1],
-                            current->point[2] - current->parent->point[2]);
-        q.setFromTwoVectors(init, dir);
-        q.normalize();
-        p.pose.orientation.x = q.x();
-        p.pose.orientation.y = q.y();
-        p.pose.orientation.z = q.z();
-        p.pose.orientation.w = q.w();
-
-        p.scale.x = dir.norm();
-        p.scale.y = 0.07;
-        p.scale.z = 0.07;
-
-        p.color.r = 0.7;
-        p.color.g = 0.7;
-        p.color.b = 0.3;
-        p.color.a = 1.0;
-
-        p.lifetime = ros::Duration(100.0);
-        p.frame_locked = false;
-        pub_markers.publish(p);
-
-        current = current->parent;
-        path_id_counter_++;
-    }
-}
+void NBVPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) { planner_helpers::visualize_path(pub_markers, frame_id, ns, node, path_id_counter_); }
 
 void NBVPlanner::visualize_frustum(const Eigen::Vector4d& waypoint, int id) {
     Eigen::Vector4d trajectory_point_visualize = waypoint;
@@ -1080,48 +775,7 @@ void NBVPlanner::visualize_unknown_voxels(const Eigen::Vector4d& waypoint, int i
     pub_voxels.publish(voxels_marker);
 }
 
-void NBVPlanner::clear_node() {
-    visualization_msgs::Marker clear_node;
-    clear_node.header.stamp = ros::Time::now();
-    clear_node.ns = "nodes";
-    clear_node.id = node_id_counter_;
-    clear_node.action = visualization_msgs::Marker::DELETE;
-    node_id_counter_--;
-    pub_markers.publish(clear_node);
-}
 
-void NBVPlanner::clear_all_voxels() {
-    visualization_msgs::Marker clear_voxels;
-    clear_voxels.header.stamp = ros::Time::now();
-    clear_voxels.ns = "unknown_voxels";
-    clear_voxels.action = visualization_msgs::Marker::DELETEALL;
-    pub_voxels.publish(clear_voxels);
-}
+void NBVPlanner::clear_all_voxels() { planner_helpers::clear_all_voxels(pub_voxels); }
 
-void NBVPlanner::clearMarkers() {
-    // Clear nodes
-    visualization_msgs::Marker clear_nodes;
-    clear_nodes.header.stamp = ros::Time::now();
-    clear_nodes.ns = "nodes";
-    clear_nodes.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_nodes);
-
-    // Clear edges
-    visualization_msgs::Marker clear_edges;
-    clear_edges.header.stamp = ros::Time::now();
-    clear_edges.ns = "tree_branches";
-    clear_edges.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_edges);
-
-    // Clear path
-    visualization_msgs::Marker clear_path;
-    clear_path.header.stamp = ros::Time::now();
-    clear_path.ns = "path";
-    clear_path.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_path);
-
-    // Reset marker ID counters
-    node_id_counter_ = 0;
-    edge_id_counter_ = 0;
-    path_id_counter_ = 0;
-}
+void NBVPlanner::clearMarkers() { planner_helpers::clearMarkers(pub_markers, node_id_counter_, edge_id_counter_, path_id_counter_); }

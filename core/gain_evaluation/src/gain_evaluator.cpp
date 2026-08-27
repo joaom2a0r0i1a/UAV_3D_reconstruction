@@ -1149,8 +1149,6 @@ void GainEvaluator::evaluateMarginalGainsBatched(const std::vector<rrt_star::Nod
                 anc_yaw.push_back((float)a->point[3]);
                 anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
                 depth_idx.push_back(a->depth_slot);   // GLOBAL slot; root -> 0 (pool sentinel -1)
-                // Invariant: only the root (parent == nullptr) may be an unrendered ancestor.
-                if (a->parent != nullptr && !a->depth_in_pool) ++cmp_invariant_violations_;
             }
             anc_offsets.push_back((int)(anc_pos.size() / 3));
         }
@@ -1201,10 +1199,8 @@ void GainEvaluator::fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes,
     }
 }
 
-// Self-contained per-node GPU reference: rebuild root->node and evaluate layer by layer, each layer rendering at
-// its OWN yaw (fixed_mode -> the node's point[3]; else re-optimized free-yaw). one_parent_only subtracts just the
-// immediate parent (G_1parent) instead of the whole chain (G_all). Never reads the pool or depth_buffer.
-double GainEvaluator::computeV4LayeredGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only, bool fixed_mode) {
+// Self-contained per-node reference: rebuild root->node layer by layer at each node's own yaw (fixed_mode=point[3], else re-optimized); one_parent_only=G_1parent vs whole-chain G_all. Never touches the pool/depth_buffer.
+double GainEvaluator::computeReferenceMarginalGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only, bool fixed_mode) {
     const int per = depthImagePixels();
     std::vector<rrt_star::Node*> chain;
     for (rrt_star::Node* a = node; a != nullptr; a = a->parent) chain.push_back(a);
@@ -1238,24 +1234,20 @@ double GainEvaluator::computeV4LayeredGain(rrt_star::Node* node, double& out_yaw
     return gain;
 }
 
-// Validation: run the pool path, then diff a sample against the independent v4 reference (v4 reads only positions; pool results stay authoritative).
-void GainEvaluator::runDepthPoolCompare(const std::vector<rrt_star::Node*>& nodes, const GainConfig& cfg, float& marg_kernel_ms) {
-    evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
-
-    const size_t N = nodes.size();
-    for (size_t i = 0; i < N && i < 8; ++i) {   // sampled: v4 rebuilds each chain (O(depth) launches)
-        double pool_gain = nodes[i]->gain, pool_yaw = nodes[i]->point[3];
-        double v4_yaw;
-        double v4gain = computeV4LayeredGain(nodes[i], v4_yaw);
-        cmp_max_gain_diff_v4pool_ = std::max(cmp_max_gain_diff_v4pool_, std::abs(v4gain - pool_gain));
-        if (cfg.optimize_yaw && std::abs(v4_yaw - pool_yaw) > 1e-4) ++cmp_yaw_flips_;
-        ++cmp_v4_samples_;
+// Benchmark correctness: run the batched pool, diff each node's gain vs the layered reference; returns max|dGain|, yaw_flips (out) = optimize-yaw disagreements.
+double GainEvaluator::checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips) {
+    float ms = 0.0f;
+    evaluateMarginalGainsBatched(nodes, optimize_yaw, marginal_split, ms);
+    double max_diff = 0.0;
+    yaw_flips = 0;
+    for (rrt_star::Node* nd : nodes) {
+        double pool_gain = nd->gain, pool_yaw = nd->point[3];
+        double ref_yaw;
+        double ref_gain = computeReferenceMarginalGain(nd, ref_yaw, /*one_parent_only=*/false, /*fixed_mode=*/!optimize_yaw);
+        max_diff = std::max(max_diff, std::abs(ref_gain - pool_gain));
+        if (optimize_yaw && std::abs(ref_yaw - pool_yaw) > 1e-4) ++yaw_flips;
     }
-
-    ++cmp_calls_;
-    if (cmp_calls_ % 20 == 0)
-        ROS_WARN("[depth_pool_compare] calls=%ld v4_samples=%ld max|dGain|(v4-pool)=%.3e yaw_flips=%ld invariant_viol=%ld",
-                 cmp_calls_, cmp_v4_samples_, cmp_max_gain_diff_v4pool_, cmp_yaw_flips_, cmp_invariant_violations_);
+    return max_diff;
 }
 
 void GainEvaluator::evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
@@ -1264,9 +1256,8 @@ void GainEvaluator::evaluateGains(const std::vector<rrt_star::Node*>& nodes, con
     const bool gpu = (cfg.eval_compute == "gpu");
 
     if (cfg.marginal_gain && gpu) {
-        // Marginal gain = GPU pool (fused/split); depth_pool_compare validates it vs the v4 reference.
-        if (cfg.depth_pool_compare) runDepthPoolCompare(nodes, cfg, marg_kernel_ms);
-        else                        evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
+        // Marginal gain = GPU-resident pool (fused/split). Correctness vs the layered reference is a benchmark-only check.
+        evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
         if (cfg.track_absolute) fillAbsoluteGains(nodes, flat_map, cfg.eval_compute);
     } else if (!cfg.marginal_gain && gpu) {
         std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
