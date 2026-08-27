@@ -133,15 +133,13 @@ struct BatchDeviceMem {
     float3* d_pos;
     float*  d_yaw;
     float3* d_R;
-    float*  d_depth;
-    int*    d_depth_idx;   // pooled depth index (null when contiguous)
+    int*    d_depth_idx;   // GLOBAL ancestor pool slots [total]
     float*  d_gain;
     float*  d_yaw_out;
-    float*  d_depth_buf;   // bounded output scratch (depth_slots * per)
     float*  d_fixed_yaw;   // per-candidate fixed yaw (null when optimizing yaw)
+    int*    d_out_slot;    // per-candidate GLOBAL pool write-slot
     int     rays;          // rays per candidate
     int     nc;
-    int     depth_slots;   // number of output depth-buffer slots (bounds memory)
     size_t  per;           // p_width*p_height
 };
 

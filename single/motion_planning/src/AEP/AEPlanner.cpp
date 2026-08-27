@@ -38,6 +38,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("evaluation/marginal_gain", marginal_gain, true);
     param_loader.loadParam("evaluation/compute", eval_compute, std::string("gpu"));
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
+    param_loader.loadParam("evaluation/depth_pool_compare", depth_pool_compare_, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
     param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
 
@@ -904,64 +905,15 @@ void AEPlanner::localPlanner() {
     next_best_node = best_branch[1].get();
 }
 
-std::vector<float> AEPlanner::parentCamRows(float yaw) { return segment_evaluator.parentCamRows(yaw); }
-
-
-
-
-
-
-
-
 
 void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
-    // Shared gain pipeline (core/rrt_construction). AEP always optimizes yaw and tracks the own-view
-    // absolute gain/yaw alongside the marginal (for global-planner scoring).
     GainEvaluator::GainConfig cfg{marginal_gain, /*optimize_yaw=*/true, eval_compute, marginal_split, /*track_absolute=*/true};
+    cfg.depth_pool_compare = depth_pool_compare_;
     float marg_ms = 0.0f, abs_ms = 0.0f;
     segment_evaluator.evaluateGains(nodes, flat_map_, cfg, marg_ms, abs_ms);
     bench_kernel_ms_ = marg_ms;   // device (CUDA-event) ms of the marginal batch
 }
 
-double AEPlanner::computeV2SingleParent(rrt_star::Node* node) {
-    const int per = segment_evaluator.depthImagePixels();
-    rrt_star::Node* p = node->parent;
-    double p_yaw = p ? p->point[3] : 0.0;
-    std::vector<float> R = parentCamRows((float)p_yaw);
-    Eigen::Vector3d p_pos = p ? p->point.head(3) : node->point.head(3);
-    std::vector<float> p_depth;
-    if (p && (int)p->depth_buffer.size() == per) p_depth = p->depth_buffer;
-    else p_depth.assign((size_t)per, -1.0f);   // no parent view (root) -> absolute
-    std::vector<float> out;
-    auto r = segment_evaluator.computeSingleParentMarginalGainGPU(
-        node->point.x(), node->point.y(), node->point.z(), p_pos, p_yaw, R, p_depth, out);
-    return r.first;
-}
-
-// Per-node (non-batched) GPU multi-ancestor marginal gain; walks the full chain, comparable per-node to the batched methods.
-double AEPlanner::computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw) {
-    const int per = segment_evaluator.depthImagePixels();
-    std::vector<Eigen::Vector3d> anc_positions;
-    std::vector<double>          anc_yaws;
-    std::vector<float>           anc_R_flat;      // 9 floats per ancestor
-    std::vector<float>           anc_depth_flat;  // 'per' floats per ancestor
-    for (rrt_star::Node* a = node->parent; a != nullptr; a = a->parent) {
-        anc_positions.push_back(a->point.head(3));
-        anc_yaws.push_back(a->point[3]);
-        std::vector<float> R = parentCamRows((float)a->point[3]);
-        anc_R_flat.insert(anc_R_flat.end(), R.begin(), R.end());
-        if ((int)a->depth_buffer.size() == per)
-            anc_depth_flat.insert(anc_depth_flat.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-        else
-            anc_depth_flat.insert(anc_depth_flat.end(), (size_t)per, -1.0f);  // root/unevaluated -> unknown
-    }
-    std::vector<float> out;
-    auto r = segment_evaluator.computeMultiAncestorMarginalGainGPU(
-        node->point.x(), node->point.y(), node->point.z(),
-        anc_positions, anc_yaws, anc_R_flat, anc_depth_flat, out);
-    if (out_yaw) *out_yaw = r.second;   // argmax yaw (free-yaw optimum); node->gain/yaw/buffer left untouched
-    return r.first;
-}
 
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
 void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { segment_evaluator.sortByDepth(nodes); }
@@ -998,8 +950,7 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
     if (nodes.empty()) return;
     const size_t n = nodes.size();
 
-    // Save real gain/yaw so the planner is undisturbed. Depth buffers are left as the FINAL (split)
-    // timed pass sets them -- the next real batch's ancestors rely on those valid marginal buffers.
+    // Save real gain/yaw so the planner is undisturbed (restored after the timing passes).
     std::vector<double> save_gain(n), save_yaw(n);
     for (size_t i = 0; i < n; ++i) { save_gain[i] = nodes[i]->gain; save_yaw[i] = nodes[i]->point[3]; }
     const bool save_marg = marginal_gain; const std::string save_comp = eval_compute; const bool save_split = marginal_split;
@@ -1014,12 +965,13 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
         return std::chrono::duration<double, std::milli>(t1 - t0).count();
     };
 
-    // ---- COLD-FAIR ORDER: single-node GPU methods FIRST (so they never inherit a candidate depth
-    //      buffer a batched pass just rendered), THEN the batched kernels (fused, split last). ----
+    // Per-node self-contained GPU references (v4-layered): single-parent then multi-ancestor. Each re-optimizes
+    // its own chain yaws + renders -- independent of the batched pool, so timing/gain never borrow tree state.
+    double dyaw;
     auto v2_0 = std::chrono::high_resolution_clock::now();
-    for (size_t i = 0; i < n; ++i) computeV2SingleParent(nodes[i]);
+    for (size_t i = 0; i < n; ++i) segment_evaluator.computeV4LayeredGain(nodes[i], dyaw, /*one_parent_only=*/true);
     auto v2_1 = std::chrono::high_resolution_clock::now();
-    for (size_t i = 0; i < n; ++i) computeV4MultiAncestor(nodes[i]);
+    for (size_t i = 0; i < n; ++i) segment_evaluator.computeV4LayeredGain(nodes[i], dyaw, /*one_parent_only=*/false);
     auto v4_1 = std::chrono::high_resolution_clock::now();
     double t_v2 = std::chrono::duration<double, std::milli>(v2_1 - v2_0).count();
     double t_v4 = std::chrono::duration<double, std::milli>(v4_1 - v2_1).count();
@@ -1069,8 +1021,9 @@ void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const 
         rrt_star::Node* nd = nodes[i];
         int anc = 0;
         for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++anc;
-        double v2 = computeV2SingleParent(nd);
-        double v4 = computeV4MultiAncestor(nd);   // before hash's populateParentHistory
+        double v2y, v4y;
+        double v2 = segment_evaluator.computeV4LayeredGain(nd, v2y, /*one_parent_only=*/true);
+        double v4 = segment_evaluator.computeV4LayeredGain(nd, v4y, /*one_parent_only=*/false);
         double sg = nd->gain, sy = nd->point[3];   // hash overwrites gain/yaw; restore right after
         if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
         double hash = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd).first;

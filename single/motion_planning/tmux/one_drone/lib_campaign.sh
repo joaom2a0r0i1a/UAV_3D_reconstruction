@@ -257,10 +257,16 @@ eval_campaign(){  # uses: WORLD, ALL_LABELS, LABELS_CSV, KEEP_FOLDER, SUMMARY
       source /home/ros1/voxblox_ws/devel/setup.bash; source /home/ros1/ros1_motion_ws/devel/setup.bash
       roslaunch motion_planning full_voxblox_eval.launch \
         target_directory:=$(rospack find motion_planning)/data/'"$L"' method:=all multi_series:=false \
-        evaluate:=false evaluate_volume:=true \
+        evaluate:=true evaluate_volume:=false \
         gt_file_path:='"$GT"' experiment_config:='"$GTCFG"'' \
       >"$LOGDIR/stage1_${L}_${suffix}.log" 2>&1
     log "  stage-1 $L done"
+    # Thin voxblox maps -> keep every MAP_KEEP-th + the last (volumes now in the CSV, maps redundant). Guarded: skips un-evaluated runs.
+    docker exec noetic_ws bash -lc '
+      source /home/ros1/ros1_motion_ws/devel/setup.bash
+      python3 $(rospack find motion_planning)/scripts/eval/thin_maps.py $(rospack find motion_planning)/data/'"$L"' '"${MAP_KEEP:-5}"'' \
+      >>"$LOGDIR/stage1_${L}_${suffix}.log" 2>&1
+    log "  thinned maps (keep every ${MAP_KEEP:-5}th + last) for $L"
   done
   log "=== EVAL stage-2 multi_series ($WORLD GT) ==="
   docker exec -e MPLBACKEND=Agg noetic_ws bash -lc '
@@ -268,7 +274,7 @@ eval_campaign(){  # uses: WORLD, ALL_LABELS, LABELS_CSV, KEEP_FOLDER, SUMMARY
     roslaunch motion_planning full_voxblox_eval.launch \
       target_directory:=$(rospack find motion_planning)/data \
       multi_series:=true series_labels:="'"$LABELS_CSV"'" \
-      evaluate:=false evaluate_volume:=true \
+      evaluate:=true evaluate_volume:=false \
       gt_file_path:='"$GT"' experiment_config:='"$GTCFG"'' \
     >"$LOGDIR/stage2_${suffix}.log" 2>&1
   rm -rf "$DATA/$KEEP_FOLDER"

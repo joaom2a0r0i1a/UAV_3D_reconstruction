@@ -69,8 +69,6 @@ public:
     // Fixed-yaw gain evaluation (duplicated from AEP; NBVP keeps each node's random yaw).
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "nbvp");
-    std::vector<float> parentCamRows(float yaw);
-    double computeSingleParentGainGPU(rrt_star::Node* node);
     std::vector<rrt_star::Node*> collectTreeNodes();
     void sortByDepth(std::vector<rrt_star::Node*>& nodes);
     void logTreeNodes();
@@ -158,6 +156,7 @@ private:
     bool optimize_yaw;          // false = keep each node's random sampled yaw; true = pick argmax yaw per node (like AEP)
     std::string eval_compute;   // "gpu" or "cpu"
     bool marginal_split;
+    bool depth_pool_compare_ = false;  // validation: pool vs independent v4 reference per call
     std::string objective_;
     bool benchmark_mode;
 

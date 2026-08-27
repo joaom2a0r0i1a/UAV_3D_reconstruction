@@ -99,7 +99,7 @@ class GainEvaluator {
 
   // Multi-ancestor marginal gain: the GPU marcher traverses the observed-free spans
   // (never reseats the DDA). Runs the single-node kernel over the full ancestor chain.
-  std::pair<double, double> computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths);
+  std::pair<double, double> computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
 
   // Depth-image pixel count (p_width*p_height) shared by every ancestor buffer.
   int depthImagePixels() const {
@@ -110,15 +110,6 @@ class GainEvaluator {
 
   // Live map voxel size (= dr_), set from the tsdf layer in setTsdfLayer().
   double getVoxelSize() const { return dr_; }
-
-  // Batched multi-ancestor marginal gain over a whole wavefront (CSR-flattened ancestors; use_split = split kernels).
-  std::vector<std::pair<double, double>> computeMarginalGainBatchGPU(
-      const std::vector<float>& cand_x, const std::vector<float>& cand_y, const std::vector<float>& cand_z,
-      const std::vector<int>& offsets, const std::vector<float>& anc_pos,
-      const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
-      const std::vector<float>& anc_depth, bool use_split,
-      std::vector<float>& out_depth, float& kernel_ms, const std::vector<float>* fixed_yaws = nullptr,
-      const std::vector<int>* depth_idx = nullptr, int num_nodes = 0);
 
   std::vector<float> computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R);
 
@@ -139,9 +130,12 @@ class GainEvaluator {
   // Order nodes shallow-first so each parent's view is committed before its children (marginal batching).
   void sortByDepth(std::vector<rrt_star::Node*>& nodes) const;
 
-  // Batched multi-ancestor marginal gain, generation-ordered; kernel time accumulated into kernel_ms.
+  // Batched multi-ancestor marginal gain, GPU-resident-pool (fused/split); kernel time accumulated into kernel_ms.
   void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
                                     bool marginal_split, float& kernel_ms);
+
+  // Grow the persistent depth pool to >= n_slots (preserving contents).
+  void ensureDepthPool(int n_slots);
 
   // Own-view (absolute) gain for nodes whose absolute_gain is unset (< 0), used by AEP global scoring.
   void fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
@@ -154,12 +148,19 @@ class GainEvaluator {
     std::string eval_compute;    // "gpu" or "cpu"
     bool        marginal_split;  // marginal+gpu: split vs fused kernel
     bool        track_absolute;  // also populate absolute_gain/absolute_yaw (AEP)
+    bool        depth_pool_compare = false; // validation: pool vs independent v4 reference per call (~2x slower)
   };
 
   // Unified gain evaluation: sets node->gain (+ point[3] when optimizing, + absolute_* when tracked).
   // Kernel times are accumulated into marg_kernel_ms / abs_kernel_ms.
   void evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
                      const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms);
+
+  // Validation (depth_pool_compare): dual-eval current vs pool per call + v4 reference; restores current.
+  void runDepthPoolCompare(const std::vector<rrt_star::Node*>& nodes, const GainConfig& cfg, float& marg_kernel_ms);
+
+  // Independent layered v4 reference for one node (own yaws/renders; ignores depth_buffer/point[3]).
+  double computeV4LayeredGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only = false, bool fixed_mode = false);
 
   // [Validation] CPU calculation using Flat Map Data
   std::pair<double, double> computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw = NAN);
@@ -270,6 +271,18 @@ class GainEvaluator {
   Eigen::Vector3i cached_dim_;
   Eigen::Vector3d cached_origin_;
   size_t cached_map_byte_size_ = 0;
+
+  // Persistent GPU-resident depth pool (freed in the destructor). Slots are node append indices; slot 0 = root sentinel (-1).
+  float* d_depth_pool_ = nullptr;
+  int    pool_capacity_ = 0;   // pool size in slots
+  int    pool_per_ = 0;        // floats per slot (depth image pixels)
+
+  // depth_pool_compare accumulators (pool vs the independent single-node v4 reference, over the whole run).
+  long   cmp_yaw_flips_ = 0;
+  long   cmp_invariant_violations_ = 0;
+  long   cmp_calls_ = 0;
+  double cmp_max_gain_diff_v4pool_ = 0.0;
+  long   cmp_v4_samples_ = 0;
 };
 
 #endif  // VOXBLOX_PLANNING_COMMON_GAIN_EVALUATOR_H_

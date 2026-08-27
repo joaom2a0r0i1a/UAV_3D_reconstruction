@@ -55,6 +55,7 @@ mkdir -p "$LOGDIR"
 WORLD=school; PLANNER=aep; N=10; T=""; EARLY_STOP=false; GRACE=60.0
 VOXEL_SIZE="${VOXEL_SIZE:-0.2}"   # voxblox resolution (auto-propagates map+planner+buffers); conf may override
 KEEP_FOLDER=multi_series_evaluation; SUMMARY=DECISION_SUMMARY.txt; RESTORE=true
+MAP_KEEP=5   # voxblox-map thinning: keep every MAP_KEEP-th map + the last (60s interval x5 = 5min); conf may override
 CONDITIONS=()
 # shellcheck disable=SC1090
 source "$CONF"
@@ -121,6 +122,11 @@ if [ "$DO_RUN" = 1 ]; then
       set_aep_gain "$gain"
       set_key "$YAML" objective "${f5:-expdecay}"
       log "AEP objective=${f5:-expdecay}"
+      # optional per-condition node-set (f6=N_max f7=N_termination f8=N_min_nodes); empty -> keep world default
+      if [ -n "$f6" ]; then
+        set_key "$YAML" N_max "$f6"; set_key "$YAML" N_termination "$f7"; set_key "$YAML" N_min_nodes "$f8"
+        log "AEP node-set -> N_max=$f6 N_termination=$f7 N_min_nodes=$f8"
+      fi
       preflight "$WORLD" "$PLANNER"
       case "$gain" in marg) mspec=true ;; *) mspec=false ;; esac
       run_cond "$label" "$mspec" "$rrt"

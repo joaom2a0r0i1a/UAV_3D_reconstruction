@@ -42,6 +42,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("evaluation/optimize_yaw", optimize_yaw, false);
     param_loader.loadParam("evaluation/compute", eval_compute, std::string("cpu"));
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
+    param_loader.loadParam("evaluation/depth_pool_compare", depth_pool_compare_, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
 
     // Benchmark / X2 timing
@@ -169,28 +170,11 @@ void NBVPlanner::GetTransformation() {
     segment_evaluator.setCameraExtrinsics(T_C_B);
 }
 
-std::vector<float> NBVPlanner::parentCamRows(float yaw) { return segment_evaluator.parentCamRows(yaw); }
-
 // Evaluate node gains per (marginal_gain, eval_compute), always at each node's fixed yaw.
 void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
-    // Shared gain pipeline (core/rrt_construction); RH-NBVP does not track absolute gain.
     GainEvaluator::GainConfig cfg{marginal_gain, optimize_yaw, eval_compute, marginal_split, /*track_absolute=*/false};
+    cfg.depth_pool_compare = depth_pool_compare_;
     segment_evaluator.evaluateGains(nodes, flat_map_, cfg, last_marg_kernel_ms_, last_abs_kernel_ms_);
-}
-
-double NBVPlanner::computeSingleParentGainGPU(rrt_star::Node* node) {
-    const int per = segment_evaluator.depthImagePixels();
-    rrt_star::Node* p = node->parent;
-    double p_yaw = p ? p->point[3] : 0.0;
-    std::vector<float> R = parentCamRows((float)p_yaw);
-    Eigen::Vector3d p_pos = p ? p->point.head(3) : node->point.head(3);
-    std::vector<float> p_depth;
-    if (p && (int)p->depth_buffer.size() == per) p_depth = p->depth_buffer;
-    else p_depth.assign((size_t)per, -1.0f);
-    std::vector<float> out;
-    auto r = segment_evaluator.computeSingleParentMarginalGainGPU(
-        node->point.x(), node->point.y(), node->point.z(), p_pos, p_yaw, R, p_depth, out, node->point[3]);
-    return r.first;
 }
 
 // Order nodes shallow-first so cumulative scoring sees each parent before its children.
@@ -299,7 +283,8 @@ void NBVPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const
     if (x1_csv_path) x1.open(x1_csv_path, std::ios::app);
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
-        double g1p_gpu = computeSingleParentGainGPU(nd);
+        // Self-contained single-parent GPU reference (re-optimizes the parent's own yaw, or fixed yaw when the run is).
+        double v4y; double g1p_gpu = segment_evaluator.computeV4LayeredGain(nd, v4y, /*one_parent_only=*/true, /*fixed_mode=*/!optimize_yaw);
         double saved = nd->gain;
         if (nd->parent && nd->parent->parent) segment_evaluator.populateParentHistory(flat_map_, nd->parent);
         double g1p_cpu = segment_evaluator.computeMarginalGainCPU_HashMap(flat_map_, nd, nd->point[3]).first;

@@ -31,6 +31,10 @@ public:
 
         std::vector<float> depth_buffer;
 
+        // Depth-pool slot = append index in KDTree_data::data (unique per live node, resets on tree clear).
+        int  depth_slot   = -1;
+        bool depth_in_pool = false;
+
         Node(const Eigen::Vector4d& p);
     };
 
@@ -47,6 +51,7 @@ public:
                 parentNode->children.push_back(newNode.get());
             }
             points.push_back(newNode->point.head(3));
+            newNode->depth_slot = (int)data.size();
             data.push_back(std::move(newNode));
             return data.back().get();
         }
@@ -58,6 +63,7 @@ public:
                     parentNode->children.push_back(newNodes[i].get());
                 }
                 points.push_back(newNodes[i]->point.head(3));
+                newNodes[i]->depth_slot = (int)data.size();
                 data.push_back(std::move(newNodes[i]));
             }
         }

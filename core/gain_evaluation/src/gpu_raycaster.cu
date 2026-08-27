@@ -190,10 +190,11 @@ __global__ void evaluate_marginal_gain_single_node(MapContext m, const float3* _
 
 // Two architectures share this data view; only the kernel structure differs.
 
-// Option 1 (fused): one block per candidate; each ray does check-then-march (traverse march).
+// Fused: one block per candidate, each ray does check-then-march; out_slot = per-candidate GLOBAL pool write slot (null -> slot = candidate).
 __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* __restrict__ positions,
                                                    AncestorBatchDev ab, GainResults out,
-                                                   KernelParams params, int depth_slots) {
+                                                   KernelParams params,
+                                                   const int* __restrict__ out_slot) {
     __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = blockIdx.x;
     int ray_id = threadIdx.x;
@@ -247,7 +248,8 @@ __global__ void evaluate_marginal_gain_batch_fused(MapContext m, const float3* _
 
     int buffer_rays = ab.cam.p_width * ab.cam.p_height;
     CameraPose pose = {positions[candidate], s_best_yaw};
-    generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
+    int wslot = out_slot ? out_slot[candidate] : candidate;
+    generate_depth_buffer(m, ab.cam, pose, params, out.depth + (size_t)wslot * buffer_rays);
 }
 
 // Option 2, stage A: each ray writes its merged skip intervals (voxel units) + count to global scratch (LOCAL block index).
@@ -292,7 +294,7 @@ __global__ void marginal_skips_stage(const float3* __restrict__ positions, Ances
 __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ positions,
                                      AncestorBatchDev ab, int cand_base, GainResults out,
                                      KernelParams params, const float2* __restrict__ skips_in,
-                                     const int* __restrict__ counts_in, int max_segs, int depth_slots) {
+                                     const int* __restrict__ counts_in, int max_segs, const int* __restrict__ out_slot) {
     __shared__ float s_yaw_gains[THETA_BINS_MAX];
     int candidate = cand_base + blockIdx.x;
     int local = blockIdx.x;
@@ -334,7 +336,7 @@ __global__ void marginal_march_stage(MapContext m, const float3* __restrict__ po
 
     int buffer_rays = ab.cam.p_width * ab.cam.p_height;
     CameraPose pose = {positions[candidate], s_best_yaw};
-    generate_depth_buffer(m, ab.cam, pose, params, out.depth + (candidate % depth_slots) * buffer_rays);
+    generate_depth_buffer(m, ab.cam, pose, params, out.depth + (size_t)out_slot[candidate] * buffer_rays);
 }
 
 
@@ -556,18 +558,16 @@ extern "C" void launch_marginal_gain_fixed(GpuMap map, GpuVec3 cand, GpuAncestor
 
 // Shared device-memory setup/teardown for the two batched launchers (types in gpu_raycast_math.cuh).
 
-// Upload the candidate batch + CSR ancestor chains + output buffers and build the AncestorBatchDev view (shared by fused/split).
+// Upload candidate batch + CSR ancestor metadata + outputs over the persistent pool: ancestor depth read via GLOBAL depth_idx, each candidate renders to d_pool[out_slot[c]].
 static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cands,
                                     const GpuAncestorBatch& anc, const KernelParams& params,
                                     const gpuray::ParentCameraConfig& cam,
                                     MapContext* m, BatchDeviceMem* mem, GainResults* out,
-                                    const float* fixed_yaws = nullptr) {
+                                    const float* fixed_yaws, float* d_pool, const int* out_slot_host) {
     int nc = cands.count;
     int total = anc.total;
     size_t per = (size_t)cam.p_width * cam.p_height;
-    int rows_in_fov = params.rows_in_fov;
-    int rays = params.theta_bins * rows_in_fov;
-    int depth_slots = nc;
+    int rays = params.theta_bins * params.rows_in_fov;
 
     float3* h_cand = new float3[nc];
     for (int i = 0; i < nc; ++i) h_cand[i] = make_float3(cands.x[i], cands.y[i], cands.z[i]);
@@ -579,27 +579,17 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
     cudaMalloc(&mem->d_pos, total * sizeof(float3));
     cudaMalloc(&mem->d_yaw, total * sizeof(float));
     cudaMalloc(&mem->d_R,   total * 3 * sizeof(float3));
-    cudaMemcpy(mem->d_off, anc.offsets, (nc + 1) * sizeof(int),            cudaMemcpyHostToDevice);
-    cudaMemcpy(mem->d_pos, anc.pos,     (size_t)total * 3 * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(mem->d_yaw, anc.yaw,     total * sizeof(float),             cudaMemcpyHostToDevice);
-    cudaMemcpy(mem->d_R,   anc.R,       (size_t)total * 9 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc(&mem->d_depth_idx, total * sizeof(int));   // GLOBAL pool slots
+    cudaMalloc(&mem->d_out_slot,  nc * sizeof(int));       // per-candidate GLOBAL write slot
+    cudaMemcpy(mem->d_off,       anc.offsets,   (nc + 1) * sizeof(int),            cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_pos,       anc.pos,       (size_t)total * 3 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_yaw,       anc.yaw,       total * sizeof(float),             cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_R,         anc.R,         (size_t)total * 9 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_depth_idx, anc.depth_idx, total * sizeof(int),               cudaMemcpyHostToDevice);
+    cudaMemcpy(mem->d_out_slot,  out_slot_host, nc * sizeof(int),                  cudaMemcpyHostToDevice);
 
-    // Depth: shared pool (num_nodes buffers + per-slot index) or contiguous slots.
-    if (anc.depth_idx) {
-        size_t pool = (size_t)anc.num_nodes * per;
-        cudaMalloc(&mem->d_depth, pool * sizeof(float));
-        cudaMemcpy(mem->d_depth, anc.depth, pool * sizeof(float), cudaMemcpyHostToDevice);
-        cudaMalloc(&mem->d_depth_idx, total * sizeof(int));
-        cudaMemcpy(mem->d_depth_idx, anc.depth_idx, total * sizeof(int), cudaMemcpyHostToDevice);
-    } else {
-        cudaMalloc(&mem->d_depth, (size_t)total * per * sizeof(float));
-        cudaMemcpy(mem->d_depth, anc.depth, (size_t)total * per * sizeof(float), cudaMemcpyHostToDevice);
-        mem->d_depth_idx = nullptr;
-    }
-
-    cudaMalloc(&mem->d_gain,      nc * sizeof(float));
-    cudaMalloc(&mem->d_yaw_out,   nc * sizeof(float));
-    cudaMalloc(&mem->d_depth_buf, (size_t)depth_slots * per * sizeof(float));
+    cudaMalloc(&mem->d_gain,    nc * sizeof(float));
+    cudaMalloc(&mem->d_yaw_out, nc * sizeof(float));
 
     // Per-candidate fixed yaw (null -> optimize yaw, the AEP path).
     if (fixed_yaws) {
@@ -609,13 +599,12 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
         mem->d_fixed_yaw = nullptr;
     }
 
-    mem->rays = rays; mem->nc = nc; mem->depth_slots = depth_slots; mem->per = per;
+    mem->rays = rays; mem->nc = nc; mem->per = per;
 
     *m = context_of(map);
-    // depth_all (per-ray planar depth) is unused by the batch marginal path.
-    *out = GainResults{mem->d_gain, mem->d_yaw_out, nullptr, mem->d_depth_buf};
+    *out = GainResults{mem->d_gain, mem->d_yaw_out, nullptr, d_pool};   // out.depth = the persistent pool
     out->fixed_yaw = mem->d_fixed_yaw;
-    AncestorBatchDev ab = {mem->d_off, mem->d_pos, mem->d_yaw, mem->d_depth,
+    AncestorBatchDev ab = {mem->d_off, mem->d_pos, mem->d_yaw, d_pool,  // ab.depth = the persistent pool
                            mem->d_R, (int)per, cam, mem->d_depth_idx};
     return ab;
 }
@@ -623,14 +612,9 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
 static void teardown_batch(const BatchDeviceMem& mem, GpuResult out) {
     cudaMemcpy(out.gain, mem.d_gain,    mem.nc * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(out.yaw,  mem.d_yaw_out, mem.nc * sizeof(float), cudaMemcpyDeviceToHost);
-    if (out.depths != nullptr) {   // bounded scratch; the benchmark path passes null
-        cudaMemcpy(out.depths, mem.d_depth_buf,
-                   (size_t)mem.depth_slots * mem.per * sizeof(float), cudaMemcpyDeviceToHost);
-    }
-    cudaFree(mem.d_cand); cudaFree(mem.d_off);   cudaFree(mem.d_pos);    cudaFree(mem.d_yaw);
-    cudaFree(mem.d_R);    cudaFree(mem.d_depth);
-    if (mem.d_depth_idx) cudaFree(mem.d_depth_idx);
-    cudaFree(mem.d_gain); cudaFree(mem.d_yaw_out); cudaFree(mem.d_depth_buf);
+    // Depth stays in the persistent pool (never copied back; the pool is not owned here).
+    cudaFree(mem.d_cand); cudaFree(mem.d_off); cudaFree(mem.d_pos); cudaFree(mem.d_yaw); cudaFree(mem.d_R);
+    cudaFree(mem.d_depth_idx); cudaFree(mem.d_out_slot); cudaFree(mem.d_gain); cudaFree(mem.d_yaw_out);
     if (mem.d_fixed_yaw) cudaFree(mem.d_fixed_yaw);
 }
 
@@ -638,17 +622,18 @@ static void teardown_batch(const BatchDeviceMem& mem, GpuResult out) {
 extern "C" void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                                  GpuAncestorBatch anc, GpuResult out,
                                                  GpuSensor cfg, float* kernel_ms,
-                                                 const float* fixed_yaws) {
+                                                 const float* fixed_yaws,
+                                                 float* d_pool, const int* out_slot) {
     KernelParams params = params_of(cfg);
     gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
     MapContext m; BatchDeviceMem mem; GainResults res;
-    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws, d_pool, out_slot);
 
     cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
     cudaEventRecord(t0);
     evaluate_marginal_gain_batch_fused<<<mem.nc, min(mem.rays, MAX_THREADS_PER_BLOCK)>>>(
-        m, mem.d_cand, ab, res, params, mem.depth_slots);
+        m, mem.d_cand, ab, res, params, mem.d_out_slot);
     cudaEventRecord(t1);
     cudaEventSynchronize(t1);
     if (kernel_ms) cudaEventElapsedTime(kernel_ms, t0, t1);
@@ -664,12 +649,13 @@ extern "C" void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands
 extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                                  GpuAncestorBatch anc, GpuResult out,
                                                  GpuSensor cfg, float* kernel_ms,
-                                                 const float* fixed_yaws) {
+                                                 const float* fixed_yaws,
+                                                 float* d_pool, const int* out_slot) {
     KernelParams params = params_of(cfg);
     gpuray::ParentCameraConfig cam = derive_camera_config(cfg.gain_range, cfg.voxel_size, params);
 
     MapContext m; BatchDeviceMem mem; GainResults res;
-    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws);
+    AncestorBatchDev ab = setup_batch(map, cands, anc, params, cam, &m, &mem, &res, fixed_yaws, d_pool, out_slot);
 
     // Interval scratch bounded to one chunk and reused across chunks (the split must tile; the fused kernel doesn't).
     const int max_segs = 32;                       // merged capacity per ray in scratch
@@ -685,7 +671,7 @@ extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands
     for (int c0 = 0; c0 < mem.nc; c0 += chunk) {
         int blocks = min(chunk, mem.nc - c0);
         marginal_skips_stage<<<blocks, threads>>>(mem.d_cand, ab, c0, params, d_skips, d_counts, max_segs);
-        marginal_march_stage<<<blocks, threads>>>(m, mem.d_cand, ab, c0, res, params, d_skips, d_counts, max_segs, mem.depth_slots);
+        marginal_march_stage<<<blocks, threads>>>(m, mem.d_cand, ab, c0, res, params, d_skips, d_counts, max_segs, mem.d_out_slot);
     }
     cudaEventRecord(t1);
     cudaEventSynchronize(t1);
@@ -697,6 +683,42 @@ extern "C" void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands
 
     cudaFree(d_skips); cudaFree(d_counts);
     teardown_batch(mem, out);
+}
+
+
+/* PERSISTENT DEPTH-POOL DEVICE-MEMORY WRAPPERS (host owns the pool pointer + capacity) */
+
+__global__ void fill_float_kernel(float* p, size_t n, float v) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) p[i] = v;
+}
+
+// Grow *d_pool to >= `need` slots, preserving old contents (D2D); new region = -1 (unobserved sentinel).
+extern "C" void wrapper_depth_pool_ensure(float** d_pool, int* capacity, int need, int per) {
+    if (need <= *capacity) return;
+    int newcap = need;
+    if (newcap < *capacity * 2) newcap = *capacity * 2;
+    if (newcap < 64) newcap = 64;
+    float* np;
+    size_t newn = (size_t)newcap * per;
+    cudaMalloc(&np, newn * sizeof(float));
+    int threads = 256; size_t blocks = (newn + threads - 1) / threads;
+    fill_float_kernel<<<blocks, threads>>>(np, newn, -1.0f);
+    if (*d_pool) {
+        cudaMemcpy(np, *d_pool, (size_t)(*capacity) * per * sizeof(float), cudaMemcpyDeviceToDevice);
+        cudaFree(*d_pool);
+    }
+    cudaDeviceSynchronize();
+    *d_pool = np; *capacity = newcap;
+}
+
+extern "C" void wrapper_depth_pool_free(float* d_pool) {
+    if (d_pool) cudaFree(d_pool);
+}
+
+// Copy one pool slot (per floats) back to host — validation only (compare the pool's render vs depth_buffer).
+extern "C" void wrapper_depth_slot_to_host(const float* d_pool, int slot, int per, float* host_out) {
+    cudaMemcpy(host_out, d_pool + (size_t)slot * per, per * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 

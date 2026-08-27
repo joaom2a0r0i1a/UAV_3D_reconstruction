@@ -87,14 +87,6 @@ public:
     // Benchmark: time all methods + per-node single-parent-vs-cpuhash; accumulate into bench_* members.
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
 
-    std::vector<float> parentCamRows(float yaw);   // world<-camera rotation rows (9 floats) for an ancestor yaw
-
-    // GPU single-parent marginal gain using the node's immediate parent's stored depth buffer.
-    double computeV2SingleParent(rrt_star::Node* node);
-
-    // GPU multi-ancestor marginal gain over the full ancestor chain; optimizes yaw (out_yaw = argmax if non-null).
-    double computeV4MultiAncestor(rrt_star::Node* node, double* out_yaw = nullptr);
-
     std::vector<rrt_star::Node*> collectTreeNodes();        // non-owning observers to every non-root tree node
     void sortByDepth(std::vector<rrt_star::Node*>& nodes);  // shallow-first (parents before children)
 
@@ -197,6 +189,7 @@ private:
     bool marginal_gain;             // true: marginal gain (path sum in global); false: absolute gain
     std::string eval_compute;       // "gpu" (batched) or "cpu" (sequential)
     bool marginal_split;            // marginal+gpu: false = fused kernel, true = split kernel
+    bool depth_pool_compare_ = false;  // validation: pool vs independent v4 reference per call
     std::string objective_;
     bool benchmark_mode;            // also time all methods + per-node v2-vs-cpuhash, report local+global
 

@@ -58,7 +58,7 @@ typedef struct {
     float* depth;   // count*p_width*p_height, or null
 } GpuAncestors;
 
-// Wavefront in CSR form: candidate c owns ancestors [offsets[c], offsets[c+1]); depth_idx (opt) pools depth to O(num_nodes*per).
+// CSR wavefront: candidate c owns ancestors [offsets[c], offsets[c+1]); depth lives in the persistent pool (d_pool), indexed by each ancestor's GLOBAL depth_idx.
 typedef struct {
     int          num_candidates;
     const int*   offsets;   // [num_candidates+1] prefix sum of per-candidate ancestor counts
@@ -66,9 +66,7 @@ typedef struct {
     const float* pos;       // [3*total]  (x,y,z per ancestor)
     const float* yaw;       // [total]
     const float* R;         // [9*total]  (row-major rows per ancestor)
-    const float* depth;     // [total*per] contiguous, or [num_nodes*per] pool if depth_idx set
-    const int*   depth_idx; // [total] pool index per ancestor slot, or null (contiguous)
-    int          num_nodes; // pool size when depth_idx set
+    const int*   depth_idx; // [total] GLOBAL pool slot per ancestor
 } GpuAncestorBatch;
 
 #ifdef __cplusplus
@@ -85,15 +83,19 @@ void launch_marginal_gain(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
                                  GpuResult out, GpuSensor cfg);
 
 
-/* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both traverse-march; kernel_ms=device ms; fixed_yaws=NBVP per-candidate or null=AEP) */
+/* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both GPU-resident-pool: ancestor depth is
+   read in place from d_pool via anc.depth_idx, each candidate writes its render to d_pool[out_slot[c]];
+   kernel_ms=device ms; fixed_yaws=NBVP per-candidate or null=AEP) */
 void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
                                       GpuSensor cfg, float* kernel_ms,
-                                      const float* fixed_yaws);
+                                      const float* fixed_yaws,
+                                      float* d_pool, const int* out_slot);
 void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
                                       GpuSensor cfg, float* kernel_ms,
-                                      const float* fixed_yaws);
+                                      const float* fixed_yaws,
+                                      float* d_pool, const int* out_slot);
 
 
 /* FIXED-YAW VARIANTS (NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
@@ -101,6 +103,12 @@ void launch_absolute_gain_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult
                                     GpuSensor cfg, const float* fixed_yaws, float* kernel_ms);
 void launch_marginal_gain_fixed(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
                                        GpuResult out, GpuSensor cfg, float fixed_yaw);
+
+
+/* PERSISTENT DEPTH-POOL DEVICE MEMORY (host owns *d_pool + *capacity; grow preserves contents, new region = -1). */
+void wrapper_depth_pool_ensure(float** d_pool, int* capacity, int need, int per);
+void wrapper_depth_pool_free(float* d_pool);
+void wrapper_depth_slot_to_host(const float* d_pool, int slot, int per, float* host_out);
 
 
 /* THIN DEVICE-MEMORY WRAPPERS (host owns the cached map buffer) */

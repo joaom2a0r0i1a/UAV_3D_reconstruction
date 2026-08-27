@@ -110,10 +110,22 @@ static void synthesize(Batch& b, int nc, int max_depth, int D) {
     }
 }
 
-// Assemble the GpuAncestorBatch view over the first N candidates of b.
+// Assemble the GpuAncestorBatch view over the first N candidates of b (depth lives in the device pool).
 static GpuAncestorBatch ancestor_batch(const Batch& b, int N, int total_N) {
     return GpuAncestorBatch{N, b.offsets.data(), total_N, b.apos.data(), b.ayaw.data(),
-                            b.aR.data(), b.adepth.data(), b.depth_idx.data(), b.num_nodes};
+                            b.aR.data(), b.depth_idx.data()};
+}
+
+// Upload the synthetic ancestor depth (b.adepth) into a device pool [0..num_nodes) and give each of the N
+// candidates a tail write-slot (num_nodes + c). Returns the pool; caller frees with wrapper_depth_pool_free.
+static float* make_pool(const Batch& b, int N, std::vector<int>& out_slot) {
+    int per_i = (int)b.per();
+    float* d_pool = nullptr; int cap = 0;
+    wrapper_depth_pool_ensure(&d_pool, &cap, b.num_nodes + N, per_i);          // alloc + fill -1
+    wrapper_cuda_memcpy(d_pool, b.adepth.data(), (size_t)b.num_nodes * per_i * sizeof(float));
+    out_slot.resize(N);
+    for (int c = 0; c < N; ++c) out_slot[c] = b.num_nodes + c;                 // candidates write to the tail
+    return d_pool;
 }
 
 // Fewer timed iterations as N grows (each run is longer and re-uploads more).
@@ -135,18 +147,21 @@ static void run_and_report(uint8_t* d_map, const Batch& b, int N, int iters) {
     std::vector<float> gF(N), yF(N), gS(N), yS(N);
     GpuResult oF = {gF.data(), yF.data(), nullptr};
     GpuResult oS = {gS.data(), yS.data(), nullptr};
+    std::vector<int> out_slot;
+    float* d_pool = make_pool(b, N, out_slot);
 
     float ms = 0.0f; double sF = 0, sS = 0;
-    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr);   // warm-up
-    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr);
-    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr); sF += ms; }
-    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr); sS += ms; }
+    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr, d_pool, out_slot.data());   // warm-up
+    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr, d_pool, out_slot.data());
+    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr, d_pool, out_slot.data()); sF += ms; }
+    for (int it = 0; it < iters; ++it) { launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr, d_pool, out_slot.data()); sS += ms; }
     double f = sF / iters, s = sS / iters;
 
     double d = 0;
     for (int i = 0; i < N; ++i) d = std::max(d, fabs((double)gF[i] - gS[i]));
     printf("%7d | %9d | %10.4f | %10.4f | %-6s | %.2e\n",
            N, total_N, f, s, f <= s ? "fused" : "split", d);
+    wrapper_depth_pool_free(d_pool);
 }
 
 // Cross-check the batched kernels against the per-candidate reference launcher.
@@ -164,9 +179,12 @@ static void verify_against_reference(uint8_t* d_map, const Batch& b, int N) {
     std::vector<float> gF(N), yF(N), gS(N), yS(N);
     GpuResult oF = {gF.data(), yF.data(), nullptr};
     GpuResult oS = {gS.data(), yS.data(), nullptr};
+    std::vector<int> out_slot;
+    float* d_pool = make_pool(b, N, out_slot);
     float ms = 0.0f;
-    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr);
-    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr);
+    launch_marginal_gain_batch_fused(map, cands, anc, oF, cfg, &ms, nullptr, d_pool, out_slot.data());
+    launch_marginal_gain_batch_split(map, cands, anc, oS, cfg, &ms, nullptr, d_pool, out_slot.data());
+    wrapper_depth_pool_free(d_pool);
 
     // Per-candidate reference: materialize each chain with a CONTIGUOUS depth
     // block gathered from the pool (the single-node launcher expects count*per depths).

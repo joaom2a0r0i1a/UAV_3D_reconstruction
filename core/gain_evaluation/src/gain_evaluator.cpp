@@ -4,6 +4,7 @@
 #include <map>
 #include <unordered_map>
 #include <algorithm>
+#include <chrono>
 
 #include "gain_evaluation/gain_evaluator.h"
 #include "gain_evaluation/gpu_raycast_launch.h"
@@ -54,6 +55,15 @@ GainEvaluator::~GainEvaluator() {
         wrapper_cuda_free(d_map_);
         d_map_ = nullptr;
     }
+    if (d_depth_pool_) {
+        wrapper_depth_pool_free(d_depth_pool_);
+        d_depth_pool_ = nullptr;
+    }
+}
+
+void GainEvaluator::ensureDepthPool(int n_slots) {
+    pool_per_ = depthImagePixels();
+    wrapper_depth_pool_ensure(&d_depth_pool_, &pool_capacity_, n_slots, pool_per_);
 }
 
 /* SETUP FUNCTIONS */
@@ -509,7 +519,7 @@ std::pair<double, double> GainEvaluator::computeSingleParentMarginalGainGPU(cons
     return { (double)results_gain, (double)results_yaw };
 }
 
-std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths) {
+std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
     // Flatten the ancestor chain and run the single-node kernel (traverse marcher) over all of them.
     // 0. Safety Check
     if (d_map_ == nullptr) {
@@ -555,51 +565,13 @@ std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(con
                               parent_R.data(),
                               parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
     GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
+    if (std::isnan(fixed_yaw)) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
+    else launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)fixed_yaw);
 
     // 3. Return Result
     return { (double)results_gain, (double)results_yaw };
 }
 
-std::vector<std::pair<double, double>> GainEvaluator::computeMarginalGainBatchGPU(
-    const std::vector<float>& cand_x, const std::vector<float>& cand_y, const std::vector<float>& cand_z,
-    const std::vector<int>& offsets, const std::vector<float>& anc_pos,
-    const std::vector<float>& anc_yaw, const std::vector<float>& anc_R,
-    const std::vector<float>& anc_depth, bool use_split,
-    std::vector<float>& out_depth, float& kernel_ms, const std::vector<float>* fixed_yaws,
-    const std::vector<int>* depth_idx, int num_nodes) {
-
-    kernel_ms = 0.0f;
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {};
-    }
-    int nc = (int)cand_x.size();
-    if (nc == 0) return {};
-
-    int total = offsets[nc];
-    size_t per = (size_t)depthImagePixels();
-    std::vector<float> gains(nc, 0.0f), yaws(nc, 0.0f);
-    out_depth.assign((size_t)nc * per, 0.0f);
-
-    // depth_idx = null -> contiguous per-slot depth (one real buffer per ancestor).
-    GpuCandidates cands = {(float*)cand_x.data(), (float*)cand_y.data(), (float*)cand_z.data(), nc};
-    GpuAncestorBatch anc = {nc, offsets.data(), total,
-                            anc_pos.data(), anc_yaw.data(), anc_R.data(), anc_depth.data(),
-                            depth_idx ? depth_idx->data() : nullptr, num_nodes};
-    GpuResult out = {gains.data(), yaws.data(), out_depth.data()};
-
-    float ms = 0.0f;
-    const float* fy = fixed_yaws ? fixed_yaws->data() : nullptr;
-    if (use_split) launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
-    else           launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy);
-    kernel_ms = ms;
-
-    std::vector<std::pair<double, double>> results;
-    results.reserve(nc);
-    for (int i = 0; i < nc; ++i) results.emplace_back((double)gains[i], (double)yaws[i]);
-    return results;
-}
 
 std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R) {
     // 1. Setup Parameters (Exact match to GPU Wrapper)
@@ -1136,35 +1108,39 @@ void GainEvaluator::sortByDepth(std::vector<rrt_star::Node*>& nodes) const {
                      [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
 }
 
-void GainEvaluator::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
-                                                 bool marginal_split, float& kernel_ms) {
-    // Kernel time is summed across depth levels (one GPU launch each) for the whole-tree total.
+// Batched marginal gain (pool): ancestor depth read from d_depth_pool_[depth_slot], each render written to its own slot; marginal_split = staged vs fused kernel.
+void GainEvaluator::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes,
+                                                 bool optimize_yaw, bool marginal_split, float& kernel_ms) {
     kernel_ms = 0.0f;
     if (nodes.empty()) return;
-    const int per = depthImagePixels();
 
+    // Group by tree depth (shallow-first) so a parent's slot is rendered before its children read it.
     std::map<int, std::vector<size_t>> levels;
+    int max_slot = 0;
     for (size_t i = 0; i < nodes.size(); ++i) {
         int depth = 0;
         for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent) ++depth;
         levels[depth].push_back(i);
+        max_slot = std::max(max_slot, nodes[i]->depth_slot);
+        for (rrt_star::Node* a = nodes[i]->parent; a != nullptr; a = a->parent)
+            max_slot = std::max(max_slot, a->depth_slot);
     }
+    ensureDepthPool(max_slot + 1);   // grow (contents preserved); slot 0 = root sentinel (-1)
 
     for (const auto& level : levels) {
         const std::vector<size_t>& idxs = level.second;
         const size_t n = idxs.size();
 
         std::vector<float> cand_x_f(n), cand_y_f(n), cand_z_f(n), fixed_yaws(n);
-        std::vector<int>   anc_offsets(1, 0);
-        std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
-        std::vector<int>   depth_idx;
-        std::unordered_map<rrt_star::Node*, int> pool_slot;   // each ancestor's depth buffer stored once
+        std::vector<int>   anc_offsets(1, 0), depth_idx, out_slot(n);
+        std::vector<float> anc_pos, anc_yaw, anc_R;
         for (size_t li = 0; li < n; ++li) {
             rrt_star::Node* nd = nodes[idxs[li]];
             cand_x_f[li] = (float)nd->point.x();
             cand_y_f[li] = (float)nd->point.y();
             cand_z_f[li] = (float)nd->point.z();
             fixed_yaws[li] = (float)nd->point[3];
+            out_slot[li]   = nd->depth_slot;
             for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
                 std::vector<float> R_flat = parentCamRows((float)a->point[3]);
                 anc_pos.push_back((float)a->point.x());
@@ -1172,33 +1148,34 @@ void GainEvaluator::evaluateMarginalGainsBatched(const std::vector<rrt_star::Nod
                 anc_pos.push_back((float)a->point.z());
                 anc_yaw.push_back((float)a->point[3]);
                 anc_R.insert(anc_R.end(), R_flat.begin(), R_flat.end());
-                auto slot = pool_slot.find(a);
-                if (slot == pool_slot.end()) {
-                    slot = pool_slot.emplace(a, (int)pool_slot.size()).first;
-                    if ((int)a->depth_buffer.size() == per)
-                        anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-                    else
-                        anc_depth.insert(anc_depth.end(), per, -1.0f);   // root ancestor (never evaluated)
-                }
-                depth_idx.push_back(slot->second);
+                depth_idx.push_back(a->depth_slot);   // GLOBAL slot; root -> 0 (pool sentinel -1)
+                // Invariant: only the root (parent == nullptr) may be an unrendered ancestor.
+                if (a->parent != nullptr && !a->depth_in_pool) ++cmp_invariant_violations_;
             }
             anc_offsets.push_back((int)(anc_pos.size() / 3));
         }
 
-        std::vector<float> depth_out;
+        int nc = (int)n;
+        int total = anc_offsets[nc];
+        std::vector<float> gains(nc, 0.0f), yaws(nc, 0.0f);
+        GpuCandidates cands = {cand_x_f.data(), cand_y_f.data(), cand_z_f.data(), nc};
+        GpuAncestorBatch anc = {nc, anc_offsets.data(), total,
+                                anc_pos.data(), anc_yaw.data(), anc_R.data(), depth_idx.data()};
+        GpuResult out = {gains.data(), yaws.data(), nullptr};
+
         float ms = 0.0f;
-        auto results = computeMarginalGainBatchGPU(
-            cand_x_f, cand_y_f, cand_z_f, anc_offsets, anc_pos, anc_yaw, anc_R, anc_depth,
-            marginal_split, depth_out, ms, optimize_yaw ? nullptr : &fixed_yaws,
-            &depth_idx, (int)pool_slot.size());
+        const float* fy = optimize_yaw ? nullptr : fixed_yaws.data();
+        if (marginal_split)
+            launch_marginal_gain_batch_split(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy, d_depth_pool_, out_slot.data());
+        else
+            launch_marginal_gain_batch_fused(gpuMap(), cands, anc, out, gpuSensor(), &ms, fy, d_depth_pool_, out_slot.data());
         kernel_ms += ms;
 
         for (size_t li = 0; li < n; ++li) {
             rrt_star::Node* node = nodes[idxs[li]];
-            node->gain = results[li].first;
-            if (optimize_yaw) node->point[3] = results[li].second;
-            node->depth_buffer.assign(depth_out.begin() + (size_t)li * per,
-                                      depth_out.begin() + (size_t)(li + 1) * per);
+            node->gain = gains[li];
+            if (optimize_yaw) node->point[3] = yaws[li];
+            node->depth_in_pool = true;   // its slot now holds a real render
         }
     }
 }
@@ -1224,13 +1201,72 @@ void GainEvaluator::fillAbsoluteGains(const std::vector<rrt_star::Node*>& nodes,
     }
 }
 
+// Self-contained per-node GPU reference: rebuild root->node and evaluate layer by layer, each layer rendering at
+// its OWN yaw (fixed_mode -> the node's point[3]; else re-optimized free-yaw). one_parent_only subtracts just the
+// immediate parent (G_1parent) instead of the whole chain (G_all). Never reads the pool or depth_buffer.
+double GainEvaluator::computeV4LayeredGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only, bool fixed_mode) {
+    const int per = depthImagePixels();
+    std::vector<rrt_star::Node*> chain;
+    for (rrt_star::Node* a = node; a != nullptr; a = a->parent) chain.push_back(a);
+    std::reverse(chain.begin(), chain.end());   // root first
+
+    std::vector<std::vector<float>> depth(chain.size());   // own render per chain node (empty = unrendered)
+    std::vector<double> yaw(chain.size(), 0.0);            // own chosen yaw per chain node
+    double gain = 0.0;
+    for (size_t k = 1; k < chain.size(); ++k) {            // skip root (chain[0]); layer by layer
+        std::vector<Eigen::Vector3d> anc_pos;
+        std::vector<double> anc_yaws;
+        std::vector<float> anc_R, anc_depth;
+        size_t jlo = one_parent_only ? (k - 1) : 0;        // subtraction set: parent only vs whole chain
+        for (size_t j = k; j-- > jlo; ) {                  // ancestors near->far: chain[k-1] .. chain[jlo]
+            anc_pos.push_back(chain[j]->point.head(3));
+            double yj = fixed_mode ? chain[j]->point[3] : yaw[j];
+            anc_yaws.push_back(yj);
+            std::vector<float> R = parentCamRows((float)yj);
+            anc_R.insert(anc_R.end(), R.begin(), R.end());
+            // j==0 is the root (never rendered -> unobserved sentinel); j>=1 was rendered in an earlier layer.
+            if (j == 0) anc_depth.insert(anc_depth.end(), (size_t)per, -1.0f);
+            else        anc_depth.insert(anc_depth.end(), depth[j].begin(), depth[j].end());
+        }
+        std::vector<float> out_d;
+        double cand_fixed = fixed_mode ? chain[k]->point[3] : NAN;
+        auto r = computeMultiAncestorMarginalGainGPU(chain[k]->point.x(), chain[k]->point.y(), chain[k]->point.z(),
+                                                     anc_pos, anc_yaws, anc_R, anc_depth, out_d, cand_fixed);
+        yaw[k] = fixed_mode ? chain[k]->point[3] : r.second; depth[k] = out_d; gain = r.first;
+    }
+    out_yaw = yaw.empty() ? 0.0 : yaw.back();
+    return gain;
+}
+
+// Validation: run the pool path, then diff a sample against the independent v4 reference (v4 reads only positions; pool results stay authoritative).
+void GainEvaluator::runDepthPoolCompare(const std::vector<rrt_star::Node*>& nodes, const GainConfig& cfg, float& marg_kernel_ms) {
+    evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
+
+    const size_t N = nodes.size();
+    for (size_t i = 0; i < N && i < 8; ++i) {   // sampled: v4 rebuilds each chain (O(depth) launches)
+        double pool_gain = nodes[i]->gain, pool_yaw = nodes[i]->point[3];
+        double v4_yaw;
+        double v4gain = computeV4LayeredGain(nodes[i], v4_yaw);
+        cmp_max_gain_diff_v4pool_ = std::max(cmp_max_gain_diff_v4pool_, std::abs(v4gain - pool_gain));
+        if (cfg.optimize_yaw && std::abs(v4_yaw - pool_yaw) > 1e-4) ++cmp_yaw_flips_;
+        ++cmp_v4_samples_;
+    }
+
+    ++cmp_calls_;
+    if (cmp_calls_ % 20 == 0)
+        ROS_WARN("[depth_pool_compare] calls=%ld v4_samples=%ld max|dGain|(v4-pool)=%.3e yaw_flips=%ld invariant_viol=%ld",
+                 cmp_calls_, cmp_v4_samples_, cmp_max_gain_diff_v4pool_, cmp_yaw_flips_, cmp_invariant_violations_);
+}
+
 void GainEvaluator::evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
                                   const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms) {
     if (nodes.empty()) return;
     const bool gpu = (cfg.eval_compute == "gpu");
 
     if (cfg.marginal_gain && gpu) {
-        evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
+        // Marginal gain = GPU pool (fused/split); depth_pool_compare validates it vs the v4 reference.
+        if (cfg.depth_pool_compare) runDepthPoolCompare(nodes, cfg, marg_kernel_ms);
+        else                        evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
         if (cfg.track_absolute) fillAbsoluteGains(nodes, flat_map, cfg.eval_compute);
     } else if (!cfg.marginal_gain && gpu) {
         std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
