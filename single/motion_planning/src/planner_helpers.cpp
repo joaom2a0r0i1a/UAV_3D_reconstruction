@@ -219,14 +219,17 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
         return g;
     };
     const std::vector<double> saved_gain = snapshot_gains();
+    // Production yaw snapshot: the passes below overwrite point[3]; restored + pool re-synced at the end.
+    std::vector<double> saved_yaw(n);
+    for (size_t i = 0; i < n; ++i) saved_yaw[i] = nodes[i]->point[3];
 
     // Correctness (benchmark-only): batched pool gain vs the independent layered reference. Snapshot gain+yaw so timing is undisturbed.
     {
         std::vector<double> sg(n), sy(n);
         for (size_t i = 0; i < n; ++i) { sg[i] = nodes[i]->gain; sy[i] = nodes[i]->point[3]; }
         long ref_flips = 0;
-        double ref_maxd = seg.checkMarginalBatchedAgainstReference(nodes, optimize_yaw, marginal_split, ref_flips);
-        ROS_INFO("[bench_correctness] batched-vs-reference nodes=%zu max|dGain|=%.3e yaw_flips=%ld", n, ref_maxd, ref_flips);
+        auto ref_diff = seg.checkMarginalBatchedAgainstReference(nodes, optimize_yaw, marginal_split, ref_flips);   // {max|dGain|, max|dYaw|}
+        ROS_INFO("[bench_correctness] phase=%s nodes=%zu max|dGain|=%.3e yaw_flips=%ld max|dYaw|=%.4f", phase, n, ref_diff.first, ref_flips, ref_diff.second);
         for (size_t i = 0; i < n; ++i) { nodes[i]->gain = sg[i]; nodes[i]->point[3] = sy[i]; }
     }
 
@@ -306,9 +309,15 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
     const char* x1_csv_path = std::getenv("NBV_X1_CSV");
     std::ofstream x1;
     if (x1_csv_path) x1.open(x1_csv_path, std::ios::app);
+
+    // One-parent GPU reference gain per node (writes node->gain; snapshot+restore keeps the benchmark non-destructive).
+    std::vector<double> g1p_gpu_of(n), sg1(n), sy1(n);
+    for (size_t i = 0; i < n; ++i) { sg1[i] = nodes[i]->gain; sy1[i] = nodes[i]->point[3]; }
+    seg.computeMarginalGains(nodes, optimize_yaw, /*one_parent_only=*/true);
+    for (size_t i = 0; i < n; ++i) { g1p_gpu_of[i] = nodes[i]->gain; nodes[i]->gain = sg1[i]; nodes[i]->point[3] = sy1[i]; }
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
-        double ref_y; double g1p_gpu = seg.computeReferenceMarginalGain(nd, ref_y, /*one_parent_only=*/true, /*fixed_mode=*/!optimize_yaw);
+        double g1p_gpu = g1p_gpu_of[i];
 
         double err = std::fabs(g1p_gpu - g_g1p_cpu[i]);
         acc.g1p_err_sum += err;
@@ -323,6 +332,12 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
                      phase, g_gall_gpu[i], g_gall_split[i], g1p_gpu, g_g1p_cpu[i], err, g_abs_gpu[i], g_abs_cpu[i]);
         }
     }
+
+    // Restore gain+yaw, then re-render each slot at the restored yaw so pool render yaw == point[3] for later batches (POOL_MARGINAL_SUBSET_BUG.md §7).
+    for (size_t i = 0; i < n; ++i) { nodes[i]->gain = saved_gain[i]; nodes[i]->point[3] = saved_yaw[i]; }
+    float resync_ms = 0.0f;
+    seg.computeMarginalGainsBatched(nodes, /*optimize_yaw=*/false, marginal_split, resync_ms);
+    for (size_t i = 0; i < n; ++i) { nodes[i]->gain = saved_gain[i]; nodes[i]->point[3] = saved_yaw[i]; }
 }
 
 void logBenchSummary(const BenchAccum& a) {

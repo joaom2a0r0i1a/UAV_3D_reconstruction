@@ -19,11 +19,11 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("gain_evaluation/min_z", min_z_, 0.0f);
   nh_private.param("gain_evaluation/max_z", max_z_, 14.5f);
 
-  nh_private.param("camera_intrinsics/hfov", fov_y_rad_, 1.51844);
-  nh_private.param("camera_intrinsics/vfov", fov_p_rad_, 1.01229);
-  nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0);
+  nh_private.param("camera_intrinsics/hfov", fov_y_rad_, 1.51844f);
+  nh_private.param("camera_intrinsics/vfov", fov_p_rad_, 1.01229f);
+  nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0f);
   nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
-  nh_private.param("camera_intrinsics/pitch", camera_pitch_, 10.0);
+  nh_private.param("camera_intrinsics/pitch", camera_pitch_, 10.0f);
 }
 
 GainEvaluator::~GainEvaluator() {
@@ -50,7 +50,7 @@ inline uint64_t GainEvaluator::pack_index(int x, int y, int z) {
 static inline float unknownVoxelGain(float r, float dr, float dtheta_rad, float sin_phi, float dphi_rad) {
   float term1 = 2.0f * r * r * dr;
   float term2 = (dr * dr * dr) / 6.0f;
-  return (term1 + term2) * dtheta_rad * sin_phi * sin(dphi_rad * 0.5f);
+  return (term1 + term2) * dtheta_rad * sin_phi * sinf(dphi_rad * 0.5f);
 }
 
 // Start bin of the FOV window centred on `yaw` (rad); matches gpuray::window_start_bin_at_yaw for bit-comparable CPU/GPU fixed-yaw gains.
@@ -67,29 +67,28 @@ GpuMap GainEvaluator::gpuMap() const {
 }
 
 GpuSensor GainEvaluator::gpuSensor() const {
-    return GpuSensor{(float)dr_, (float)r_max_, (float)fov_y_rad_, (float)fov_p_rad_,
+    return GpuSensor{dr_, r_max_, fov_y_rad_, fov_p_rad_,
                      (float)(camera_pitch_ * M_PI / 180.0)};
 }
 
 // Gain-sphere angular bins: 180 (2 deg) at the 5 m / 0.2 m reference, finer with r_max and inversely with voxel; mirrors the GPU (CPU==GPU).
 void GainEvaluator::angularResolution(float& dtheta_rad, float& dphi_rad, int& theta_bins) const {
-  int bins = (int)std::floor(180.0 * (r_max_ / 5.0) * (0.2 / dr_) + 1e-3);
+  int bins = (int)floorf(180.0f * (r_max_ / 5.0f) * (0.2f / dr_) + 1e-3f);
   if (bins < 1) bins = 1;
   if (bins > 640) bins = 640;
 
   theta_bins = bins;
-  dtheta_rad = (float)(2.0 * M_PI / bins);
-  dphi_rad = (float)(2.0 * M_PI / bins);
+  dtheta_rad = 2.0f * (float)M_PI / bins;
+  dphi_rad = 2.0f * (float)M_PI / bins;
 }
 
 // CPU mirror of the GPU make_kernel_params angular block (angularResolution + pitch-centred phi start); same float ops as the originals.
 GainEvaluator::ScanParams GainEvaluator::scanParams() const {
   ScanParams s;
   angularResolution(s.dtheta, s.dphi, s.theta_bins);
-  float fov_p_rad = fov_p_rad_;
-  float camera_pitch = camera_pitch_ * M_PI / 180.0f;
-  float phi_center = (M_PI / 2.0f) + camera_pitch;
-  s.phi_start = phi_center - (fov_p_rad / 2.0f);
+  float camera_pitch = (float)(camera_pitch_ * M_PI / 180.0);
+  float phi_center = ((float)M_PI * 0.5f) + camera_pitch;
+  s.phi_start = phi_center - (fov_p_rad_ * 0.5f);
   return s;
 }
 
@@ -116,8 +115,8 @@ std::pair<double, double> GainEvaluator::pickYawWindow(const std::vector<float>&
         if (current_window > max_gain) { max_gain = current_window; best_idx = i; }
     }
     if (out_best_idx) *out_best_idx = best_idx;
-    float center_angle = -M_PI + (best_idx * dtheta_rad) + (fov_y_rad_ * 0.5f);
-    if (center_angle > M_PI) center_angle -= (2.0f * M_PI);
+    float center_angle = (-(float)M_PI + (best_idx * dtheta_rad)) + (fov_y_rad_ * 0.5f);
+    if (center_angle > (float)M_PI) center_angle -= (2.0f * (float)M_PI);
     return std::make_pair((double)max_gain, (double)center_angle);
 }
 
@@ -359,12 +358,8 @@ void GainEvaluator::visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointclo
   // Get the center of the camera to raycast to.
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
   voxblox::Point camera_center = camera_pose.getPosition();
-  double yaw_rad = pose[3];
-  double yaw = yaw_rad * 180 / M_PI;
+  double yaw = pose[3] * 180 / M_PI;
 
-  double gain = 0.0;
-
-  // This function computes the gain
   double fov_y = fov_y_rad_ / M_PI * 180.0f;
   double fov_p = fov_p_rad_ / M_PI * 180.0f;
 
@@ -374,46 +369,34 @@ void GainEvaluator::visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointclo
   int phi, theta;
   double phi_rad, theta_rad;
 
-  //voxblox::Point vec;
   Eigen::Vector3d vec;
-  double min_x = static_cast<double>(min_x_);
-  double min_y = static_cast<double>(min_y_);
-  double min_z = static_cast<double>(min_z_);
-  double max_x = static_cast<double>(max_x_);
-  double max_y = static_cast<double>(max_y_);
-  double max_z = static_cast<double>(max_z_);
-
-  int id = 0;
   for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
     theta_rad = M_PI * theta / 180.0f;
     for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
       phi_rad = M_PI * phi / 180.0f;
 
-      bool occupied_ray = false;
-      double g = 0;
       voxblox::Pointcloud voxels_ray;
       for (r = 0; r < r_max_; r += dr_) {
         vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
         vec[2] = camera_center.z() + r * cos(phi_rad);
 
-        if (vec[0] < min_x || vec[0] > max_x || 
-        vec[1] < min_y || vec[1] > max_y || 
-        vec[2] < min_z || vec[2] > max_z) {
+        if (vec[0] < min_x_ || vec[0] > max_x_ ||
+        vec[1] < min_y_ || vec[1] > max_y_ ||
+        vec[2] < min_z_ || vec[2] > max_z_) {
           continue;
         }
 
         VoxelStatus node = getVoxelStatus(vec);
 
         if (node == kOccupied) {
-          occupied_ray = true;
           break;
         } else if (node == kFree) {
           continue;
         } else if (node == kUnknown) {
           Eigen::Vector3d Voxel;
           getVoxelCenter(&Voxel, vec);
-          
+
           voxblox::Point VoxelCenter;
           VoxelCenter[0] = Voxel[0];
           VoxelCenter[1] = Voxel[1];
@@ -421,8 +404,7 @@ void GainEvaluator::visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointclo
           voxels_ray.push_back(VoxelCenter);
         }
       }
-      voxels.insert(voxels.end(), voxels_ray.begin(), voxels_ray.end());      
-      gain += g;
+      voxels.insert(voxels.end(), voxels_ray.begin(), voxels_ray.end());
     }
   }
 }
@@ -431,10 +413,6 @@ void GainEvaluator::visualizeGain(const Eigen::Vector4d& pose, voxblox::Pointclo
 
 std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vector<uint8_t>& flat_map, const Eigen::Vector4d& pose, double fixed_yaw) {
   // 1. Setup Constants
-  float voxel_size = voxel_size_;
-  float gain_range = r_max_;
-
-  float fov_p_rad = fov_p_rad_;
   ScanParams sp = scanParams();
   float dtheta_rad = sp.dtheta, dphi_rad = sp.dphi, phi_start = sp.phi_start;
   int theta_bins = sp.theta_bins;
@@ -443,21 +421,21 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
 
   // 2. WOO DDA Raycasting Loop
   for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
-    float theta = -M_PI + (t_idx * dtheta_rad);
+    float theta = -(float)M_PI + (t_idx * dtheta_rad);
 
-    for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
-      float sin_phi = sin(phi);
-      float dir_x = cos(theta) * sin_phi;
-      float dir_y = sin(theta) * sin_phi;
-      float dir_z = cos(phi);
+    for (int _r = 0, _nr = angular_bins(fov_p_rad_, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
+      float sin_phi = sinf(phi);
+      float dir_x = cosf(theta) * sin_phi;
+      float dir_y = sinf(theta) * sin_phi;
+      float dir_z = cosf(phi);
 
       float start_x = pose.x();
       float start_y = pose.y();
       float start_z = pose.z();
 
-      float gx = (start_x - cached_origin_.x()) / voxel_size_;
-      float gy = (start_y - cached_origin_.y()) / voxel_size_;
-      float gz = (start_z - cached_origin_.z()) / voxel_size_;
+      float gx = (start_x - (float)cached_origin_.x()) / voxel_size_;
+      float gy = (start_y - (float)cached_origin_.y()) / voxel_size_;
+      float gz = (start_z - (float)cached_origin_.z()) / voxel_size_;
 
       int ix = std::floor(gx);
       int iy = std::floor(gy);
@@ -467,9 +445,9 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
       int stepY = (dir_y > 0) ? 1 : ((dir_y < 0)) ? -1 : 0;
       int stepZ = (dir_z > 0) ? 1 : ((dir_z < 0)) ? -1 : 0;
 
-      float tDeltaX = (dir_x != 0.0f) ? std::abs(1.0f / dir_x) : 1e30f;
-      float tDeltaY = (dir_y != 0.0f) ? std::abs(1.0f / dir_y) : 1e30f;
-      float tDeltaZ = (dir_z != 0.0f) ? std::abs(1.0f / dir_z) : 1e30f;
+      float tDeltaX = (fabsf(dir_x) > 1e-9f) ? fabsf(1.0f / dir_x) : 1e30f;
+      float tDeltaY = (fabsf(dir_y) > 1e-9f) ? fabsf(1.0f / dir_y) : 1e30f;
+      float tDeltaZ = (fabsf(dir_z) > 1e-9f) ? fabsf(1.0f / dir_z) : 1e30f;
 
       float tMaxX, tMaxY, tMaxZ;
 
@@ -493,7 +471,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
 
       float ray_gain = 0.0f;
       float t = 0.0f;
-      float max_t = gain_range / voxel_size_;
+      float max_t = r_max_ / voxel_size_;
 
       while (t < max_t) {
         if (ix >= 0 && ix < cached_dim_.x() &&
@@ -506,13 +484,12 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
           if (val == 1) {
             break;
           } else if (val == 2) {
-            float t_exit = std::min({tMaxX, tMaxY, tMaxZ});
-            if (t_exit > max_t) t_exit = max_t;   // cap last voxel at sensor range (match GPU FIX1)
-            float dt = t_exit - t;
-            float dr = dt * voxel_size_;
-
-            float r = t * voxel_size_;
-            ray_gain += unknownVoxelGain(r, dr, dtheta_rad, sin_phi, dphi_rad);
+            float t_exit = fminf(fminf(tMaxX, fminf(tMaxY, tMaxZ)), max_t);   // cap last voxel at range (match GPU)
+            if (t_exit > t) {
+              float dr = (t_exit - t) * voxel_size_;
+              float r = t * voxel_size_;
+              ray_gain += unknownVoxelGain(r, dr, dtheta_rad, sin_phi, dphi_rad);
+            }
           }
         }
 
@@ -552,8 +529,7 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
   voxblox::Transformation camera_pose = cam_model_.getCameraPose();
   voxblox::Point camera_center = camera_pose.getPosition();
 
-  double yaw_rad = pose[3];
-  double yaw = yaw_rad * 180 / M_PI;
+  double yaw = pose[3] * 180 / M_PI;
 
   double gain = 0.0;
 
@@ -568,7 +544,6 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
   double phi, theta;
   double phi_rad, theta_rad;
 
-  //voxblox::Point vec;
   Eigen::Vector3d vec;
   double min_x = static_cast<double>(min_x_) + offset[0];
   double min_y = static_cast<double>(min_y_) + offset[1];
@@ -577,14 +552,12 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
   double max_y = static_cast<double>(max_y_) + offset[1];
   double max_z = static_cast<double>(max_z_) + offset[2];
 
-  int id = 0;
   for (theta = yaw - fov_y/2; theta < yaw + fov_y/2; theta += dtheta) {
     theta_rad = M_PI * theta / 180.0f;
     for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
       phi_rad = M_PI * phi / 180.0f;
 
       double g = 0;
-      bool occupied_ray = false;
       for (r = 0; r < r_max_; r += dr_) {
         vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
@@ -599,7 +572,6 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
         VoxelStatus node = getVoxelStatus(vec);
 
         if (node == kOccupied) {
-          occupied_ray = true;
           break;
         } else if (node == kFree) {
           continue;
@@ -640,7 +612,6 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vect
 
   std::map<int, double> gain_per_yaw;
 
-  //voxblox::Point vec;
   Eigen::Vector3d vec;
   // offset shifts the bounding box (real-world pose initial offset); zero for the default sim case.
   double min_x = static_cast<double>(min_x_) + offset[0];
@@ -650,14 +621,12 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vect
   double max_y = static_cast<double>(max_y_) + offset[1];
   double max_z = static_cast<double>(max_z_) + offset[2];
 
-  int id = 0;
   for (theta = -180; theta < 180; theta += dtheta) {
     theta_rad = M_PI * theta / 180.0f;
     for (phi = 90 - fov_p / 2 + camera_pitch_; phi < 90 + fov_p / 2 + camera_pitch_; phi += dphi) {
       phi_rad = M_PI * phi / 180.0f;
 
       double g = 0;
-      bool occupied_ray = false;
       for (r = 0; r < r_max_; r += dr_) {
         vec[0] = camera_center.x() + r * cos(theta_rad) * sin(phi_rad);
         vec[1] = camera_center.y() + r * sin(theta_rad) * sin(phi_rad);
@@ -672,7 +641,6 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vect
         VoxelStatus node = getVoxelStatus(vec);
 
         if (node == kOccupied) {
-          occupied_ray = true;
           break;
         } else if (node == kFree) {
           continue;
@@ -851,16 +819,13 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
     }
 
     // --- B. Setup Constants. ---
-    float voxel_size = voxel_size_;
-    float gain_range = r_max_;
     float ox = cached_origin_.x(); float oy = cached_origin_.y(); float oz = cached_origin_.z();
     int dim_x = cached_dim_.x(); int dim_y = cached_dim_.y(); int dim_z = cached_dim_.z();
 
-    float fov_p_rad = fov_p_rad_;
     ScanParams sp = scanParams();
     float dtheta_rad = sp.dtheta, dphi_rad = sp.dphi, phi_start = sp.phi_start;
     int theta_bins = sp.theta_bins;
-
+  
     std::vector<float> yaw_gains(theta_bins, 0.0f);
     // Per-bin observed voxels (ALL seen, not just marginal) -> committed for the chosen window if requested.
     std::vector<std::vector<uint64_t>> seen_keys_per_bin;
@@ -869,15 +834,15 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
     // --- C. Raycasting Loop: candidate frustum minus the ancestor union. ---
     for (int t_idx = 0; t_idx < theta_bins; ++t_idx) {
       float theta = -M_PI + (t_idx * dtheta_rad);
-      for (int _r = 0, _nr = angular_bins(fov_p_rad, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
+      for (int _r = 0, _nr = angular_bins(fov_p_rad_, dphi_rad); _r < _nr; ++_r) { float phi = phi_start + _r * dphi_rad;
         float sin_phi = sin(phi);
         float dir_x = cos(theta) * sin_phi;
         float dir_y = sin(theta) * sin_phi;
         float dir_z = cos(phi);
 
-        float gx = (candidate_node->point.x() - ox) / voxel_size;
-        float gy = (candidate_node->point.y() - oy) / voxel_size;
-        float gz = (candidate_node->point.z() - oz) / voxel_size;
+        float gx = (candidate_node->point.x() - ox) / voxel_size_;
+        float gy = (candidate_node->point.y() - oy) / voxel_size_;
+        float gz = (candidate_node->point.z() - oz) / voxel_size_;
         int ix = std::floor(gx); int iy = std::floor(gy); int iz = std::floor(gz);
 
         int stepX = (dir_x > 0) ? 1 : ((dir_x < 0)) ? -1 : 0;
@@ -892,7 +857,7 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
 
         float ray_gain = 0.0f;
         float t = 0.0f;
-        float max_t = gain_range / voxel_size;
+        float max_t = r_max_ / voxel_size_;
         while (t < max_t) {
           if (ix >= 0 && ix < dim_x && iy >= 0 && iy < dim_y && iz >= 0 && iz < dim_z) {
             int flat_idx = iz * (dim_x * dim_y) + iy * dim_x + ix;
@@ -937,10 +902,10 @@ std::pair<double, double> GainEvaluator::computeMarginalGainCPU_AllAncestors(con
 
 std::vector<float> GainEvaluator::computeDepthBufferCPU(const Eigen::Vector4d& pose, const std::vector<uint8_t>& flat_map, const std::vector<float>& parent_R) {
     // 1. Setup Parameters (Exact match to GPU Wrapper)
-    float dr = (float)dr_;
-    float r_max = (float)r_max_;
-    float fov_y = (float)fov_y_rad_;
-    float fov_p = (float)fov_p_rad_;
+    float dr = dr_;
+    float r_max = r_max_;
+    float fov_y = fov_y_rad_;
+    float fov_p = fov_p_rad_;
 
     // Calculate Dimensions & Intrinsics
     int p_width = ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
@@ -1106,64 +1071,13 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     return results;
 }
 
-std::pair<double, double> GainEvaluator::computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw) {
-    // Flatten the ancestor chain, run the single-node kernel over all of them (safety check first).
-    if (d_map_ == nullptr) {
-        ROS_ERROR_THROTTLE(1.0, "[GPU] Map not cached! Call cacheMapOnGPU() first.");
-        return {0.0, 0.0};
-    }
-
-    int num_ancestors = (int)parent_positions.size();
-    if (num_ancestors == 0) {
-        // No ancestors -> no marginal subtraction possible; nothing to evaluate against.
-        return {0.0, 0.0};
-    }
-
-    int p_width = ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
-    int p_height = ceil((2.0f * r_max_ * tanf(fov_p_rad_ * 0.5f)) / dr_);
-
-    // Resize the vector to fit the result
-    size_t required_size = p_width * p_height;
-    if (result_depths.size() != required_size) {
-        result_depths.resize(required_size);
-    }
-
-    // Flatten per-ancestor pose/yaw into contiguous float arrays matching the kernel layout (x,y,z + one yaw each).
-    std::vector<float> parent_pos_flat(3 * num_ancestors);
-    std::vector<float> parent_yaw_flat(num_ancestors);
-    for (int i = 0; i < num_ancestors; ++i) {
-        parent_pos_flat[3*i + 0] = (float)parent_positions[i].x();
-        parent_pos_flat[3*i + 1] = (float)parent_positions[i].y();
-        parent_pos_flat[3*i + 2] = (float)parent_positions[i].z();
-        parent_yaw_flat[i] = (i < (int)parent_yaws.size()) ? (float)parent_yaws[i] : 0.0f;
-    }
-
-    // 1. Prepare Output Buffers
-    float results_gain = 0.0f;
-    float results_yaw = 0.0f;
-
-    // 2. Launch The Kernel Wrapper
-    GpuVec3 cand = {(float)pos_x, (float)pos_y, (float)pos_z};
-    GpuAncestors ancestors = {num_ancestors,
-                              parent_pos_flat.data(),
-                              parent_yaw_flat.data(),
-                              parent_R.data(),
-                              parent_depth.empty() ? nullptr : (float*)parent_depth.data()};
-    GpuResult out = {&results_gain, &results_yaw, result_depths.data()};
-    if (std::isnan(fixed_yaw)) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
-    else launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)fixed_yaw);
-
-    // 3. Return Result
-    return { (double)results_gain, (double)results_yaw };
-}
-
 void GainEvaluator::ensureDepthPool(int n_slots) {
     pool_per_ = depthImagePixels();
     wrapper_depth_pool_ensure(&d_depth_pool_, &pool_capacity_, n_slots, pool_per_);
 }
 
 // Batched marginal gain (pool): ancestor depth read from d_depth_pool_[depth_slot], each render written to its own slot; marginal_split = staged vs fused kernel.
-void GainEvaluator::evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes,
+void GainEvaluator::computeMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes,
                                                  bool optimize_yaw, bool marginal_split, float& kernel_ms) {
     kernel_ms = 0.0f;
     if (nodes.empty()) return;
@@ -1262,7 +1176,7 @@ void GainEvaluator::evaluateGains(const std::vector<rrt_star::Node*>& nodes, con
 
     if (cfg.marginal_gain && gpu) {
         // Marginal gain = GPU-resident pool (fused/split). Correctness vs the layered reference is a benchmark-only check.
-        evaluateMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
+        computeMarginalGainsBatched(nodes, cfg.optimize_yaw, cfg.marginal_split, marg_kernel_ms);
         if (cfg.track_absolute) fillAbsoluteGains(nodes, flat_map, cfg.eval_compute);
     } else if (!cfg.marginal_gain && gpu) {
         std::vector<double> x(nodes.size()), y(nodes.size()), z(nodes.size());
@@ -1300,55 +1214,79 @@ void GainEvaluator::evaluateGains(const std::vector<rrt_star::Node*>& nodes, con
     }
 }
 
-// Self-contained per-node reference: rebuild root->node layer by layer at each node's own yaw (fixed_mode=point[3], else re-optimized); one_parent_only=G_1parent vs whole-chain G_all. Never touches the pool/depth_buffer.
-double GainEvaluator::computeReferenceMarginalGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only, bool fixed_mode) {
+// Reference marginal gain: same skeleton as computeMarginalGainsBatched, but each node caches its own render in Node::depth_buffer (the CPU stand-in for the GPU pool) and uses single-node kernels. Renders every ancestor (stateless); sets node->gain (+point[3] when optimizing).
+void GainEvaluator::computeMarginalGains(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool one_parent_only) {
     const int per = depthImagePixels();
-    std::vector<rrt_star::Node*> chain;
-    for (rrt_star::Node* a = node; a != nullptr; a = a->parent) chain.push_back(a);
-    std::reverse(chain.begin(), chain.end());   // root first
 
-    std::vector<std::vector<float>> depth(chain.size());   // own render per chain node (empty = unrendered)
-    std::vector<double> yaw(chain.size(), 0.0);            // own chosen yaw per chain node
-    double gain = 0.0;
-    for (size_t k = 1; k < chain.size(); ++k) {            // skip root (chain[0]); layer by layer
-        std::vector<Eigen::Vector3d> anc_pos;
-        std::vector<double> anc_yaws;
-        std::vector<float> anc_R, anc_depth;
-        size_t jlo = one_parent_only ? (k - 1) : 0;        // subtraction set: parent only vs whole chain
-        for (size_t j = k; j-- > jlo; ) {                  // ancestors near->far: chain[k-1] .. chain[jlo]
-            anc_pos.push_back(chain[j]->point.head(3));
-            double yj = fixed_mode ? chain[j]->point[3] : yaw[j];
-            anc_yaws.push_back(yj);
-            std::vector<float> R = parentCamRows((float)yj);
-            anc_R.insert(anc_R.end(), R.begin(), R.end());
-            // j==0 is the root (never rendered -> unobserved sentinel); j>=1 was rendered in an earlier layer.
-            if (j == 0) anc_depth.insert(anc_depth.end(), (size_t)per, -1.0f);
-            else        anc_depth.insert(anc_depth.end(), depth[j].begin(), depth[j].end());
+    // Render set = targets + every ancestor, grouped by tree depth so a parent renders before its children read it.
+    std::unordered_set<rrt_star::Node*> in_set;
+    std::map<int, std::vector<rrt_star::Node*>> levels;
+    for (rrt_star::Node* nd : nodes)
+        for (rrt_star::Node* a = nd; a && a->parent; a = a->parent)
+            if (in_set.insert(a).second) {
+                int depth = 0;
+                for (rrt_star::Node* p = a->parent; p; p = p->parent) ++depth;
+                levels[depth].push_back(a);
+            }
+
+    // Snapshot gain/yaw of every rendered node; out-of-set ancestors are restored at the end (only input nodes keep the result).
+    std::unordered_map<rrt_star::Node*, std::pair<double, double>> saved;
+    for (const auto& level : levels)
+        for (rrt_star::Node* a : level.second) saved[a] = {a->gain, a->point[3]};
+
+    for (const auto& level : levels) {
+        for (rrt_star::Node* nd : level.second) {
+            std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
+            for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
+                anc_pos.push_back((float)a->point.x());
+                anc_pos.push_back((float)a->point.y());
+                anc_pos.push_back((float)a->point.z());
+                anc_yaw.push_back((float)a->point[3]);   // ancestors rendered earlier this call already hold their chosen yaw
+                std::vector<float> R = parentCamRows((float)a->point[3]);
+                anc_R.insert(anc_R.end(), R.begin(), R.end());
+                if (!a->depth_buffer.empty()) anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+                else                          anc_depth.insert(anc_depth.end(), (size_t)per, -1.0f);   // root: unobserved sentinel
+                if (one_parent_only) break;
+            }
+
+            std::vector<float> out_depth((size_t)per, (float)r_max_);
+            float g = 0.0f, y = 0.0f;
+            GpuVec3      cand      = {(float)nd->point.x(), (float)nd->point.y(), (float)nd->point.z()};
+            GpuAncestors ancestors = {(int)(anc_pos.size() / 3), anc_pos.data(), anc_yaw.data(), anc_R.data(), anc_depth.data()};
+            GpuResult    out       = {&g, &y, out_depth.data()};
+            if (optimize_yaw) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
+            else              launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)nd->point[3]);
+
+            nd->gain = g;
+            if (optimize_yaw) nd->point[3] = y;
+            nd->depth_buffer = std::move(out_depth);
         }
-        std::vector<float> out_d;
-        double cand_fixed = fixed_mode ? chain[k]->point[3] : NAN;
-        auto r = computeMultiAncestorMarginalGainGPU(chain[k]->point.x(), chain[k]->point.y(), chain[k]->point.z(),
-                                                     anc_pos, anc_yaws, anc_R, anc_depth, out_d, cand_fixed);
-        yaw[k] = fixed_mode ? chain[k]->point[3] : r.second; depth[k] = out_d; gain = r.first;
     }
-    out_yaw = yaw.empty() ? 0.0 : yaw.back();
-    return gain;
+
+    // Restore out-of-set ancestors (rendered only to feed a target's subtraction); input nodes keep the result.
+    std::unordered_set<rrt_star::Node*> keep(nodes.begin(), nodes.end());
+    for (const auto& kv : saved)
+        if (!keep.count(kv.first)) { kv.first->gain = kv.second.first; kv.first->point[3] = kv.second.second; }
 }
 
-// Benchmark correctness: run the batched pool, diff each node's gain vs the layered reference; returns max|dGain|, yaw_flips (out) = optimize-yaw disagreements.
-double GainEvaluator::checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips) {
+// Benchmark correctness: diff each node's batched-pool gain/yaw against the independent reference. Returns max|dGain|; yaw_flips (out).
+std::pair<double, double> GainEvaluator::checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips) {
     float ms = 0.0f;
-    evaluateMarginalGainsBatched(nodes, optimize_yaw, marginal_split, ms);
-    double max_diff = 0.0;
+    computeMarginalGainsBatched(nodes, optimize_yaw, marginal_split, ms);
+    std::vector<double> pool_gain(nodes.size()), pool_yaw(nodes.size());
+    for (size_t i = 0; i < nodes.size(); ++i) { pool_gain[i] = nodes[i]->gain; pool_yaw[i] = nodes[i]->point[3]; }
+
+    computeMarginalGains(nodes, optimize_yaw, /*one_parent_only=*/false);   // overwrites node->gain/point[3]; fills node->depth_buffer with the fresh reference render
+    double max_diff = 0.0, max_dyaw = 0.0;
     yaw_flips = 0;
-    for (rrt_star::Node* nd : nodes) {
-        double pool_gain = nd->gain, pool_yaw = nd->point[3];
-        double ref_yaw;
-        double ref_gain = computeReferenceMarginalGain(nd, ref_yaw, /*one_parent_only=*/false, /*fixed_mode=*/!optimize_yaw);
-        max_diff = std::max(max_diff, std::abs(ref_gain - pool_gain));
-        if (optimize_yaw && std::abs(ref_yaw - pool_yaw) > 1e-4) ++yaw_flips;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        max_diff = std::max(max_diff, std::abs(nodes[i]->gain - pool_gain[i]));
+        if (!optimize_yaw) continue;
+        double dyaw = std::fabs(std::remainder(nodes[i]->point[3] - pool_yaw[i], 2.0 * M_PI));   // wrapped angular diff
+        max_dyaw = std::max(max_dyaw, dyaw);
+        if (dyaw > 1e-4) ++yaw_flips;
     }
-    return max_diff;
+    return {max_diff, max_dyaw};
 }
 
 /*              COST & SCORE                 */

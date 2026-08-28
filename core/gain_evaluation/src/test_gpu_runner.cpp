@@ -30,6 +30,7 @@
 #include <algorithm>
 
 #include "gain_evaluation/gpu_raycast_launch.h"
+#include "gain_evaluation/gain_evaluator.h"
 
 // One synthetic wavefront held in host memory.
 struct Batch {
@@ -232,8 +233,223 @@ static void verify_against_reference(uint8_t* d_map, const Batch& b, int N) {
     printf("fixed-yaw launcher parity: max|fixed(opt yaw) - optimize| = %.2e   (expect ~0, same window)\n", mFixed);
 }
 
+// --cpucheck: diff the CPU raycasters against the GPU absolute launcher on a deterministic synthetic
+// map. Columns: cpuFlat = computeGainCPU_FlatMap (flat-map DDA, mirrors the GPU); legRayc/legFixd =
+// the legacy voxblox raycasters (computeGainRaycasting / computeFixedGainRaycasting, uniform-step,
+// different algorithm). The voxblox layer is populated to match flat_map so the legacy path sees it.
+static void run_cpucheck(int N) {
+    ros::NodeHandle nh("~");
+    GainEvaluator ev(nh);
+
+    const int   dim = 60;
+    const float vs  = 0.2f;
+    voxblox::Layer<voxblox::TsdfVoxel> layer(vs, 16u);
+    ev.setTsdfLayer(&layer);
+
+    // Deterministic synthetic occupancy: flat_map for the GPU/DDA path, and a matching voxblox layer
+    // (occupied: weight=1,dist=0; free: weight=1,dist>voxel; unknown: unallocated) for the legacy path.
+    Eigen::Vector3d origin(-6.0, -6.0, -1.0);
+    Eigen::Vector3i dims(dim, dim, dim);
+    std::vector<uint8_t> flat((size_t)dim * dim * dim, 2);  // default UNKNOWN
+    for (int z = 0; z < dim; ++z)
+        for (int y = 0; y < dim; ++y)
+            for (int x = 0; x < dim; ++x) {
+                size_t i = (size_t)z * dim * dim + (size_t)y * dim + x;
+                uint32_t h = ((uint32_t)x * 73856093u) ^ ((uint32_t)y * 19349663u) ^ ((uint32_t)z * 83492791u);
+                h &= 0x7fffffffu;
+                uint8_t v = 2;
+                if (h % 7 == 0)      v = 1;
+                else if (h % 3 == 0) v = 0;
+                flat[i] = v;
+                if (v == 2) continue;   // unknown -> leave the voxblox voxel unallocated
+                voxblox::Point p((float)(origin.x() + (x + 0.5) * vs),
+                                 (float)(origin.y() + (y + 0.5) * vs),
+                                 (float)(origin.z() + (z + 0.5) * vs));
+                auto block = layer.allocateBlockPtrByCoordinates(p);
+                voxblox::TsdfVoxel* voxel = block->getVoxelPtrByCoordinates(p);
+                voxel->weight   = 1.0f;
+                voxel->distance = (v == 1) ? 0.0f : (2.0f * vs);   // occupied vs free
+            }
+    ev.cacheMapOnGPU(flat, origin, dims);
+
+    double m_cpu_o = 0, m_cpu_f = 0, m_leg_o = 0, m_leg_f = 0;
+    printf("cpucheck: N=%d poses, grid=%d^3, voxel=0.2\n", N, dim);
+    printf("  pose | gpu_opt  cpuFlat  legRayc |  gpu_fix  cpuFlat  legFixd\n");
+    for (int p = 0; p < N; ++p) {
+        double x = -4.0 + std::fmod(p * 1.3, 8.0);
+        double y = -4.0 + std::fmod(p * 0.9, 8.0);
+        double z =  0.0 + std::fmod(p * 0.5, 4.0);
+        double fyaw = -M_PI + std::fmod(p * 0.6, 2.0 * M_PI);
+        Eigen::Vector4d pose(x, y, z, fyaw);
+        std::vector<double> X{x}, Y{y}, Z{z};
+
+        // optimize-yaw
+        double gpu_o = ev.computeGainBatchGPU(X, Y, Z, nullptr, nullptr)[0].first;
+        double cpu_o = ev.computeGainCPU_FlatMap(flat, pose, NAN).first;
+        double leg_o = ev.computeGainRaycasting(pose, true).first;   // legacy voxblox 360 + optimize
+        m_cpu_o = std::max(m_cpu_o, std::fabs(cpu_o - gpu_o));
+        m_leg_o = std::max(m_leg_o, std::fabs(leg_o - gpu_o));
+
+        // fixed-yaw (pose's own yaw)
+        std::vector<float> fy{(float)fyaw};
+        double gpu_f = ev.computeGainBatchGPU(X, Y, Z, &fy, nullptr)[0].first;
+        double cpu_f = ev.computeGainCPU_FlatMap(flat, pose, fyaw).first;
+        double leg_f = ev.computeFixedGainRaycasting(pose);          // legacy voxblox fixed yaw
+        m_cpu_f = std::max(m_cpu_f, std::fabs(cpu_f - gpu_f));
+        m_leg_f = std::max(m_leg_f, std::fabs(leg_f - gpu_f));
+
+        if (p < 12)
+            printf("  %4d | %7.4f  %7.4f  %7.4f | %7.4f  %7.4f  %7.4f\n",
+                   p, gpu_o, cpu_o, leg_o, gpu_f, cpu_f, leg_f);
+    }
+    printf("\ncpucheck max|x - gpu|:\n");
+    printf("  optimize:  cpuFlat=%.3e   legRaycast=%.3e\n", m_cpu_o, m_leg_o);
+    printf("  fixed:     cpuFlat=%.3e   legFixed=%.3e\n",   m_cpu_f, m_leg_f);
+}
+
+// --refcheck: build a synthetic rrt_star tree over a synthetic map, then run the real
+// checkMarginalBatchedAgainstReference (batched-pool vs the folded computeMarginalGains reference).
+// Validates the host-side orchestration of the reference (closure, depth-sort, depth cache).
+static void run_refcheck() {
+    ros::NodeHandle nh("~");
+    GainEvaluator ev(nh);
+
+    const int   dim = 60;
+    const float vs  = 0.2f;
+    voxblox::Layer<voxblox::TsdfVoxel> layer(vs, 16u);
+    ev.setTsdfLayer(&layer);
+    Eigen::Vector3d origin(-6.0, -6.0, -1.0);
+    Eigen::Vector3i dims(dim, dim, dim);
+    std::vector<uint8_t> flat((size_t)dim * dim * dim, 2);
+    for (int z = 0; z < dim; ++z)
+        for (int y = 0; y < dim; ++y)
+            for (int x = 0; x < dim; ++x) {
+                size_t i = (size_t)z * dim * dim + (size_t)y * dim + x;
+                uint32_t h = ((uint32_t)x * 73856093u) ^ ((uint32_t)y * 19349663u) ^ ((uint32_t)z * 83492791u);
+                if ((h & 0x7fffffffu) % 7 == 0) flat[i] = 1;
+                else if ((h & 0x7fffffffu) % 3 == 0) flat[i] = 0;
+            }
+    ev.cacheMapOnGPU(flat, origin, dims);
+
+    // Synthetic tree: root + 4 levels, branching 2; deterministic spread inside the grid.
+    std::vector<std::unique_ptr<rrt_star::Node>> storage;
+    auto mk = [&](double x, double y, double z, double yaw, rrt_star::Node* parent) -> rrt_star::Node* {
+        auto n = std::make_unique<rrt_star::Node>(Eigen::Vector4d(x, y, z, yaw));
+        n->parent = parent;
+        n->depth_slot = (int)storage.size();
+        rrt_star::Node* p = n.get();
+        storage.push_back(std::move(n));
+        return p;
+    };
+    rrt_star::Node* root = mk(0.0, 0.0, 1.0, 0.0, nullptr);   // depth_slot 0 = sentinel
+    std::vector<rrt_star::Node*> frontier{root};
+    int counter = 0;
+    for (int lvl = 0; lvl < 4; ++lvl) {
+        std::vector<rrt_star::Node*> next;
+        for (rrt_star::Node* par : frontier) {
+            for (int b = 0; b < 2; ++b) {
+                ++counter;
+                double ang = counter * 1.1;
+                double x = std::max(-4.5, std::min(4.5, par->point.x() + 0.6 * std::cos(ang)));
+                double y = std::max(-4.5, std::min(4.5, par->point.y() + 0.6 * std::sin(ang)));
+                double z = std::max(0.2,  std::min(3.5, par->point.z() + 0.3 * std::sin(ang * 0.5)));
+                double yaw = -M_PI + std::fmod(counter * 0.7, 2.0 * M_PI);
+                next.push_back(mk(x, y, z, yaw, par));
+            }
+        }
+        frontier = next;
+    }
+    std::vector<rrt_star::Node*> nodes;
+    for (auto& up : storage) if (up->parent) nodes.push_back(up.get());   // non-root
+
+    long flips = 0;
+    double d_fused = ev.checkMarginalBatchedAgainstReference(nodes, /*optimize=*/true,  /*split=*/false, flips).first;
+    double d_split = ev.checkMarginalBatchedAgainstReference(nodes, /*optimize=*/true,  /*split=*/true,  flips).first;
+    double d_fixed = ev.checkMarginalBatchedAgainstReference(nodes, /*optimize=*/false, /*split=*/false, flips).first;
+    printf("refcheck: %zu tree nodes | batched-vs-reference max|dGain|:  fused=%.3e  split=%.3e  fixed=%.3e\n",
+           nodes.size(), d_fused, d_split, d_fixed);
+    printf("          (expect ~1e-5 atomic-order floor; large => reference/fold bug)\n");
+}
+
+// --batchcheck: mimic the planner's INCREMENTAL per-batch flow. Render the tree one depth level at a time via
+// computeMarginalGainsBatched (so every node's parent is out-of-set -- in a PRIOR batch, read from the persistent
+// depth pool), then compare each node's gain to the stateless fresh reference. This is the case --verify and
+// --refcheck do NOT cover (they render all nodes in one call). Large diff => the pool mishandles out-of-set ancestors.
+static void run_batchcheck() {
+    ros::NodeHandle nh("~");
+    GainEvaluator ev(nh);
+    const int dim = 60; const float vs = 0.2f;
+    voxblox::Layer<voxblox::TsdfVoxel> layer(vs, 16u);
+    ev.setTsdfLayer(&layer);
+    Eigen::Vector3d origin(-6.0, -6.0, -1.0);
+    Eigen::Vector3i dims(dim, dim, dim);
+    std::vector<uint8_t> flat((size_t)dim * dim * dim, 2);
+    for (int z = 0; z < dim; ++z) for (int y = 0; y < dim; ++y) for (int x = 0; x < dim; ++x) {
+        size_t i = (size_t)z * dim * dim + (size_t)y * dim + x;
+        uint32_t h = ((uint32_t)x * 73856093u) ^ ((uint32_t)y * 19349663u) ^ ((uint32_t)z * 83492791u);
+        if ((h & 0x7fffffffu) % 7 == 0) flat[i] = 1; else if ((h & 0x7fffffffu) % 3 == 0) flat[i] = 0;
+    }
+    ev.cacheMapOnGPU(flat, origin, dims);
+
+    std::vector<std::unique_ptr<rrt_star::Node>> storage;
+    auto mk = [&](double x, double y, double z, double yaw, rrt_star::Node* parent) -> rrt_star::Node* {
+        auto n = std::make_unique<rrt_star::Node>(Eigen::Vector4d(x, y, z, yaw));
+        n->parent = parent; n->depth_slot = (int)storage.size();
+        rrt_star::Node* p = n.get(); storage.push_back(std::move(n)); return p;
+    };
+    rrt_star::Node* root = mk(0.0, 0.0, 1.0, 0.0, nullptr);
+    std::vector<rrt_star::Node*> frontier{root};
+    int counter = 0;
+    for (int lvl = 0; lvl < 5; ++lvl) {
+        std::vector<rrt_star::Node*> next;
+        for (rrt_star::Node* par : frontier) for (int b = 0; b < 2; ++b) {
+            ++counter; double ang = counter * 1.1;
+            double x = std::max(-4.5, std::min(4.5, par->point.x() + 0.6 * std::cos(ang)));
+            double y = std::max(-4.5, std::min(4.5, par->point.y() + 0.6 * std::sin(ang)));
+            double z = std::max(0.2,  std::min(3.5, par->point.z() + 0.3 * std::sin(ang * 0.5)));
+            double yaw = -M_PI + std::fmod(counter * 0.7, 2.0 * M_PI);
+            next.push_back(mk(x, y, z, yaw, par));
+        }
+        frontier = next;
+    }
+    std::vector<rrt_star::Node*> nodes;
+    for (auto& up : storage) if (up->parent) nodes.push_back(up.get());
+
+    // Group by tree depth, then feed ONE level at a time (parents live in the previous level's batch = out-of-set).
+    std::map<int, std::vector<rrt_star::Node*>> levels;
+    for (rrt_star::Node* nd : nodes) { int d = 0; for (rrt_star::Node* a = nd->parent; a; a = a->parent) ++d; levels[d].push_back(nd); }
+
+    float ms = 0.0f;
+    for (auto& kv : levels) ev.computeMarginalGainsBatched(kv.second, /*optimize=*/true, /*split=*/false, ms);
+    std::unordered_map<rrt_star::Node*, double> incr;
+    for (rrt_star::Node* nd : nodes) incr[nd] = nd->gain;
+
+    ev.computeMarginalGains(nodes, /*optimize=*/true, /*one_parent_only=*/false);   // overwrites node->gain with the fresh reference
+    double maxd = 0.0; int worst = -1;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        double d = std::fabs(incr[nodes[i]] - nodes[i]->gain);
+        if (d > maxd) { maxd = d; worst = (int)i; }
+    }
+    printf("batchcheck: %zu nodes across %zu per-level batches (out-of-set ancestors read from pool)\n", nodes.size(), levels.size());
+    printf("  incremental-pool vs fresh-reference  max|dGain| = %.3e  (worst node %d: pool=%.5f ref=%.5f)\n",
+           maxd, worst, worst >= 0 ? incr[nodes[worst]] : 0.0, worst >= 0 ? nodes[worst]->gain : 0.0);
+    printf("  ~1e-5 => pool handles out-of-set ancestors correctly;  large => the aliasing/staleness bug is live.\n");
+}
+
 int main(int argc, char** argv) {
     ros::init(argc, argv, "gpu_arch_bench");
+    if (argc >= 2 && strcmp(argv[1], "--batchcheck") == 0) { run_batchcheck(); return 0; }
+
+    if (argc >= 2 && strcmp(argv[1], "--refcheck") == 0) {
+        run_refcheck();
+        return 0;
+    }
+
+    if (argc >= 2 && strcmp(argv[1], "--cpucheck") == 0) {
+        int N = (argc > 2) ? atoi(argv[2]) : 64;
+        run_cpucheck(N);
+        return 0;
+    }
 
     if (argc >= 2 && strcmp(argv[1], "--verify") == 0) {
         int N = (argc > 2) ? atoi(argv[2]) : 64;

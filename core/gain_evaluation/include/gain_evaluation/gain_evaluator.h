@@ -17,6 +17,7 @@
 #include <gain_evaluation/gpu_raycast_launch.h>
 
 #include <unordered_set>
+#include <unordered_map>
 #include <cmath>
 #include <chrono>
 
@@ -75,8 +76,8 @@ class GainEvaluator {
 
   // Depth-image pixel count (p_width*p_height) shared by every ancestor buffer.
   int depthImagePixels() const {
-    int w = (int)std::ceil((2.0 * r_max_ * std::tan(fov_y_rad_ * 0.5)) / dr_);
-    int h = (int)std::ceil((2.0 * r_max_ * std::tan(fov_p_rad_ * 0.5)) / dr_);
+    int w = (int)std::ceil((2.0f * r_max_ * tanf(fov_y_rad_ * 0.5f)) / dr_);
+    int h = (int)std::ceil((2.0f * r_max_ * tanf(fov_p_rad_ * 0.5f)) / dr_);
     return w * h;
   }
 
@@ -131,14 +132,11 @@ class GainEvaluator {
   // Batched absolute gain. fixed_yaws (optional): eval the FOV window at each yaw vs optimize. kernel_ms (optional): device time (ms).
   std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr, float* kernel_ms = nullptr);
 
-  // Multi-ancestor marginal gain: single-node GPU kernel over the full ancestor chain (traverses observed-free spans, never reseats the DDA).
-  std::pair<double, double> computeMultiAncestorMarginalGainGPU(const double pos_x, const double pos_y, const double pos_z, const std::vector<Eigen::Vector3d>& parent_positions, const std::vector<double>& parent_yaws, std::vector<float>& parent_R, const std::vector<float>& parent_depth, std::vector<float>& result_depths, double fixed_yaw = NAN);
-
   // Grow the persistent depth pool to >= n_slots (preserving contents).
   void ensureDepthPool(int n_slots);
 
   // Batched multi-ancestor marginal gain, GPU-resident-pool (fused/split); kernel time accumulated into kernel_ms.
-  void evaluateMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
+  void computeMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
                                     bool marginal_split, float& kernel_ms);
 
   // Own-view (absolute) gain for nodes whose absolute_gain is unset (< 0), used by AEP global scoring.
@@ -161,11 +159,11 @@ class GainEvaluator {
   void evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
                      const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms);
 
-  // Independent layered reference for one node (own yaws/renders; ignores depth_buffer/point[3]).
-  double computeReferenceMarginalGain(rrt_star::Node* node, double& out_yaw, bool one_parent_only = false, bool fixed_mode = false);
+  // Reference marginal gain: sets node->gain (+point[3] when optimizing) like computeMarginalGainsBatched, but with a host CPU depth pool + single-node kernels. Never touches the GPU pool.
+  void computeMarginalGains(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool one_parent_only = false);
 
-  // Benchmark correctness: run the batched pool, diff each node's gain vs the layered reference; returns max|dGain|, yaw_flips (out) = yaw disagreements.
-  double checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips);
+  // Benchmark correctness: diff batched-pool gain/yaw vs the reference; returns max|dGain|, yaw_flips (out).
+  std::pair<double, double> checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips);   // {max|dGain|, max|dYaw|}
 
 
   /*              COST & SCORE                 */
@@ -211,17 +209,15 @@ class GainEvaluator {
 
   // NON-OWNED pointer to the tsdf layer to use for evaluating exploration gain.
   voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer_;
-  voxblox::Layer<voxblox::EsdfVoxel>* esdf_layer_;
   voxblox::EsdfMap::Ptr esdf_map_;
   voxblox::CameraModel cam_model_;
 
   // Get map Bounds
   float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;
-  float gain_range_;
-  double fov_y_rad_, fov_p_rad_;
-  double r_max_;
-  double dr_ = 0.2;
-  double camera_pitch_;
+  float fov_y_rad_, fov_p_rad_;
+  float r_max_;
+  float dr_ = 0.2f;
+  float camera_pitch_;
 
   int yaw_samples_;
 
