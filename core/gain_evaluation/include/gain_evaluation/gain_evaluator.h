@@ -116,11 +116,6 @@ class GainEvaluator {
 
   /*              GAIN - CPU, MARGINAL                 */
 
-  void populateParentHistory(const std::vector<uint8_t>& flat_map, rrt_star::Node* node);
-
-  // fixed_yaw (optional): evaluate the FOV window at that yaw instead of optimizing.
-  std::pair<double, double> computeMarginalGainCPU_HashMap(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw = NAN);
-
   // All-ancestors CPU marginal gain (one_parent_only = parent only; commit_observed stores the view for descendants, needs shallow-first callers).
   std::pair<double, double> computeMarginalGainCPU_AllAncestors(const std::vector<uint8_t>& flat_map, rrt_star::Node* candidate_node, double fixed_yaw = NAN, bool one_parent_only = false, bool commit_observed = false);
 

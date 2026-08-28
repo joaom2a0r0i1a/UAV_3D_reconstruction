@@ -15,6 +15,8 @@
 class rrt_star {
 public:
 
+    /* ----------------------- Data types ----------------------- */
+
     struct Node {
         Eigen::Vector4d point;
         Node* parent;
@@ -84,47 +86,46 @@ public:
 
     // Define the type for the KD-tree
     typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<nanoflann::L2_Simple_Adaptor<double, KDTree_data>, KDTree_data, 3> Tree;
-    
-    rrt_star();
 
-    // Optional straight-edge collision check (set by the planner). Empty => skip edge checks (open envs).
-    // chooseParent()/rewire() will refuse any edge for which this returns false.
-    using EdgeChecker = std::function<bool(const Eigen::Vector3d&, const Eigen::Vector3d&)>;
-    void setEdgeCollisionChecker(EdgeChecker fn) { edge_free_ = std::move(fn); }
+
+    /* ----------------------- Construction & tree mutation ----------------------- */
 
     // Takes ownership of node and returns a non-owning observer to it.
     Node* addKDTreeNode(std::unique_ptr<Node> node);
 
     void clearKDTree();
 
+    void initializeKDTreeWithNodes(std::vector<std::unique_ptr<Node>>& nodes);
+
     // Read-only view of every node the tree owns (index 0 is the root). Non-owning use only.
     inline const std::vector<std::unique_ptr<Node>>& getNodes() const { return tree_data_.data; }
 
-    void initializeKDTreeWithNodes(std::vector<std::unique_ptr<Node>>& nodes);
+    // Optional straight-edge collision check (set by the planner). Empty => skip edge checks (open envs).
+    // chooseParent()/rewire() will refuse any edge for which this returns false.
+    using EdgeChecker = std::function<bool(const Eigen::Vector3d&, const Eigen::Vector3d&)>;
+    void setEdgeCollisionChecker(EdgeChecker fn) { edge_free_ = std::move(fn); }
 
-    Eigen::Vector3d sampleSpace(double dim_x, double dim_y, double dim_z);
+
+    /* ----------------------- Sampling ----------------------- */
 
     void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
 
     void computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result);
 
-    void computeYaw(double radius, double& result);
 
-    void findNearest(const std::vector<std::unique_ptr<Node>>& tree, const Eigen::Vector3d& point, Node*& nearestNode);
+    /* ----------------------- Nearest / nearby queries ----------------------- */
 
     void findNearestKD(const Eigen::Vector3d& point, Node*& nearestNode);
 
-    void steer(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& result);
+    void findNearbyKD(Node* point, double radius, std::vector<Node*>& nearbyNodes);
+
+
+    /* ----------------------- Steering ----------------------- */
 
     void steer_parent(Node* fromNode, const Eigen::Vector3d& toPoint, double stepSize, std::unique_ptr<Node>& new_node, bool fixed_step = false, double minEdge = 0.0);
 
-    bool collides(const Eigen::Vector3d& point, const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles);
 
-    void findNearby(const std::vector<std::unique_ptr<Node>>& tree, Node* point, double radius, std::vector<Node*>& nearbyNodes);
-
-    void findNearbyKD(Node* point, double radius, std::vector<Node*>& nearbyNodes);
-
-    void findNearbyKDRadius(const Node* point, double radius, std::vector<Node*>& nearbyNodes);
+    /* ----------------------- RRT* wiring ----------------------- */
 
     void chooseParent(Node* point, const std::vector<Node*>& nearbyNodes);
 
@@ -133,18 +134,19 @@ public:
     // After a re-parent, recompute descendant costs by walking the children links.
     void propagateCost(Node* node);
 
-    double calculateYawAngle(Node* node1, Node* node2);
+
+    /* ----------------------- Path extraction ----------------------- */
 
     void backtrackPathNode(Node* node, std::vector<Eigen::Vector4d>& path, Node*& nextBestNode);
 
     // Fills path with owning deep copies of the branch (root -> node), so it outlives clearKDTree().
     void backtrackPathAEP(Node* node, std::vector<std::unique_ptr<Node>>& path);
 
-    bool rrtStar(const Eigen::Vector4d& start, const Eigen::Vector4d& goal,
-                const std::vector<std::pair<Eigen::Vector3d, double>>& obstacles,
-                double dim_x, double dim_y, double dim_z, int max_iter,
-                double step_size, double radius, double tolerance,
-                std::vector<std::unique_ptr<Node>>& tree, std::vector<Eigen::Vector4d>& path);
+
+    /* ----------------------- Static utilities ----------------------- */
+
+    // Stable shallow-first order (parents before children); walks parent pointers.
+    static void sortByDepth(std::vector<Node*>& nodes);
 
 private:
     std::unique_ptr<Tree> kdtree_;
@@ -153,4 +155,3 @@ private:
 };
 
 #endif // RRT_STAR_H
-

@@ -172,9 +172,6 @@ void NBVPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
     segment_evaluator.evaluateGains(nodes, flat_map_, cfg, last_marg_kernel_ms_, last_abs_kernel_ms_);
 }
 
-// Order nodes shallow-first so cumulative scoring sees each parent before its children.
-void NBVPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { planner_helpers::sortByDepth(nodes); }
-
 std::vector<rrt_star::Node*> NBVPlanner::collectTreeNodes() { return planner_helpers::collectTreeNodes(RRTStar); }
 
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.

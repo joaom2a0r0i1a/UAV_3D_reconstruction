@@ -370,15 +370,12 @@ void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
 }
 
 
-// Order nodes shallow-first so cumulative scoring sees each parent before its children.
-void AEPlanner::sortByDepth(std::vector<rrt_star::Node*>& nodes) { planner_helpers::sortByDepth(nodes); }
-
 std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() { return planner_helpers::collectTreeNodes(RRTStar); }
 
 // Telescoped path-union root->node: path_sum[n] = path_sum[parent] + (use_marginal ? gain : absolute_gain). Local scratch for global scoring.
 std::unordered_map<rrt_star::Node*, double> AEPlanner::pathUnion(rrt_star::Node* root_ptr, bool use_marginal) {
     std::vector<rrt_star::Node*> tree = collectTreeNodes();
-    sortByDepth(tree);   // parents before children so each path_sum[parent] is ready
+    rrt_star::sortByDepth(tree);   // parents before children so each path_sum[parent] is ready
     std::unordered_map<rrt_star::Node*, double> path_sum{{root_ptr, 0.0}};
     for (rrt_star::Node* n : tree)
         path_sum[n] = path_sum[n->parent] + (use_marginal ? n->gain : n->absolute_gain);

@@ -69,7 +69,6 @@ public:
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "nbvp");
     std::vector<rrt_star::Node*> collectTreeNodes();
-    void sortByDepth(std::vector<rrt_star::Node*>& nodes);
     void logTreeNodes();
 
     bool inBoundingBox(const Eigen::Vector4d& p) const;

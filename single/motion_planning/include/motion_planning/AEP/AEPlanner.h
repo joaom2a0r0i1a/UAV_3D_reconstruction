@@ -79,7 +79,6 @@ public:
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "local");
     std::vector<rrt_star::Node*> collectTreeNodes();
-    void sortByDepth(std::vector<rrt_star::Node*>& nodes);
     std::unordered_map<rrt_star::Node*, double> pathUnion(rrt_star::Node* root_ptr, bool use_marginal);
     void cacheHighGainNodes();
     void logTreeNodes();

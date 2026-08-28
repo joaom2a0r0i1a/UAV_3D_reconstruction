@@ -65,12 +65,6 @@ std::vector<rrt_star::Node*> collectTreeNodes(rrt_star& tree) {
     return nodes;
 }
 
-void sortByDepth(std::vector<rrt_star::Node*>& nodes) {
-    auto depth = [](rrt_star::Node* n) { int d = 0; for (auto* p = n->parent; p; p = p->parent) ++d; return d; };
-    std::stable_sort(nodes.begin(), nodes.end(),
-                     [&](rrt_star::Node* a, rrt_star::Node* b) { return depth(a) < depth(b); });
-}
-
 bool inBoundingBox(const Eigen::Vector4d& p, float min_x, float max_x, float min_y, float max_y, float min_z, float max_z) {
     return p[0] >= min_x && p[0] <= max_x &&
            p[1] >= min_y && p[1] <= max_y &&
@@ -279,7 +273,7 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
 
     // CPU marginal baselines, depth-sequential so each node subtracts its ancestors' committed views.
     std::vector<rrt_star::Node*> depth_nodes = nodes;
-    sortByDepth(depth_nodes);
+    rrt_star::sortByDepth(depth_nodes);
     rrt_star::Node* tree_root = depth_nodes.empty() ? nullptr : depth_nodes.front();
     while (tree_root && tree_root->parent) tree_root = tree_root->parent;
 
@@ -288,10 +282,11 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
         for (rrt_star::Node* nd : depth_nodes) nd->observed_unknown_voxels.clear();
     };
 
+    std::unordered_map<rrt_star::Node*, double> g1p_of;
     clear_observed();
     auto t0_g1p = std::chrono::high_resolution_clock::now();
     for (rrt_star::Node* nd : depth_nodes)
-        seg.computeMarginalGainCPU_AllAncestors(flat_map, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/true, /*commit_observed=*/true);
+        g1p_of[nd] = seg.computeMarginalGainCPU_AllAncestors(flat_map, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/true, /*commit_observed=*/true).first;
     double t_g1p_cpu = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0_g1p).count();
 
     std::unordered_map<rrt_star::Node*, double> gall_of;
@@ -301,8 +296,8 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
         gall_of[nd] = seg.computeMarginalGainCPU_AllAncestors(flat_map, nd, optimize_yaw ? NAN : nd->point[3], /*one_parent_only=*/false, /*commit_observed=*/true).first;
     double t_gall_cpu = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - t0_gall).count();
 
-    std::vector<double> g_gall_cpu(n);
-    for (size_t i = 0; i < n; ++i) g_gall_cpu[i] = gall_of[nodes[i]];   // back to input order for the CSV
+    std::vector<double> g_g1p_cpu(n), g_gall_cpu(n);
+    for (size_t i = 0; i < n; ++i) { g_g1p_cpu[i] = g1p_of[nodes[i]]; g_gall_cpu[i] = gall_of[nodes[i]]; }   // back to input order for the CSV
 
     ROS_INFO("[X2cpu] nodes=%zu cpu_absolute_ms=%.3f cpu_gain_1parent_ms=%.3f", n, t_abs_cpu, t_g1p_cpu);
     ROS_INFO("[X1cpu] nodes=%zu cpu_gain_all_ms=%.3f", n, t_gall_cpu);
@@ -314,22 +309,18 @@ void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& node
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
         double ref_y; double g1p_gpu = seg.computeReferenceMarginalGain(nd, ref_y, /*one_parent_only=*/true, /*fixed_mode=*/!optimize_yaw);
-        double saved = nd->gain;
-        if (nd->parent && nd->parent->parent) seg.populateParentHistory(flat_map, nd->parent);
-        double g1p_cpu = seg.computeMarginalGainCPU_HashMap(flat_map, nd, nd->point[3]).first;
-        nd->gain = saved;
 
-        double err = std::fabs(g1p_gpu - g1p_cpu);
+        double err = std::fabs(g1p_gpu - g_g1p_cpu[i]);
         acc.g1p_err_sum += err;
         if (err > acc.g1p_err_max) acc.g1p_err_max = err;
 
         if (x1.is_open()) {
             int depth = 0; for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++depth;
             x1 << replan_count << ',' << depth << ',' << g_abs_cpu[i] << ',' << g_abs_gpu[i] << ','
-               << g1p_cpu << ',' << g1p_gpu << ',' << g_gall_cpu[i] << ',' << g_gall_gpu[i] << '\n';
+               << g_g1p_cpu[i] << ',' << g1p_gpu << ',' << g_gall_cpu[i] << ',' << g_gall_gpu[i] << '\n';
         } else {
             ROS_INFO("[BENCH][%s] gall_gpu=%7.3f split=%7.3f | g1p_gpu=%7.3f g1p_cpu=%7.3f err=%.4f | abs_gpu=%7.3f abs_cpu=%7.3f",
-                     phase, g_gall_gpu[i], g_gall_split[i], g1p_gpu, g1p_cpu, err, g_abs_gpu[i], g_abs_cpu[i]);
+                     phase, g_gall_gpu[i], g_gall_split[i], g1p_gpu, g_g1p_cpu[i], err, g_abs_gpu[i], g_abs_cpu[i]);
         }
     }
 }
