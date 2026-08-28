@@ -1031,6 +1031,11 @@ std::vector<float> GainEvaluator::parentCamRows(float yaw) const {
               cos_p * cos_y,  cos_p * sin_y, -sin_p };
 }
 
+void GainEvaluator::ensureDepthPool(int n_slots) {
+    pool_per_ = depthImagePixels();
+    wrapper_depth_pool_ensure(&d_depth_pool_, &pool_capacity_, n_slots, pool_per_);
+}
+
 std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws, float* kernel_ms) {
     // 0. Safety Check
     if (d_map_ == nullptr) {
@@ -1071,9 +1076,59 @@ std::vector<std::pair<double, double>> GainEvaluator::computeGainBatchGPU(const 
     return results;
 }
 
-void GainEvaluator::ensureDepthPool(int n_slots) {
-    pool_per_ = depthImagePixels();
-    wrapper_depth_pool_ensure(&d_depth_pool_, &pool_capacity_, n_slots, pool_per_);
+// Reference marginal gain: same skeleton as computeMarginalGainsBatched, but each node caches its own render in Node::depth_buffer (the CPU stand-in for the GPU pool) and uses single-node kernels. Renders every ancestor (stateless); sets node->gain (+point[3] when optimizing).
+void GainEvaluator::computeMarginalGains(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool one_parent_only) {
+    const int per = depthImagePixels();
+
+    // Render set = targets + every ancestor, grouped by tree depth so a parent renders before its children read it.
+    std::unordered_set<rrt_star::Node*> in_set;
+    std::map<int, std::vector<rrt_star::Node*>> levels;
+    for (rrt_star::Node* nd : nodes)
+        for (rrt_star::Node* a = nd; a && a->parent; a = a->parent)
+            if (in_set.insert(a).second) {
+                int depth = 0;
+                for (rrt_star::Node* p = a->parent; p; p = p->parent) ++depth;
+                levels[depth].push_back(a);
+            }
+
+    // Snapshot gain/yaw of every rendered node; out-of-set ancestors are restored at the end (only input nodes keep the result).
+    std::unordered_map<rrt_star::Node*, std::pair<double, double>> saved;
+    for (const auto& level : levels)
+        for (rrt_star::Node* a : level.second) saved[a] = {a->gain, a->point[3]};
+
+    for (const auto& level : levels) {
+        for (rrt_star::Node* nd : level.second) {
+            std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
+            for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
+                anc_pos.push_back((float)a->point.x());
+                anc_pos.push_back((float)a->point.y());
+                anc_pos.push_back((float)a->point.z());
+                anc_yaw.push_back((float)a->point[3]);   // ancestors rendered earlier this call already hold their chosen yaw
+                std::vector<float> R = parentCamRows((float)a->point[3]);
+                anc_R.insert(anc_R.end(), R.begin(), R.end());
+                if (!a->depth_buffer.empty()) anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
+                else                          anc_depth.insert(anc_depth.end(), (size_t)per, -1.0f);   // root: unobserved sentinel
+                if (one_parent_only) break;
+            }
+
+            std::vector<float> out_depth((size_t)per, (float)r_max_);
+            float g = 0.0f, y = 0.0f;
+            GpuVec3      cand      = {(float)nd->point.x(), (float)nd->point.y(), (float)nd->point.z()};
+            GpuAncestors ancestors = {(int)(anc_pos.size() / 3), anc_pos.data(), anc_yaw.data(), anc_R.data(), anc_depth.data()};
+            GpuResult    out       = {&g, &y, out_depth.data()};
+            if (optimize_yaw) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
+            else              launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)nd->point[3]);
+
+            nd->gain = g;
+            if (optimize_yaw) nd->point[3] = y;
+            nd->depth_buffer = std::move(out_depth);
+        }
+    }
+
+    // Restore out-of-set ancestors (rendered only to feed a target's subtraction); input nodes keep the result.
+    std::unordered_set<rrt_star::Node*> keep(nodes.begin(), nodes.end());
+    for (const auto& kv : saved)
+        if (!keep.count(kv.first)) { kv.first->gain = kv.second.first; kv.first->point[3] = kv.second.second; }
 }
 
 // Batched marginal gain (pool): ancestor depth read from d_depth_pool_[depth_slot], each render written to its own slot; marginal_split = staged vs fused kernel.
@@ -1212,61 +1267,6 @@ void GainEvaluator::evaluateGains(const std::vector<rrt_star::Node*>& nodes, con
             if (cfg.track_absolute) { nd->absolute_gain = r.first; nd->absolute_yaw = r.second; }
         }
     }
-}
-
-// Reference marginal gain: same skeleton as computeMarginalGainsBatched, but each node caches its own render in Node::depth_buffer (the CPU stand-in for the GPU pool) and uses single-node kernels. Renders every ancestor (stateless); sets node->gain (+point[3] when optimizing).
-void GainEvaluator::computeMarginalGains(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool one_parent_only) {
-    const int per = depthImagePixels();
-
-    // Render set = targets + every ancestor, grouped by tree depth so a parent renders before its children read it.
-    std::unordered_set<rrt_star::Node*> in_set;
-    std::map<int, std::vector<rrt_star::Node*>> levels;
-    for (rrt_star::Node* nd : nodes)
-        for (rrt_star::Node* a = nd; a && a->parent; a = a->parent)
-            if (in_set.insert(a).second) {
-                int depth = 0;
-                for (rrt_star::Node* p = a->parent; p; p = p->parent) ++depth;
-                levels[depth].push_back(a);
-            }
-
-    // Snapshot gain/yaw of every rendered node; out-of-set ancestors are restored at the end (only input nodes keep the result).
-    std::unordered_map<rrt_star::Node*, std::pair<double, double>> saved;
-    for (const auto& level : levels)
-        for (rrt_star::Node* a : level.second) saved[a] = {a->gain, a->point[3]};
-
-    for (const auto& level : levels) {
-        for (rrt_star::Node* nd : level.second) {
-            std::vector<float> anc_pos, anc_yaw, anc_R, anc_depth;
-            for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) {
-                anc_pos.push_back((float)a->point.x());
-                anc_pos.push_back((float)a->point.y());
-                anc_pos.push_back((float)a->point.z());
-                anc_yaw.push_back((float)a->point[3]);   // ancestors rendered earlier this call already hold their chosen yaw
-                std::vector<float> R = parentCamRows((float)a->point[3]);
-                anc_R.insert(anc_R.end(), R.begin(), R.end());
-                if (!a->depth_buffer.empty()) anc_depth.insert(anc_depth.end(), a->depth_buffer.begin(), a->depth_buffer.end());
-                else                          anc_depth.insert(anc_depth.end(), (size_t)per, -1.0f);   // root: unobserved sentinel
-                if (one_parent_only) break;
-            }
-
-            std::vector<float> out_depth((size_t)per, (float)r_max_);
-            float g = 0.0f, y = 0.0f;
-            GpuVec3      cand      = {(float)nd->point.x(), (float)nd->point.y(), (float)nd->point.z()};
-            GpuAncestors ancestors = {(int)(anc_pos.size() / 3), anc_pos.data(), anc_yaw.data(), anc_R.data(), anc_depth.data()};
-            GpuResult    out       = {&g, &y, out_depth.data()};
-            if (optimize_yaw) launch_marginal_gain(gpuMap(), cand, ancestors, out, gpuSensor());
-            else              launch_marginal_gain_fixed(gpuMap(), cand, ancestors, out, gpuSensor(), (float)nd->point[3]);
-
-            nd->gain = g;
-            if (optimize_yaw) nd->point[3] = y;
-            nd->depth_buffer = std::move(out_depth);
-        }
-    }
-
-    // Restore out-of-set ancestors (rendered only to feed a target's subtraction); input nodes keep the result.
-    std::unordered_set<rrt_star::Node*> keep(nodes.begin(), nodes.end());
-    for (const auto& kv : saved)
-        if (!keep.count(kv.first)) { kv.first->gain = kv.second.first; kv.first->point[3] = kv.second.second; }
 }
 
 // Benchmark correctness: diff each node's batched-pool gain/yaw against the independent reference. Returns max|dGain|; yaw_flips (out).

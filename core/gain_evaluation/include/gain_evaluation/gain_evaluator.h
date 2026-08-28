@@ -129,11 +129,14 @@ class GainEvaluator {
   // Per-node camera basis rows (Right, Forward-down-pitched, ...) for a yaw, at the configured camera pitch.
   std::vector<float> parentCamRows(float yaw) const;
 
+  // Grow the persistent depth pool to >= n_slots (preserving contents).
+  void ensureDepthPool(int n_slots);
+
   // Batched absolute gain. fixed_yaws (optional): eval the FOV window at each yaw vs optimize. kernel_ms (optional): device time (ms).
   std::vector<std::pair<double, double>> computeGainBatchGPU(const std::vector<double>& pos_x, const std::vector<double>& pos_y, const std::vector<double>& pos_z, const std::vector<float>* fixed_yaws = nullptr, float* kernel_ms = nullptr);
 
-  // Grow the persistent depth pool to >= n_slots (preserving contents).
-  void ensureDepthPool(int n_slots);
+  // Reference marginal gain: sets node->gain (+point[3] when optimizing) like computeMarginalGainsBatched, but with a host CPU depth pool + single-node kernels. Never touches the GPU pool.
+  void computeMarginalGains(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool one_parent_only = false);
 
   // Batched multi-ancestor marginal gain, GPU-resident-pool (fused/split); kernel time accumulated into kernel_ms.
   void computeMarginalGainsBatched(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw,
@@ -158,9 +161,6 @@ class GainEvaluator {
   // Unified gain eval: sets node->gain (+point[3] when optimizing, +absolute_* when tracked); kernel times into marg/abs_kernel_ms.
   void evaluateGains(const std::vector<rrt_star::Node*>& nodes, const std::vector<uint8_t>& flat_map,
                      const GainConfig& cfg, float& marg_kernel_ms, float& abs_kernel_ms);
-
-  // Reference marginal gain: sets node->gain (+point[3] when optimizing) like computeMarginalGainsBatched, but with a host CPU depth pool + single-node kernels. Never touches the GPU pool.
-  void computeMarginalGains(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool one_parent_only = false);
 
   // Benchmark correctness: diff batched-pool gain/yaw vs the reference; returns max|dGain|, yaw_flips (out).
   std::pair<double, double> checkMarginalBatchedAgainstReference(const std::vector<rrt_star::Node*>& nodes, bool optimize_yaw, bool marginal_split, long& yaw_flips);   // {max|dGain|, max|dYaw|}
