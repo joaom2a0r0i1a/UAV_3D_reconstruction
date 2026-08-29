@@ -264,7 +264,7 @@ eval_campaign(){  # uses: WORLD, ALL_LABELS, LABELS_CSV, KEEP_FOLDER, SUMMARY
     # Thin voxblox maps -> keep every MAP_KEEP-th + the last (volumes now in the CSV, maps redundant). Guarded: skips un-evaluated runs.
     docker exec noetic_ws bash -lc '
       source /home/ros1/ros1_motion_ws/devel/setup.bash
-      python3 $(rospack find motion_planning)/scripts/eval/thin_maps.py $(rospack find motion_planning)/data/'"$L"' '"${MAP_KEEP:-5}"'' \
+      python3 $(rospack find motion_planning)/scripts/evaluation/analysis/thin_maps.py $(rospack find motion_planning)/data/'"$L"' '"${MAP_KEEP:-5}"'' \
       >>"$LOGDIR/stage1_${L}_${suffix}.log" 2>&1
     log "  thinned maps (keep every ${MAP_KEEP:-5}th + last) for $L"
   done
@@ -291,6 +291,6 @@ eval_campaign(){  # uses: WORLD, ALL_LABELS, LABELS_CSV, KEEP_FOLDER, SUMMARY
       echo "  $L: $n/$N good"
     done
     echo ""; echo "Plot: data/$KEEP_FOLDER/MultiSeriesOverview.png"
-    echo "IF A RUN STALLS: do NOT delete it -> python3 ../../scripts/eval/stall_forensics.py <its tmp_bags/*.bag> $((T/60))"
+    echo "IF A RUN STALLS: do NOT delete it -> python3 ../../scripts/evaluation/analysis/stall_forensics.py <its tmp_bags/*.bag> $((T/60))"
   } | tee -a "$SUMMARY"
 }

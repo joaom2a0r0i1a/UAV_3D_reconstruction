@@ -20,5 +20,5 @@ __pycache__/
 *.pyc
 
 # Workshop paper draft (kept local, not tracked)
-single/motion_planning/workshop_paper_draft.txt
+worklog/workshop_paper_draft.txt
 current_config.env

@@ -67,8 +67,10 @@ add_dependencies(gain_evaluation ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EX
 target_link_libraries(gain_evaluation ${catkin_LIBRARIES})
 
 # GPU tester (links the gain_evaluation library)
-add_executable(gpu_tester src/test_gpu_runner.cpp)
-target_link_libraries(gpu_tester gain_evaluation ${catkin_LIBRARIES})
+if(CATKIN_ENABLE_TESTING)
+  add_executable(gpu_tester src/test_gpu_runner.cpp)
+  target_link_libraries(gpu_tester gain_evaluation ${catkin_LIBRARIES})
+endif()
 
 install(TARGETS ${LIBRARIES}
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

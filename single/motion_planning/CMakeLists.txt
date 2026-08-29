@@ -105,7 +105,7 @@ add_executable(NBV src/NBV/NBVplanner_node.cpp)
 add_executable(KinoNBV src/KinoNBV/KinoNBVplanner_node.cpp)
 add_executable(AEP src/AEP/AEPlanner_node.cpp)
 add_executable(KinoAEP src/KinoAEP/KinoAEPlanner_node.cpp)
-add_executable(eval_voxblox_node src/evaluate/eval_voxblox_node.cpp)
+add_executable(eval_voxblox_node src/eval_voxblox/eval_voxblox_node.cpp)
 
  # Link executable against required libraries
 target_link_libraries(NBV ${catkin_LIBRARIES} NBVPlanner)
@@ -122,6 +122,14 @@ install(TARGETS ${LIBRARIES}
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+  )
+
+catkin_install_python(PROGRAMS
+  scripts/cam_to_ptcld.py
+  scripts/rqt_plot_velocity.py
+  scripts/evaluation/nodes/eval_data_node.py
+  scripts/evaluation/nodes/eval_plotting_node.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
   )
 
 install(DIRECTORY include/

@@ -179,4 +179,5 @@ if [ "$MODE" = "explore" ]; then
   echo "  roslaunch motion_planning full_voxblox_eval.launch multi_series:=true"
   echo "  (ensure eval_plotting_node.py's multi_series label list matches the swept labels)"
 else
+  echo "  benchmark: grep '\[bench_correctness\]' / '\[X2rep' lines from the run's rosout log"
 fi
