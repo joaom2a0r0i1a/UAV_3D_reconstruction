@@ -40,6 +40,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
     param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
+    param_loader.loadParam("evaluation/benchmark_suite", bench_suite_, std::string("x2"));
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -395,9 +396,10 @@ void AEPlanner::cacheHighGainNodes() {
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
 void AEPlanner::logTreeNodes() { if (benchmark_mode) return; planner_helpers::logTreeNodes(RRTStar, lambda); }
 
-// Shared canonical (RH-NBVP) gain benchmark; AEP is always optimize_yaw=true.
+// Dispatch the selected benchmark suite(s) on `nodes`; AEP is always optimize_yaw=true.
 void AEPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
-    planner_helpers::benchmarkGains(segment_evaluator, nodes, flat_map_, bench_, /*optimize_yaw=*/true, marginal_split, iteration_, phase);
+    planner_helpers::runBenchSuite(segment_evaluator, nodes, flat_map_, bench_, bench_suite_,
+                                   /*optimize_yaw=*/true, marginal_split, iteration_, phase);
 }
 
 void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node) {

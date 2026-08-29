@@ -48,6 +48,7 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("benchmark/enabled", benchmark_mode, false);
     param_loader.loadParam("benchmark/timing_after_s", timing_after_s_, 600.0);
     param_loader.loadParam("benchmark/x2_max", x2_capture_max_, 10);
+    param_loader.loadParam("benchmark/suite", bench_suite_, std::string("x2"));
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -177,9 +178,10 @@ std::vector<rrt_star::Node*> NBVPlanner::collectTreeNodes() { return planner_hel
 // Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
 void NBVPlanner::logTreeNodes() { if (benchmark_mode) return; planner_helpers::logTreeNodes(RRTStar, lambda); }
 
-// Time all gain variants on `nodes`, dump the per-node X1 CSV, log X2 lines, check pool-vs-reference (shared impl).
+// Dispatch the selected benchmark suite(s) on `nodes` (shared impl).
 void NBVPlanner::benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase) {
-    planner_helpers::benchmarkGains(segment_evaluator, nodes, flat_map_, bench_, optimize_yaw, marginal_split, replan_count_, phase);
+    planner_helpers::runBenchSuite(segment_evaluator, nodes, flat_map_, bench_, bench_suite_,
+                                   optimize_yaw, marginal_split, replan_count_, phase);
 }
 
 bool NBVPlanner::inBoundingBox(const Eigen::Vector4d& p) const { return planner_helpers::inBoundingBox(p, min_x, max_x, min_y, max_y, min_z, max_z); }

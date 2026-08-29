@@ -153,6 +153,7 @@ private:
     bool marginal_split;
     std::string objective_;
     bool benchmark_mode;
+    std::string bench_suite_ = "x2";   // which suite(s): correctness | x1 | x2 (comma-sep)
 
     // Benchmark accumulators (reset each NBV cycle)
     planner_helpers::BenchAccum bench_;

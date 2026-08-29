@@ -52,9 +52,10 @@ evaluation:
   objective: expdecay      # expdecay | rate_L
 
 benchmark:
-  enabled: false           # time all gain variants (G_all / single-parent / absolute, gpu & cpu) per replan
+  enabled: true            # master on/off for the in-loop benchmark
+  suite: "x2"              # suite(s) when enabled: "correctness" | "x1" | "x2" (comma-sep); x2 = timing (HIL)
   timing_after_s: 600.0    # [s] only benchmark once sim-time >= this (skips early collision-heavy replans)
-  x2_max: 10               # cap on benchmarked replans per run (heavy at large N)
+  x2_max: 10              # cap on benchmarked replans per run (heavy at large N)
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"

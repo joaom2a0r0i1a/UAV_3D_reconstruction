@@ -172,7 +172,8 @@ private:
     std::string eval_compute;       // "gpu" (batched) or "cpu" (sequential)
     bool marginal_split;            // marginal+gpu: false = fused kernel, true = split kernel
     std::string objective_;
-    bool benchmark_mode;            // also time all methods + per-node v2-vs-cpuhash, report local+global
+    bool benchmark_mode;            // master on/off for the benchmark (gates whether any suite runs)
+    std::string bench_suite_ = "x2";   // which suite(s): correctness | x1 | x2 (comma-sep)
 
     // Benchmark accumulators (reset each AEP cycle; cover local + global)
     planner_helpers::BenchAccum bench_;

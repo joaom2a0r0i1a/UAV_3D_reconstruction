@@ -15,6 +15,7 @@
   <arg name="compute"        default="$(optenv AEP_COMPUTE gpu)" />
   <arg name="marginal_split" default="$(optenv AEP_MARGINAL_SPLIT false)" />
   <arg name="benchmark"      default="$(optenv AEP_BENCHMARK false)" />
+  <arg name="benchmark_suite" default="$(optenv AEP_BENCH_SUITE x2)" />
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning" type="AEP" name="planner_node" output="screen">
@@ -26,6 +27,7 @@
       <param name="evaluation/compute"        value="$(arg compute)" />
       <param name="evaluation/marginal_split" value="$(arg marginal_split)" />
       <param name="evaluation/benchmark"      value="$(arg benchmark)" />
+      <param name="evaluation/benchmark_suite" value="$(arg benchmark_suite)" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />

@@ -52,7 +52,8 @@ evaluation:
   objective: expdecay      # expdecay | rate_L
   compute: "gpu"           # "gpu" (batched; absolute batches the whole tree) or "cpu" (sequential; marginal=hash)
   marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
-  benchmark: false         # time fused/split/marginal-cpu/absolute-gpu/absolute-cpu + per-node v2-vs-cpuhash, over local+global
+  benchmark: true          # master on/off for the in-loop benchmark
+  benchmark_suite: "x2"    # suite(s) when benchmark=true: "correctness" | "x1" | "x2" (comma-sep); x2 = timing (HIL)
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"

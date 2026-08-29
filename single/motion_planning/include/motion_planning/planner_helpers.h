@@ -50,20 +50,34 @@ void visualize_path(ros::Publisher& pub_markers, const std::string& frame_id, co
 void clear_all_voxels(ros::Publisher& pub_voxels);
 void clearMarkers(ros::Publisher& pub_markers, int& node_id_counter, int& edge_id_counter, int& path_id_counter);
 
-// --- Gain benchmark (shared by AEP + RH-NBVP; RH-NBVP is the canonical implementation). ---
-// Per-cycle accumulators; reset with `acc = {}` at the start of a planning cycle.
+// --- Gain benchmark: three suites (correctness | x1 | x2), selected by the benchmark/suite string; HIL runs x2. ---
+
+// Per-cycle X2 timing accumulators (abs + G_all only); reset with `acc = {}` each planning cycle.
 struct BenchAccum {
-    double ms_gall_gpu = 0, ms_gall_split = 0, ms_g1p_cpu = 0, ms_abs_gpu = 0, ms_abs_cpu = 0;
-    double kernel_gall_gpu = 0, kernel_abs_gpu = 0, g1p_err_sum = 0, g1p_err_max = 0;
+    double ms_gall_gpu = 0, ms_abs_gpu = 0, ms_abs_cpu = 0, ms_gall_cpu = 0;
+    double kernel_gall_gpu = 0, kernel_abs_gpu = 0;
     int    nodes = 0;
 };
 
-// Time all gain variants (GPU vs CPU), log X2 lines, dump the X1 CSV (NBV_X1_CSV), check batched-vs-reference; accumulates into acc.
-void benchmarkGains(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
-                    const std::vector<uint8_t>& flat_map, BenchAccum& acc,
-                    bool optimize_yaw, bool marginal_split, int replan_count, const char* phase);
+// Batched-pool marginal gain vs the layered reference; logs [bench_correctness].
+void benchmarkGpuCorrectness(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+                             bool optimize_yaw, bool marginal_split, const char* phase);
 
-// End-of-cycle console summary of the accumulated benchmark timings.
+// Per-node CPU-vs-GPU gain values (abs / 1-parent / all) -> NBV_X1_CSV for R².
+void benchmarkX1Accuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+                         const std::vector<uint8_t>& flat_map, bool optimize_yaw, int replan_count, const char* phase);
+
+// Timing of abs + G_all (CPU and GPU) on one tree; logs [X2rep]/[X2repABS]/[X2cpu]/[X1cpu].
+void benchmarkX2Timing(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+                       const std::vector<uint8_t>& flat_map, BenchAccum& acc,
+                       bool optimize_yaw, bool marginal_split, int replan_count, const char* phase);
+
+// Run whichever suite(s) the comma-separated string names ("correctness"/"x1"/"x2").
+void runBenchSuite(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+                   const std::vector<uint8_t>& flat_map, BenchAccum& acc, const std::string& suite,
+                   bool optimize_yaw, bool marginal_split, int replan_count, const char* phase);
+
+// End-of-cycle console summary of the accumulated X2 timings.
 void logBenchSummary(const BenchAccum& acc);
 
 }  // namespace planner_helpers

@@ -3,8 +3,7 @@
 # Sources (live sim benchmarkGains, whole-tree PHASE-B entries, nodes>=0.7N):
 #   [X2rep]    total / gain_computation / cpu_to_gpu_transfer  -> marginal GPU-G_all
 #   [X2repABS] total / gain_computation / cpu_to_gpu_transfer  -> absolute GPU
-#   [X2cpu]    cpu_absolute / cpu_gain_1parent                 -> CPU gain baselines
-#   [X1cpu]    cpu_gain_all                                    -> CPU-G_all (CACHED)
+#   [X2cpu]    cpu_absolute + cpu_gain_all  -> CPU baselines
 #   [X2full]   tree_construction / gain_evaluation / scoring / full_algorithm / gain_computation
 import os, re, statistics as st
 import matplotlib; matplotlib.use("Agg")
@@ -25,12 +24,11 @@ def msd(xs): return (st.mean(xs), (st.stdev(xs) if len(xs) > 1 else 0.0), len(xs
 PATS = {
   "mg":  re.compile(r"\[X2rep\] nodes=(\d+) total_ms=([0-9.]+) gain_computation_ms=([0-9.]+) cpu_to_gpu_transfer_ms=([0-9.]+)"),
   "ab":  re.compile(r"\[X2repABS\] nodes=(\d+) total_ms=([0-9.]+) gain_computation_ms=([0-9.]+) cpu_to_gpu_transfer_ms=([0-9.]+)"),
-  "cpu": re.compile(r"\[X2cpu\] nodes=(\d+) cpu_absolute_ms=([0-9.]+) cpu_gain_1parent_ms=([0-9.]+)"),
-  "gall":re.compile(r"\[X1cpu\] nodes=(\d+) cpu_gain_all_ms=([0-9.]+)"),
+  "cpu": re.compile(r"\[X2cpu\] nodes=(\d+) cpu_absolute_ms=([0-9.]+) cpu_gain_all_ms=([0-9.]+)"),
   "full":re.compile(r"\[X2full\] nodes=(\d+) tree_construction_ms=([0-9.]+) gain_evaluation_ms=([0-9.]+) scoring_ms=([0-9.]+) full_algorithm_ms=([0-9.]+) gain_computation_ms=([0-9.]+)"),
 }
 KEYS = ["mg_total","mg_comp","mg_xfer","ab_total","ab_comp","ab_xfer",
-        "cpu_abs","cpu_1p","cpu_all","f_tree","f_eval","f_score","f_full","f_comp"]
+        "cpu_abs","cpu_all","f_tree","f_eval","f_score","f_full","f_comp"]
 
 def parse(n):
     f = f"{LOG}/{TAG}{n}.log"; thr = 0.7 * n
@@ -45,10 +43,7 @@ def parse(n):
                 acc["ab_total"].append(float(m.group(2))); acc["ab_comp"].append(float(m.group(3))); acc["ab_xfer"].append(float(m.group(4)))
             m = PATS["cpu"].search(L)
             if m and int(m.group(1)) >= thr:
-                acc["cpu_abs"].append(float(m.group(2))); acc["cpu_1p"].append(float(m.group(3)))
-            m = PATS["gall"].search(L)
-            if m and int(m.group(1)) >= thr:
-                acc["cpu_all"].append(float(m.group(2)))
+                acc["cpu_abs"].append(float(m.group(2))); acc["cpu_all"].append(float(m.group(3)))
             m = PATS["full"].search(L)
             if m and int(m.group(1)) >= thr:
                 acc["f_tree"].append(float(m.group(2))); acc["f_eval"].append(float(m.group(3)))
@@ -60,7 +55,7 @@ def g(P, k): return P[k][0]
 
 # ---------------- table: mean +/- sample-std over the whole-tree captures per N ----------------
 METRICS = [
-  ("cpu_all","CPU G_all (cached)"), ("cpu_1p","CPU G_1parent"), ("cpu_abs","CPU absolute"),
+  ("cpu_all","CPU G_all (cached)"), ("cpu_abs","CPU absolute"),
   ("mg_total","GPU G_all total"), ("mg_comp","GPU G_all gain-compute"), ("mg_xfer","GPU G_all transfer"),
   ("ab_total","GPU abs total"), ("ab_comp","GPU abs gain-compute"), ("ab_xfer","GPU abs transfer"),
   ("f_tree","tree construction"), ("f_eval","gain evaluation"), ("f_score","scoring"), ("f_full","full algorithm"),
