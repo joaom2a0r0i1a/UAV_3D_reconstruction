@@ -153,6 +153,21 @@ bool EvaluationNode::evaluate(std_srvs::Empty::Request& req,
   nh_private_.param("bounded_box/max_z",
                     p_target_bounding_volume_[5], 0.0);
 
+  // Shift the volume box by the run's takeoff offset; bounds are re-read above so this never accumulates.
+  {
+    std::ifstream offset_file((p_target_dir_ + "/offset.txt").c_str());
+    double ox = 0.0, oy = 0.0, oz = 0.0;
+    if (offset_file.is_open() && (offset_file >> ox >> oy >> oz)) {
+      p_target_bounding_volume_[0] += ox;
+      p_target_bounding_volume_[1] += ox;
+      p_target_bounding_volume_[2] += oy;
+      p_target_bounding_volume_[3] += oy;
+      p_target_bounding_volume_[4] += oz;
+      p_target_bounding_volume_[5] += oz;
+      ROS_INFO("Volume box shifted by run offset [%.2f, %.2f, %.2f] (offset.txt).", ox, oy, oz);
+    }
+  }
+
   // Check not previously evaluated
   std::string line;
   if (p_evaluate_ || p_evaluate_volume_) {
