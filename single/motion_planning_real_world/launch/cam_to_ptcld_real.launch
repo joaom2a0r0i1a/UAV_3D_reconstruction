@@ -1,0 +1,29 @@
+<launch>
+  <!-- Real-world sensor model: depth image -> pointcloud, the sim cam_to_ptcld approach with
+       the real-sensor deltas (validated on the 2025 rosbags, see data/n4_ptcld_verify/N4_VERDICT.md
+       and data/CAM_TO_PTCLD_ADOPTION_PLAN.md):
+       - invalid_is_far false: invalid depth pixels (~16% on the realsense, floor-concentrated)
+         become NaN points (skipped by voxblox) instead of 6 m phantom clearing rays that erase
+         real surfaces.
+       - downsample_step 8: replaces the external mrs pcl_filter 8x8 row/col downsampling
+         (no mrs_pcl_tools / nodelet manager / freespace package needed on the drone).
+       - frame_id camera_aligned_depth_to_color_frame: realsense FLU frame at the aligned
+         sensor origin, matching the node's x-forward/y-left/z-up output convention.
+       Free space comes from valid far pixels flattened to 6 m (voxblox ray_length 5 turns
+       them into clearing rays); voxblox runs WITHOUT use_freespace_pointcloud. -->
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+
+  <group ns="$(arg UAV_NAME)">
+    <node name="sensor_model" pkg="motion_planning" type="cam_to_ptcld.py" output="screen">
+      <param name="model_type" value="ground_truth"/>
+      <param name="color_topic" value="/camera/color/image_raw" />
+      <param name="depth_topic" value="/camera/aligned_depth_to_color/image_raw" />
+      <param name="info_topic"  value="/camera/color/camera_info" />
+      <param name="frame_id"  value="camera_aligned_depth_to_color_frame" />
+      <param name="pointcloud_out" value="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points" />
+      <param name="flatten_distance" value="6.0" />
+      <param name="invalid_is_far" value="false" />
+      <param name="downsample_step" value="8" />
+    </node>
+  </group>
+</launch>

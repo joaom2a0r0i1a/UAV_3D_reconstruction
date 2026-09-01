@@ -18,6 +18,12 @@ class GazeboSensorModel:
         self.max_range = rospy.get_param('~maximum_distance', 0.0)  # 0 = no limit
         self.flatten_distance = rospy.get_param('~flatten_distance', 0.0)
         self.publish_inf_depth = rospy.get_param('~publish_inf_depth', False)
+
+        # invalid_is_far: true (sim) flattens invalid pixels to far clearing rays; false (real) makes them NaN so they can't carve through surfaces.
+        self.invalid_is_far = rospy.get_param('~invalid_is_far', True)
+
+        # downsample_step: N keeps every Nth row/col before projection (replaces the real chain's external pcl_filter downsampling).
+        self.downsample_step = rospy.get_param('~downsample_step', 0)
         out_topic   = rospy.get_param('~pointcloud_out', '~pointcloud')
         self.frame_id = rospy.get_param('~frame_id', 'camera')
 
@@ -70,11 +76,16 @@ class GazeboSensorModel:
         depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         if msg.encoding == "16UC1":
             depth = depth.astype(np.float32) / 1000.0
-        
+
+        color_img = self.color_img
+        if self.downsample_step > 1:
+            depth = depth[::self.downsample_step, ::self.downsample_step]
+            color_img = color_img[::self.downsample_step, ::self.downsample_step]
 
         # Replace zeros or NaNs with infinity (no hit)
-        depth[np.isnan(depth)] = np.inf
-        depth[depth <= 0.0] = np.inf
+        invalid = np.isnan(depth) | (depth <= 0.0)
+        depth = np.array(depth, dtype=np.float32)  # writable copy (slices/passthrough may be read-only)
+        depth[invalid] = np.inf
 
         if self.flatten_distance > 0:
             depth = np.clip(depth, 0, self.flatten_distance)
@@ -83,10 +94,21 @@ class GazeboSensorModel:
         x, y, z = self.depth_to_3d(depth)
 
         # Convert color image to packed float
-        rgb = self.rgb_to_float(self.color_img)
+        rgb = self.rgb_to_float(color_img)
 
         if self.model == 'gaussian_depth_noise':
             z = self.process_gaussian_depth_noise(z)
+
+        if not self.invalid_is_far:
+            # Real sensors: drop invalid pixels (mask flattened per-point) and publish only valid points as a flat height=1 all-finite cloud.
+            invalid_per_point = invalid.flatten()
+            valid_per_point = np.logical_not(invalid_per_point)
+            x_valid = x[valid_per_point]
+            y_valid = y[valid_per_point]
+            z_valid = z[valid_per_point]
+            rgb_valid = rgb[valid_per_point]
+            self.publish_flat(msg.header.stamp, x_valid, y_valid, z_valid, rgb_valid)
+            return
 
         # Publish PointCloud2
         msg_out = PointCloud2()
@@ -119,18 +141,40 @@ class GazeboSensorModel:
     # === Core computation ===
     def depth_to_3d(self, depth):
         width, height, f = self.camera_params
-        cx = width / 2.0
-        cy = height / 2.0
 
-        u, v = np.meshgrid(np.arange(width), np.arange(height))
+        # Work in the (possibly downsampled) grid; scaling the focal length by the same factor keeps the projection identical to full-res (exact for step=1).
+        rows, cols = depth.shape
+        fs = f * cols / float(width)
+        cx = cols / 2.0
+        cy = rows / 2.0
+
+        u, v = np.meshgrid(np.arange(cols), np.arange(rows))
         z = depth.flatten()  # X forward
         x = z
-        y = -(u.flatten() - cx) * z / f  # Y left
-        z_coord = -(v.flatten() - cy) * z / f  # Z up
+        y = -(u.flatten() - cx) * z / fs  # Y left
+        z_coord = -(v.flatten() - cy) * z / fs  # Z up
 
         return x, y, z_coord
 
-
+    def publish_flat(self, stamp, x, y, z, rgb):
+        """Publish an unorganized (height=1) cloud of only-valid points; all finite -> is_dense true."""
+        msg_out = PointCloud2()
+        msg_out.header.stamp = stamp
+        msg_out.header.frame_id = self.frame_id
+        msg_out.height = 1
+        msg_out.width = len(x)
+        msg_out.fields = [
+            PointField('x', 0, PointField.FLOAT32, 1),
+            PointField('y', 4, PointField.FLOAT32, 1),
+            PointField('z', 8, PointField.FLOAT32, 1),
+            PointField('rgb', 12, PointField.FLOAT32, 1)
+        ]
+        msg_out.is_bigendian = False
+        msg_out.point_step = 16
+        msg_out.row_step = msg_out.point_step * msg_out.width
+        msg_out.is_dense = True
+        msg_out.data = np.stack([x, y, z, rgb], axis=1).astype(np.float32).tobytes()
+        self.pub_pc.publish(msg_out)
 
     @staticmethod
     def rgb_to_float(img):

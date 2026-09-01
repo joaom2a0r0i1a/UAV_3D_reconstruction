@@ -14,9 +14,9 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <!--Voxblox Mapping-->
+    <!-- Voxblox mapping fed directly by cam_to_ptcld_real.launch; free space comes from the flattened far pixels as clearing rays (no separate freespace pointcloud). -->
     <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr">
-      <remap from="pointcloud" to="/$(arg UAV_NAME)/pcl_filter_rs_front_pitched/points_processed"/>
+      <remap from="pointcloud" to="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points"/>
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
       <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
       <param name="truncation_distance" value="$(arg truncation_distance)" />
@@ -30,8 +30,7 @@
       <param name="publish_pointclouds" value="true" />
       <param name="publish_tsdf_info" value="true" />
 
-      <param name="use_freespace_pointcloud" value="true" />
-      <remap from="freespace_pointcloud" to="/$(arg UAV_NAME)/freespace_pc_rs_front_pitched/points_freespace"/>
+      <param name="use_freespace_pointcloud" value="false" />
       <param name="color_mode" value="normals" />
       <param name="use_tf_transforms" value="true" />
       <param name="update_mesh_every_n_sec" value="2.0" />
