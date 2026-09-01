@@ -1,0 +1,39 @@
+# Real-world gain-evaluation config (replaces the sim GainConfig.yaml in the real launches, so
+# real flights stop silently inheriting the sim's active environment box).
+# NOTE: this box is RELATIVE TO THE TAKEOFF POSE — the planner shifts it by the captured start offset via GainEvaluator::setWorldOffset.
+
+# School sim-test (ABSOLUTE school gain box pre-compensated for spawn -22,0; used with session_realtest.yml)
+#gain_evaluation:
+#  min_x: 5.0 # [m]
+#  max_x: 39.0 # [m]
+#  min_y: -12.0 # [m]
+#  max_y: 7.0 # [m]
+#  min_z: 0.0 # [m]
+#  max_z: 14.5 # [m]
+
+# IST Lamp (active)
+gain_evaluation:
+  min_x: 2.0 # [m]
+  max_x: 7.0 # [m]
+  min_y: -2.0 # [m]
+  max_y: 2.0 # [m]
+  min_z: 0.0 # [m]
+  max_z: 6.0 # [m]
+
+# Basketball
+#  min_x: -4.0
+#  max_x: 4.0
+#  min_y: -4.0
+#  max_y: 4.0
+#  min_z: 0.0
+#  max_z: 5.0
+
+camera_intrinsics:
+  h_fov: 1.51844 # [rad]
+  v_fov: 1.01229 # [rad]
+  max_distance: 5 # [m]
+  yaw_samples: 15
+  pitch: 10.0 # [deg]
+
+accurate_frontiers: false
+checking_distance: 2.0

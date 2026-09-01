@@ -1,74 +1,88 @@
 #include "motion_planning_real_world/AEPReal/AEPlannerReal.h"
 
 AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
-
-    //ns = "uav1";
-
-    /* Parameter loading */
-    mrs_lib::ParamLoader param_loader(nh_private_, "AEPlanner");
+    /* Parameter loading (defaults = config/AEPlannerReal.yaml values) */
 
     // Namespace
-    param_loader.loadParam("uav_namespace", ns);
+    nh_private_.param("uav_namespace", ns, std::string("uav1"));
 
     // Frames, Coordinates and Dimensions
-    param_loader.loadParam("frame_id", frame_id);
-    param_loader.loadParam("body/frame_id", body_frame_id);
-    param_loader.loadParam("camera/frame_id", camera_frame_id);
+    nh_private_.param("frame_id", frame_id, std::string("map"));
+    nh_private_.param("body/frame_id", body_frame_id, std::string("base_link"));
+    nh_private_.param("camera/frame_id", camera_frame_id, std::string("camera_link"));
 
-    // Bounded Box
-    param_loader.loadParam("bounded_box/min_x", min_x);
-    param_loader.loadParam("bounded_box/max_x", max_x);
-    param_loader.loadParam("bounded_box/min_y", min_y);
-    param_loader.loadParam("bounded_box/max_y", max_y);
-    param_loader.loadParam("bounded_box/min_z", min_z);
-    param_loader.loadParam("bounded_box/max_z", max_z);
+    // Bounded Box (relative to the start pose; shifted by captureOffset)
+    nh_private_.param("bounded_box/min_x", min_x, -1.0f);
+    nh_private_.param("bounded_box/max_x", max_x, 11.0f);
+    nh_private_.param("bounded_box/min_y", min_y, -6.0f);
+    nh_private_.param("bounded_box/max_y", max_y, 6.0f);
+    nh_private_.param("bounded_box/min_z", min_z, 2.0f);
+    nh_private_.param("bounded_box/max_z", max_z, 9.0f);
+    base_min_x = min_x; base_max_x = max_x;
+    base_min_y = min_y; base_max_y = max_y;
+    base_min_z = min_z; base_max_z = max_z;
 
     // RRT Tree
-    param_loader.loadParam("local_planning/N_max", N_max);
-    param_loader.loadParam("local_planning/N_termination", N_termination);
-    param_loader.loadParam("local_planning/N_yaw_samples", num_yaw_samples);
-    param_loader.loadParam("local_planning/radius", radius);
-    param_loader.loadParam("local_planning/step_size", step_size);
-    param_loader.loadParam("local_planning/tolerance", tolerance);
-    param_loader.loadParam("local_planning/g_zero", g_zero);
+    nh_private_.param("local_planning/N_max", N_max, 20);
+    nh_private_.param("local_planning/N_termination", N_termination, 200);
+    nh_private_.param("local_planning/N_yaw_samples", num_yaw_samples, 10);
+    nh_private_.param("local_planning/radius", radius, 2.5);
+    nh_private_.param("local_planning/step_size", step_size, 2.0);
+    nh_private_.param("local_planning/min_edge_length", min_edge_length_, 0.2);
+    nh_private_.param("local_planning/tolerance", tolerance, 0.5);
+    nh_private_.param("local_planning/g_zero", g_zero, 1.0);
 
     // RRT* Tree (global Planning)
-    param_loader.loadParam("global_planning/N_min_nodes", N_min_nodes);
+    nh_private_.param("global_planning/N_min_nodes", N_min_nodes, 100);
+    nh_private_.param("global_planning/selection", global_selection, std::string("score"));
+
+    nh_private_.param("evaluation/marginal_gain", marginal_gain, true);
+    nh_private_.param("evaluation/compute", eval_compute, std::string("gpu"));
+    nh_private_.param("evaluation/marginal_split", marginal_split, false);
+    nh_private_.param("evaluation/objective", objective_, std::string("expdecay"));
 
     // Camera
-    param_loader.loadParam("camera/h_fov", horizontal_fov);
-    param_loader.loadParam("camera/width", resolution_x);
-    param_loader.loadParam("camera/height", resolution_y);
-    param_loader.loadParam("camera/min_distance", min_distance);
-    param_loader.loadParam("camera/max_distance", max_distance);
+    nh_private_.param("camera/h_fov", horizontal_fov, 1.51844);
+    nh_private_.param("camera/width", resolution_x, 1080);
+    nh_private_.param("camera/height", resolution_y, 720);
+    nh_private_.param("camera/min_distance", min_distance, 0.2);
+    nh_private_.param("camera/max_distance", max_distance, 5.0);
+    nh_private_.param("camera/pitch", camera_pitch_deg, 10.0);
+    camera_pitch = camera_pitch_deg * M_PI / 180.0;
 
     // Planner
-    param_loader.loadParam("path/uav_radius", uav_radius);
-    param_loader.loadParam("path/lambda", lambda);
-    param_loader.loadParam("path/global_lambda", global_lambda);
+    nh_private_.param("path/uav_radius", uav_radius, 2.0);
+    nh_private_.param("path/collision_check_resolution", collision_check_resolution_, 0.1);
+    nh_private_.param("path/waypoint_reach_distance", waypoint_reach_distance_, 0.4);
+    nh_private_.param("path/waypoint_reach_velocity", waypoint_reach_velocity_, 0.15);
+    nh_private_.param("path/optimistic_iterations", optimistic_iterations_, 5);
+    nh_private_.param("path/recovery_enabled", recovery_enabled_, true);
+    nh_private_.param("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    nh_private_.param("path/recovery_min_tree", recovery_min_tree_, 10);
+    nh_private_.param("path/recovery_timeout", recovery_timeout_, 12.0);
+    nh_private_.param("path/lambda", lambda, 0.5);
+    nh_private_.param("path/global_lambda", global_lambda, 0.05);
 
     // Timer
-    param_loader.loadParam("timer_main/rate", timer_main_rate);
+    nh_private_.param("timer_main/rate", timer_main_rate, 10.0);
 
     // Initialize UAV as state IDLE
     state_ = STATE_IDLE;
     iteration_ = 0;
-    initial_offset = {0, 0, 0};
 
     // Get vertical FoV and setup camera
     vertical_fov = segment_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
     segment_evaluator.setCameraModelParametersFoV(horizontal_fov, vertical_fov, min_distance, max_distance);
+    segment_evaluator.setObjective(objective_);
 
     // Setup Voxblox
     tsdf_map_ = voxblox_server_.getTsdfMapPtr();
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     segment_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
     segment_evaluator.setEsdfMap(esdf_map_);
-            
-    // Setup Tf Transformer
-    transformer_ = std::make_unique<mrs_lib::Transformer>("AEPlanner");
-    transformer_->setDefaultFrame(frame_id);
-    transformer_->retryLookupNewest(true);
+
+    // Setup TF listener (body -> camera extrinsics)
+    tf_listener_ = std::make_unique<tf2_ros::TransformListener>(tf_buffer_);
 
     set_variables = false;
     goto_global_planning = false;
@@ -76,30 +90,26 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     // Setup Collision Avoidance
     voxblox_server_.setTraversabilityRadius(uav_radius);
     voxblox_server_.publishTraversable();
+    // Edges (not just nodes) must clear obstacles -> give the RRT* library a straight-segment collision test.
+    RRTStar.setEdgeCollisionChecker(
+        [this](const Eigen::Vector3d& a, const Eigen::Vector3d& b){ return isEdgeCollisionFree(a, b); });
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
-    
+
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 500);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
     pub_node = nh_private_.advertise<cache_nodes::Node>("tree_node_out", 500);
     pub_frustum = nh_private_.advertise<visualization_msgs::Marker>("frustum_out", 10);
     pub_voxels = nh_private_.advertise<visualization_msgs::MarkerArray>("unknown_voxels_out", 10);
+    pub_gpu_debug = nh_private_.advertise<sensor_msgs::PointCloud2>("gpu_debug_map", 1, true);
     pub_setpoint = nh_private_.advertise<mavros_msgs::PositionTarget>("setpoint_out", 10);
-    pub_offset = nh_private_.advertise<geometry_msgs::Point>("offset_out", 10);
+    pub_offset = nh_private_.advertise<geometry_msgs::Point>("offset_out", 1, /*latch=*/true);
 
     /* Subscribers */
-    mrs_lib::SubscribeHandlerOptions shopts;
-    shopts.nh                 = nh_private_;
-    shopts.node_name          = "AEPlanner";
-    shopts.no_message_timeout = mrs_lib::no_timeout;
-    shopts.threadsafe         = true;
-    shopts.autostart          = true;
-    shopts.queue_size         = 10;
-    shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
-
-    sub_local_pose_diag = mrs_lib::SubscribeHandler<geometry_msgs::PoseStamped>(shopts, "local_pose_in", &AEPlanner::callbackLocalPose, this);
+    sub_local_pose = nh_private_.subscribe("local_pose_in", 10, &AEPlanner::callbackLocalPose, this);
+    sub_velocity = nh_private_.subscribe("velocity_in", 10, &AEPlanner::callbackVelocity, this);
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &AEPlanner::callbackStart, this);
@@ -107,7 +117,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     ss_offset = nh_private_.advertiseService("offset_in", &AEPlanner::callbackOffset, this);
 
     /* Service Clients */
-    sc_best_node = mrs_lib::ServiceClientHandler<cache_nodes::BestNode>(nh_private_, "best_node_out");
+    sc_best_node = nh_private_.serviceClient<cache_nodes::BestNode>("best_node_out");
 
     /* Timer */
     timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &AEPlanner::timerMain, this);
@@ -115,46 +125,35 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     is_initialized = true;
 }
 
-double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const {
-    if (!voxblox_server_.getEsdfMapPtr()) {
-        return 0.0;
-    }
-    double distance = 0.0;
-    if (!voxblox_server_.getEsdfMapPtr()->getDistanceAtPosition(position, &distance)) {
-        return 0.0;
-    }
-    return distance;
-}
+double AEPlanner::getMapDistance(const Eigen::Vector3d& position) const { return planner_helpers::getMapDistance(voxblox_server_, position); }
 
-bool AEPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const {
-    for (rrt_star::Node* node : path) {
-        if (getMapDistance(node->point.head(3)) < uav_radius) {
-            return false;
-        }
-    }
-    return true;
-}
+bool AEPlanner::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const { return planner_helpers::isPathCollisionFree(voxblox_server_, path, uav_radius); }
+
+bool AEPlanner::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const { return planner_helpers::isEdgeCollisionFree(voxblox_server_, from, to, uav_radius, collision_check_resolution_, optimistic_edges_); }
 
 void AEPlanner::GetTransformation() {
-    // From Body Frame to Camera Frame
-    ros::Duration(0.2).sleep();
-    auto Message_C_B = transformer_->getTransform(body_frame_id, camera_frame_id, ros::Time(0));
-    if (!Message_C_B) {
-        ROS_ERROR_THROTTLE(1.0, "[AEPlanner]: could not get transform from body frame to the camera frame!");
+    // From Body Frame to Camera Frame; on success flips set_variables so timerMain stops retrying.
+    geometry_msgs::TransformStamped msg;
+    try {
+        // T_C_B = body-in-camera (CameraModel::setBodyPose inverts it); tf2 lookupTransform(target,source) gives source-in-target so target=camera here (opposite of mrs getTransform).
+        msg = tf_buffer_.lookupTransform(camera_frame_id, body_frame_id, ros::Time(0), ros::Duration(3.0));
+    } catch (const tf2::TransformException& e) {
+        ROS_ERROR_THROTTLE(1.0, "[AEPlanner]: could not get transform from body frame to the camera frame: %s", e.what());
         return;
     }
 
-    T_C_B_message = Message_C_B.value();
-    T_B_C_message = transformer_->inverse(T_C_B_message);
+    T_C_B_message = msg;
 
     // Transform into matrix
     tf::transformMsgToKindr(T_C_B_message.transform, &T_C_B);
-    tf::transformMsgToKindr(T_B_C_message.transform, &T_B_C);
     segment_evaluator.setCameraExtrinsics(T_C_B);
+    set_variables = true;
 }
 
 void AEPlanner::AEP() {
-    localPlanner();
+    goto_global_planning = false;
+
+    localPlannerGPU();
     if (goto_global_planning) {
         // Clear variables from possible previous iterations
         best_global_node = nullptr;
@@ -165,155 +164,156 @@ void AEPlanner::AEP() {
         getGlobalFrontiers(GlobalFrontiers);
         if (GlobalFrontiers.size() == 0) {
             changeState(STATE_STOPPED);
-            return;   
+            return;
         }
         ROS_INFO("[AEPlanner]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
-        
-        if (go_terminate) {
-            ROS_INFO("[AEPlanner]: No information gain. Terminate.");
-            changeState(STATE_STOPPED);
-            return;   
+        if (!backtrack) {
+            next_best_node = best_global_node;
+        } else {
+            backtrack = false;
+            goto_global_planning = false;
+            return;
         }
-        
-        next_best_node = best_global_node;
         goto_global_planning = false;
     }
 }
 
-void AEPlanner::localPlanner() {
+bool AEPlanner::inBoundingBox(const Eigen::Vector4d& p) const { return planner_helpers::inBoundingBox(p, min_x, max_x, min_y, max_y, min_z, max_z); }
+
+// Sample+steer from the nearest node and add to the tree; nullptr if it lands outside the box or the node/parent-edge collides (walls between free endpoints).
+rrt_star::Node* AEPlanner::expandTreeNode(rrt_star::Node* root_ptr) {
+    Eigen::Vector3d rand_point;
+    RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
+    rand_point += root_ptr->point.head(3);
+
+    rrt_star::Node* nearest_node = nullptr;
+    RRTStar.findNearestKD(rand_point, nearest_node);
+    std::unique_ptr<rrt_star::Node> new_node;
+    RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node, false, min_edge_length_);
+
+    if (!inBoundingBox(new_node->point)) return nullptr;
+
+    std::vector<rrt_star::Node*> segment = {new_node.get()};
+    if (!isPathCollisionFree(segment)) { collision_id_counter_++; return nullptr; }
+    if (!isEdgeCollisionFree(nearest_node->point.head<3>(), new_node->point.head<3>())) { collision_id_counter_++; return nullptr; }
+
+    new_node->gain = 0.0;
+    new_node->score = 0.0;
+    segment_evaluator.computeCost(new_node.get());
+    return RRTStar.addKDTreeNode(std::move(new_node));
+}
+
+void AEPlanner::localPlannerGPU() {
     best_score_ = 0;
     rrt_star::Node* best_node = nullptr;
+    int j = 1;
+    auto tree_t0 = std::chrono::high_resolution_clock::now();
+    ROS_INFO("[AEPlanner]: Start Expanding Local");
 
-    std::unique_ptr<rrt_star::Node> root_owned;
-    if (best_branch.size() > 1) {
-        root_owned = std::make_unique<rrt_star::Node>(best_branch[1]->point);
-    } else {
-        root_owned = std::make_unique<rrt_star::Node>(pose);
-    }
-    trajectory_point = root_owned->point;
-    std::pair<double, double> result_root = segment_evaluator.computeGainRaycasting(trajectory_point, true, initial_offset);
-    root_owned->gain = result_root.first;
-    root_owned->point[3] = result_root.second;
-
-    root_owned->cost = 0;
-    root_owned->score = root_owned->gain;
+    // Root = next executed pose (or the drone's current pose on the first plan).
+    std::unique_ptr<rrt_star::Node> root;
+    if (have_commanded_)             root = std::make_unique<rrt_star::Node>(next_start);
+    else if (best_branch.size() > 1) root = std::make_unique<rrt_star::Node>(best_branch[1]->point);
+    else                             root = std::make_unique<rrt_star::Node>(pose);
 
     RRTStar.clearKDTree();
-    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root_owned));
-
-    if (root_ptr->score > best_score_) {
-        best_score_ = root_ptr->score;
-        best_node = root_ptr;
-    }
-
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
     clearMarkers();
 
-    visualize_node(root_ptr->point, ns);
-    bool isFirstIteration = true;
-    int j = 1; // initialized at one because of the root node
-    collision_id_counter_ = 0;
-    if (best_branch.size() > 0) {
-        previous_root = std::make_unique<rrt_star::Node>(*best_branch[0]);
-    }
-    while (j < N_max || best_score_ <= g_zero) {
-        // Add previous best branch
-        for (size_t i = 1; i < best_branch.size(); ++i) {
-            if (isFirstIteration) {
-                isFirstIteration = false;
-                continue; // Skip first iteration (root)
-            }
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
+    pub_gpu_debug.publish(segment_evaluator.visualizeGpuMap(flat_map_, map_origin_, map_dim_));
 
-            const Eigen::Vector4d& node_position = best_branch[i]->point;
+    // PHASE A: re-add the previous best branch (past the root) as a fixed chain and re-evaluate it.
+    if (best_branch.size() > 1) {
+        std::vector<rrt_star::Node*> branch_candidates;
+
+        bool isFirstIteration = true;
+        for (size_t i = 1; i < best_branch.size(); ++i) {
+            if (isFirstIteration) { isFirstIteration = false; continue; }
 
             rrt_star::Node* nearest_node_best = nullptr;
-            RRTStar.findNearestKD(node_position.head(3), nearest_node_best);
-
-            std::unique_ptr<rrt_star::Node> new_node_best = std::make_unique<rrt_star::Node>(node_position);
+            RRTStar.findNearestKD(best_branch[i]->point.head(3), nearest_node_best);
+            auto new_node_best = std::make_unique<rrt_star::Node>(best_branch[i]->point);
             new_node_best->parent = nearest_node_best;
-            visualize_node(new_node_best->point, ns);
-
-            trajectory_point = new_node_best->point;
-            std::pair<double, double> result_bb = segment_evaluator.computeGainRaycasting(trajectory_point, true, initial_offset);
-            new_node_best->gain = result_bb.first;
-            new_node_best->point[3] = result_bb.second;
-
             segment_evaluator.computeCost(new_node_best.get());
-            segment_evaluator.computeScore(new_node_best.get(), lambda);
+            branch_candidates.push_back(RRTStar.addKDTreeNode(std::move(new_node_best)));
+        }
 
-            if (new_node_best->score > best_score_) {
-                best_score_ = new_node_best->score;
-                best_node = new_node_best.get(); // capture before move
+        if (!branch_candidates.empty()) {
+            evaluateGains(branch_candidates);
+            for (rrt_star::Node* node : branch_candidates) {
+                segment_evaluator.computeScore(node, lambda);
+                if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
             }
+            j += branch_candidates.size();
+        }
+    }
+    best_branch.clear();
 
-            ROS_INFO("[AEPlanner]: Best Score BB: %f", new_node_best->score);
+    // PHASE B: batched RRT expansion.
+    const int BATCH_SIZE = 2 * N_max;
+    collision_id_counter_ = 0;
+    ros::WallTime plan_start_ = ros::WallTime::now();   // bounds the tree build so AEP() can never spin (single-threaded timer)
 
-            rrt_star::Node* added_bb = RRTStar.addKDTreeNode(std::move(new_node_best));
-            visualize_edge(added_bb, ns);
+    while (j < N_max || best_score_ <= g_zero) {
+        int nodes_needed = (j < N_max) ? (N_max - j) : (N_termination - j);
+        int current_batch_cap = std::min(BATCH_SIZE, nodes_needed);
+        if (current_batch_cap <= 0) break;
 
-            ++j;
+        // Wall-clock-bounded backtrack: boxed-in = tree still tiny past a short deadline; timed-out = hard cap.
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) executed_path_.pop_back();   // drop the node we're on
+            if (!executed_path_.empty()) {
+                cacheHighGainNodes();               // keep frontier candidates before retreating
+                retreating_ = true;                 // timerMain retreats to the previous node
+                ROS_WARN("[AEPlanner]: Backtracking (%s, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", j, executed_path_.size());
+                best_branch.clear();
+                return;
+            }
+            rotate();                               // back at the start -> observe more
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
         }
 
-        if (j >= N_max && best_score_ > g_zero) {
-            break;
+        std::vector<rrt_star::Node*> batch_nodes;
+        batch_nodes.reserve(current_batch_cap);
+        for (int k = 0; k < current_batch_cap && j <= N_termination; ++k) {
+
+            // Boxed-in guard: when every sample collides, k-- spins this inner loop and the outer check never runs.
+            if (recovery_enabled_) {
+                const double e = (ros::WallTime::now() - plan_start_).toSec();
+                if ((e > recovery_boxed_deadline_ && j < recovery_min_tree_) || e > recovery_timeout_) break;
+            }
+            rrt_star::Node* added_node = expandTreeNode(root_ptr);
+            if (!added_node) { k--; continue; }
+            batch_nodes.push_back(added_node);
+            j++;
         }
 
-        best_branch.clear();
+        if (batch_nodes.empty()) continue;
 
-        Eigen::Vector3d rand_point;
-        RRTStar.computeSamplingDimensions(bounded_radius, rand_point);
-        rand_point += root_ptr->point.head(3);
+        // Fixed yaw is tree-independent, so RRT scores and re-raycasts only the new batch.
+        std::vector<rrt_star::Node*> score_nodes = batch_nodes;
+        std::vector<rrt_star::Node*> gain_nodes  = batch_nodes;
 
-        rrt_star::Node* nearest_node = nullptr;
-        RRTStar.findNearestKD(rand_point, nearest_node);
+        evaluateGains(gain_nodes);
 
-        std::unique_ptr<rrt_star::Node> new_node;
-        RRTStar.steer_parent(nearest_node, rand_point, step_size, new_node);
-
-        if (new_node->point[0] > initial_offset[0] + max_x || new_node->point[0] < initial_offset[0] + min_x
-            || new_node->point[1] < initial_offset[1] + min_y || new_node->point[1] > initial_offset[1] + max_y
-            || new_node->point[2] < initial_offset[2] + min_z || new_node->point[2] > initial_offset[2] + max_z) {
-            continue;
+        for (rrt_star::Node* node : score_nodes) {
+            segment_evaluator.computeScore(node, lambda);
+            if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
         }
+        visualize_tree(collectTreeNodes());
 
-        // Collision Check
-        std::vector<rrt_star::Node*> trajectory_segment;
-        trajectory_segment.push_back(new_node.get());
-
-        bool success_collision = isPathCollisionFree(trajectory_segment);
-
-        if (!success_collision) {
-            trajectory_segment.clear();
-            collision_id_counter_++;
-            continue;
-        }
-
-        trajectory_segment.clear();
-        visualize_node(new_node->point, ns);
-
-        trajectory_point = new_node->point;
-        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point, true, initial_offset);
-        new_node->gain = result.first;
-        new_node->point[3] = result.second;
-
-        segment_evaluator.computeCost(new_node.get());
-        segment_evaluator.computeScore(new_node.get(), lambda);
-
-        if (new_node->score > best_score_) {
-            best_score_ = new_node->score;
-            best_node = new_node.get(); // capture before move
-        }
-
-        ROS_INFO("[AEPlanner]: Best Score: %f", new_node->score);
-
-        if (new_node->gain > g_zero) {
-            cacheNode(new_node.get()); // must be before move
-        }
-
-        rrt_star::Node* added_node = RRTStar.addKDTreeNode(std::move(new_node));
-        visualize_edge(added_node, ns);
-
-        if (j > N_termination) {
+        // Node budget exhausted -> hand off to the global planner.
+        if (j >= N_termination) {
+            logTreeNodes();
+            cacheHighGainNodes();
             ROS_INFO("[AEPlanner]: Going to Global Planning");
             RRTStar.clearKDTree();
             best_branch.clear();
@@ -321,28 +321,59 @@ void AEPlanner::localPlanner() {
             goto_global_planning = true;
             return;
         }
-
-        ++j;
     }
+
+    logTreeNodes();
+    cacheHighGainNodes();   // settle frontier candidates over the final tree
 
     if (best_node) {
         next_best_node = best_node;
         RRTStar.backtrackPathAEP(best_node, best_branch);
-        visualize_path(best_node, ns);
+        visualize_path(best_node);
     }
 
-    for (size_t k = 1; k < best_branch.size(); ++k) {
-        if (best_branch[k]->gain > g_zero) {
-            next_best_node = best_branch[k].get();
-            std::vector<std::unique_ptr<rrt_star::Node>> sliced_branch;
-            for (size_t m = k - 1; m < best_branch.size(); ++m) {
-                sliced_branch.push_back(std::move(best_branch[m]));
-            }
-            best_branch = std::move(sliced_branch);
-            break;
-        }
+    {
+        double tree_ms = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - tree_t0).count();
+        if (best_node)
+            ROS_INFO("[AEPlanner]: Chosen node [%.2f, %.2f, %.2f] score=%.3f gain=%.3f | local tree computed in %.1f ms",
+                     best_node->point[0], best_node->point[1], best_node->point[2], best_node->score, best_node->gain, tree_ms);
+        else
+            ROS_INFO("[AEPlanner]: No node chosen | local tree computed in %.1f ms", tree_ms);
+    }
+
+    next_best_node = best_branch[1].get();
+}
+
+
+void AEPlanner::evaluateGains(const std::vector<rrt_star::Node*>& nodes) {
+    GainEvaluator::GainConfig cfg{marginal_gain, /*optimize_yaw=*/true, eval_compute, marginal_split, /*track_absolute=*/true};
+    segment_evaluator.evaluateGains(nodes, flat_map_, cfg, last_marg_kernel_ms_, last_abs_kernel_ms_);
+}
+
+
+std::vector<rrt_star::Node*> AEPlanner::collectTreeNodes() { return planner_helpers::collectTreeNodes(RRTStar); }
+
+// Telescoped path-union root->node: path_sum[n] = path_sum[parent] + (use_marginal ? gain : absolute_gain). Local scratch for global scoring.
+std::unordered_map<rrt_star::Node*, double> AEPlanner::pathUnion(rrt_star::Node* root_ptr, bool use_marginal) {
+    std::vector<rrt_star::Node*> tree = collectTreeNodes();
+    rrt_star::sortByDepth(tree);   // parents before children so each path_sum[parent] is ready
+    std::unordered_map<rrt_star::Node*, double> path_sum{{root_ptr, 0.0}};
+    for (rrt_star::Node* n : tree)
+        path_sum[n] = path_sum[n->parent] + (use_marginal ? n->gain : n->absolute_gain);
+    return path_sum;
+}
+
+
+void AEPlanner::cacheHighGainNodes() {
+    for (const auto& up : RRTStar.getNodes()) {
+        rrt_star::Node* n = up.get();
+        if (!n->parent) continue;
+        if (n->absolute_gain > g_zero) cacheNode(n, n->absolute_gain, n->absolute_yaw);
     }
 }
+
+// Per-node score dump over the final tree (once), so multi-batch runs don't re-log each batch.
+void AEPlanner::logTreeNodes() { planner_helpers::logTreeNodes(RRTStar, lambda); }
 
 void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node*& best_global_node) {
     if (GlobalFrontiers.size() == 0) {
@@ -356,56 +387,129 @@ void AEPlanner::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         return;
     }
 
-    std::unique_ptr<rrt_star::Node> root_owned = std::make_unique<rrt_star::Node>(pose);
-    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root_owned));
+    ROS_INFO("[AEPlanner]: Start Expanding Global");
+
+    std::unique_ptr<rrt_star::Node> root;
+    if (have_commanded_) root = std::make_unique<rrt_star::Node>(next_start);
+    else                 root = std::make_unique<rrt_star::Node>(pose);
+
+    rrt_star::Node* root_ptr = RRTStar.addKDTreeNode(std::move(root));
+    root_ptr->gain = 0.0;
+    root_ptr->absolute_gain = 0.0;
+    auto tree_t0 = std::chrono::high_resolution_clock::now();
+
+    flat_map_ = segment_evaluator.flattenMap(map_origin_, map_dim_);
+    segment_evaluator.cacheMapOnGPU(flat_map_, map_origin_, map_dim_);
+
     std::vector<rrt_star::Node*> all_global_goals;
-
+    std::vector<rrt_star::Node*> frontier_nodes;   // every node that reached a frontier (goal candidates)
+    collision_id_counter_ = 0;
     int m = 0;
-    while (m < N_min_nodes || all_global_goals.size() <= 0) {
-        Eigen::Vector3d rand_point_star;
-        RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
-        rand_point_star += root_ptr->point.head(3);
+    const int GLOBAL_BATCH = 2 * N_min_nodes;
+    ros::WallTime gplan_start_ = ros::WallTime::now();   // bounds the global tree build so globalPlanner() can't spin
 
-        rrt_star::Node* nearest_node_star = nullptr;
-        RRTStar.findNearestKD(rand_point_star, nearest_node_star);
+    // Build the frontier KD-tree once; getGlobalGoal() only queries it.
+    goals_tree.clearKDTreePoints();
+    goals_tree.initializeKDTreeWithPoints(GlobalFrontiers);
 
-        std::unique_ptr<rrt_star::Node> new_node_star;
-        RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star);
-
-        // Collision Check
-        std::vector<rrt_star::Node*> trajectory_segment_star;
-        trajectory_segment_star.push_back(new_node_star.get());
-
-        bool success_collision_star = isPathCollisionFree(trajectory_segment_star);
-
-        if (!success_collision_star) {
-            trajectory_segment_star.clear();
-            continue;
+    while (m < N_min_nodes || all_global_goals.empty()) {
+        const double gplan_elapsed = (ros::WallTime::now() - gplan_start_).toSec();
+        const bool g_boxed = gplan_elapsed > recovery_boxed_deadline_ && m < recovery_min_tree_;
+        const bool g_timed = gplan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (g_boxed || g_timed)) {
+            if (!executed_path_.empty()) executed_path_.pop_back();   // drop the node we're on
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                backtrack = true;
+                ROS_WARN("[AEPlanner]: Global backtracking (%s, tree=%d) -> executed node %zu",
+                         g_boxed ? "boxed-in" : "timeout", m, executed_path_.size());
+                return;
+            }
+            ROS_INFO("[AEPlanner]: Backtrack Rotation");
+            rotate();
+            gplan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
         }
 
-        trajectory_segment_star.clear();
-        visualize_node(new_node_star->point, ns);
+        int cap = std::min(GLOBAL_BATCH, (m < N_min_nodes) ? (N_min_nodes - m) : GLOBAL_BATCH);
+        std::vector<rrt_star::Node*> batch_new, batch_frontier;
+        for (int b = 0; b < cap; ++b) {
 
-        // Add Nodes
-        std::vector<rrt_star::Node*> nearby_nodes_star;
-        RRTStar.findNearbyKD(new_node_star.get(), radius, nearby_nodes_star);
-        RRTStar.chooseParent(new_node_star.get(), nearby_nodes_star);
+            // Boxed-in guard (see localPlannerGPU): b-- on collisions traps this loop before the outer check runs.
+            if (recovery_enabled_) {
+                const double e = (ros::WallTime::now() - gplan_start_).toSec();
+                if ((e > recovery_boxed_deadline_ && m < recovery_min_tree_) || e > recovery_timeout_) break;
+            }
 
-        rrt_star::Node* added_star = RRTStar.addKDTreeNode(std::move(new_node_star));
-        RRTStar.rewire(added_star, nearby_nodes_star, radius);
-        visualize_edge(added_star, ns);
+            Eigen::Vector3d rand_point_star;
+            RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
+            rand_point_star += root_ptr->point.head(3);
 
-        bool goal_reached = getGlobalGoal(GlobalFrontiers, added_star);
-        if (goal_reached) {
-            segment_evaluator.computeScore(added_star, global_lambda);
-            all_global_goals.push_back(added_star);
+            rrt_star::Node* nearest_node_star = nullptr;
+            RRTStar.findNearestKD(rand_point_star, nearest_node_star);
+            std::unique_ptr<rrt_star::Node> new_node_star;
+            RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star, false, min_edge_length_);
+
+            // Global planner must respect the box too: sampling is a box-diagonal sphere and steer can overshoot it.
+            if (!inBoundingBox(new_node_star->point)) { b--; continue; }
+
+            std::vector<rrt_star::Node*> segment_star = {new_node_star.get()};
+            if (!isPathCollisionFree(segment_star)) { b--; continue; }
+            if (!isEdgeCollisionFree(nearest_node_star->point.head<3>(), new_node_star->point.head<3>())) { b--; continue; }
+
+            // Global tree is a true RRT*: choose the best nearby parent, then rewire.
+            std::vector<rrt_star::Node*> nearby_nodes_star;
+            RRTStar.findNearbyKD(new_node_star.get(), radius, nearby_nodes_star);
+            if (nearby_nodes_star.empty()) nearby_nodes_star.push_back(nearest_node_star);   // guarantee a valid parent
+            RRTStar.chooseParent(new_node_star.get(), nearby_nodes_star);
+            if (!new_node_star->parent) { b--; continue; }   // every candidate edge blocked
+            rrt_star::Node* added_node_star = RRTStar.addKDTreeNode(std::move(new_node_star));
+            RRTStar.rewire(added_node_star, nearby_nodes_star, radius);
+
+            batch_new.push_back(added_node_star);
+            if (getGlobalGoal(GlobalFrontiers, added_node_star)) {
+                frontier_nodes.push_back(added_node_star);
+                batch_frontier.push_back(added_node_star);
+            }
+            ++m;
         }
-        ++m;
+        visualize_tree(collectTreeNodes());
+
+        // Re-evaluate: marginal = whole tree (rewire restaled ancestries); absolute+gpu = new batch; absolute+cpu = new frontiers.
+        std::vector<rrt_star::Node*> gain_nodes;
+        if (marginal_gain)              gain_nodes = collectTreeNodes();
+        else if (eval_compute == "gpu") gain_nodes = batch_new;
+        else                            gain_nodes = batch_frontier;
+
+        evaluateGains(gain_nodes);   // sets node->gain (+ absolute_gain/absolute_yaw via fillAbsoluteGains)
+
+        // Qualify frontiers by OWN-VIEW absolute gain (not the marginal path-sum), else frontiers over seen space get dropped and AEP never terminates.
+        all_global_goals.clear();
+        for (rrt_star::Node* f : frontier_nodes)
+            if (f->absolute_gain >= 0.1) all_global_goals.push_back(f);
     }
+
+    // Score the qualified goals by path-union gain (own-view absolute or de-overlapped marginal), discounted by cost.
+    const bool use_marginal = marginal_gain;
+    ROS_INFO("[AEPlanner]: Global scoring mode = %s (path-union * discount)", use_marginal ? "MARGINAL" : "ABSOLUTE");
+    std::unordered_map<rrt_star::Node*, double> path_sum = pathUnion(root_ptr, use_marginal);
+    for (rrt_star::Node* g : all_global_goals) {
+        g->gain  = path_sum[g];
+        g->score = (objective_ == "rate_L") ? (path_sum[g] / (g->cost < 0.1 ? 0.1 : g->cost))
+                                            : (path_sum[g] * exp(-global_lambda * g->cost));
+    }
+
+    for (rrt_star::Node* g : all_global_goals)
+        ROS_INFO("[Goal] gain=%.3f score=%.3f", g->gain, g->score);
 
     ROS_INFO("[AEPlanner]: Global Planner Ends");
 
-    getBestGlobalPath(all_global_goals, best_global_node);
+    {
+        double tree_ms = std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - tree_t0).count();
+        ROS_INFO("[AEPlanner]: Global tree computed in %.1f ms", tree_ms);
+    }
+
+    getBestGlobalPath(all_global_goals, best_global_node);   // logs the chosen goal
     all_global_goals.clear();
 }
 
@@ -413,8 +517,6 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
     cache_nodes::BestNode srv;
     srv.request.threshold = g_zero;
     if (sc_best_node.call(srv)) {
-        double best_global_gain = -1.0;
-        Eigen::Vector3d best_global_frontier = Eigen::Vector3d::Zero();
         for (int i = 0; i < srv.response.best_node.size(); ++i) {
             Eigen::Vector3d frontier;
             frontier[0] = srv.response.best_node[i].x;
@@ -426,39 +528,12 @@ void AEPlanner::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
 }
 
 bool AEPlanner::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node) {
-    // Initialize KD Tree
-    goals_tree.clearKDTreePoints();
-    for (size_t i = 1; i < GlobalFrontiers.size(); ++i) {
-        goals_tree.addKDTreePoint(GlobalFrontiers[i]);
-    }
+    if (GlobalFrontiers.empty()) return false;
 
-    // Find the nearest node in the KD Tree
     Eigen::Vector3d nearest_goal;
     goals_tree.findNearestKDPoint(node->point.head(3), nearest_goal);
-    if (nearest_goal.size() <= 0) {
-        goals_tree.clearKDTreePoints();
-        return false;
-    }
 
-    if ((nearest_goal - node->point.head(3)).norm() < tolerance) {
-        //ROS_INFO("[AEPlanner]: Goal: [%f, %f, %f]", nearest_goal[0], nearest_goal[1], nearest_goal[2]);
-        //ROS_INFO("[AEPlanner]: RRT* Goal: [%f, %f, %f]", node->point[0], node->point[1], node->point[2]);    
-
-        Eigen::Vector4d trajectory_point_global = node->point;
-        std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point_global, true, initial_offset);
-
-        node->gain = result.first;
-        node->point[3] = result.second;
-
-        trajectory_point_global.head<3>() = nearest_goal; 
-        trajectory_point_global[3] = 0.0;
-        std::pair<double, double> result_original = segment_evaluator.computeGainRaycasting(trajectory_point_global, true, initial_offset);
-        goals_tree.clearKDTreePoints();
-        return true;
-    }
-
-    goals_tree.clearKDTreePoints();
-    return false;
+    return (nearest_goal.size() > 0 && (nearest_goal - node->point.head(3)).norm() < tolerance);
 }
 
 void AEPlanner::getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goals, rrt_star::Node*& best_global_node) {
@@ -469,72 +544,84 @@ void AEPlanner::getBestGlobalPath(const std::vector<rrt_star::Node*>& global_goa
 
     best_global_node = global_goals[0];
 
-    /*// Cost Criteria
-    for (int i = 0; i < global_goals.size(); ++i) {
-        if (best_global_node->cost > global_goals[i]->cost) {
-            best_global_node = global_goals[i];
-        }
-    }*/
-
-    /*// Gain Criteria
-    for (int i = 0; i < global_goals.size(); ++i) {
-        if (best_global_node->gain < global_goals[i]->gain) {
-            best_global_node = global_goals[i];
-        }
-    }*/
-
-    // Score Criteria
-    for (int i = 0; i < global_goals.size(); ++i) {
-        if (best_global_node->score < global_goals[i]->score) {
-            best_global_node = global_goals[i];
+    // Pick the goal per the configured criterion: "cost" (nearest), "gain" (most info), or "score".
+    for (int i = 1; i < (int)global_goals.size(); ++i) {
+        if (global_selection == "cost") {
+            if (global_goals[i]->cost < best_global_node->cost) best_global_node = global_goals[i];
+        } else if (global_selection == "gain") {
+            if (global_goals[i]->gain > best_global_node->gain) best_global_node = global_goals[i];
+        } else {
+            if (global_goals[i]->score > best_global_node->score) best_global_node = global_goals[i];
         }
     }
 
-    rrt_star::Node* auxiliar_node = best_global_node;
-
-    // Skip the last best node
-    if (auxiliar_node->parent) {
-        auxiliar_node = auxiliar_node->parent;
-    }
-
-    // Update the yaw to follow the path
-    while (auxiliar_node->parent) {
-        double dx = auxiliar_node->point.x() - auxiliar_node->parent->point.x();
-        double dy = auxiliar_node->point.y() - auxiliar_node->parent->point.y();
-        auxiliar_node->point[3] = std::atan2(dy, dx);
-
-        auxiliar_node = auxiliar_node->parent;
-    }
 
     ROS_INFO("[AEPlanner]: Chosen Goal: [%f, %f, %f]", best_global_node->point[0], best_global_node->point[1], best_global_node->point[2]);
     ROS_INFO("[AEPlanner]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_node->gain, best_global_node->cost, best_global_node->score);
-    
-    if (best_global_node->gain < 0.2) {
-        go_terminate = true;
-    }
 
-    visualize_path(best_global_node, ns);
+    visualize_path(best_global_node);
 }
 
-void AEPlanner::cacheNode(rrt_star::Node* Node) {
+void AEPlanner::cacheNode(rrt_star::Node* Node, double gain, double yaw) {
     if (!Node) {
         return;
     }
     cache_nodes::Node cached_node;
-    cached_node.gain = Node->gain;
+    cached_node.gain = gain;   // absolute gain, so the frontier server (threshold g_zero) keeps this node
     cached_node.position.x = Node->point[0];
     cached_node.position.y = Node->point[1];
     cached_node.position.z = Node->point[2];
-    cached_node.yaw = Node->point[3];
+    cached_node.yaw = yaw;
     pub_node.publish(cached_node);
 }
 
-double AEPlanner::distance(Eigen::Vector4d current_pose, Eigen::Vector3d waypoint) {
-    double dx = waypoint[0] - current_pose[0];
-    double dy = waypoint[1] - current_pose[1];
-    double dz = waypoint[2] - current_pose[2];
-    double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
-    return dist;
+double AEPlanner::distance(const Eigen::Vector4d& a, const Eigen::Vector4d& b) { return planner_helpers::distance(a, b); }
+
+void AEPlanner::captureOffset() {
+    initial_offset = pose.head<3>();
+    initial_offset.z() = 0.0;   // x/y anchor only: local-frame z is already ground-referenced (the old flow captured the offset ON THE GROUND; an airborne z-shift lifts the box floor above the mappable space)
+
+    // Shift the bounded box (base = yaml values, so a re-capture is idempotent).
+    min_x = base_min_x + (float)initial_offset.x();  max_x = base_max_x + (float)initial_offset.x();
+    min_y = base_min_y + (float)initial_offset.y();  max_y = base_max_y + (float)initial_offset.y();
+    min_z = base_min_z + (float)initial_offset.z();  max_z = base_max_z + (float)initial_offset.z();
+
+    // Shift the gain_evaluation box the same way (GPU flattenMap + CPU raycasts use it directly).
+    segment_evaluator.setWorldOffset(initial_offset);
+
+    geometry_msgs::Point offset_msg;
+    offset_msg.x = initial_offset.x();
+    offset_msg.y = initial_offset.y();
+    offset_msg.z = initial_offset.z();
+    pub_offset.publish(offset_msg);   // latched
+
+    ROS_INFO("[AEPlanner]: Start offset captured: [%.2f, %.2f, %.2f]", initial_offset.x(), initial_offset.y(), initial_offset.z());
+    ROS_INFO("[AEPlanner]: Bounded box shifted to x[%.1f, %.1f] y[%.1f, %.1f] z[%.1f, %.1f]", min_x, max_x, min_y, max_y, min_z, max_z);
+}
+
+mavros_msgs::PositionTarget AEPlanner::makeSetpoint(const Eigen::Vector4d& waypoint) {
+    mavros_msgs::PositionTarget sp;
+    sp.header.frame_id = frame_id;
+    sp.header.stamp = ros::Time::now();
+    sp.coordinate_frame = 1;   // FRAME_LOCAL_NED (mavros local frame)
+    sp.type_mask = mavros_msgs::PositionTarget::IGNORE_VX | mavros_msgs::PositionTarget::IGNORE_VY | mavros_msgs::PositionTarget::IGNORE_VZ
+                 | mavros_msgs::PositionTarget::IGNORE_AFX | mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ
+                 | mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
+    sp.position.x = waypoint[0];
+    sp.position.y = waypoint[1];
+    sp.position.z = waypoint[2];
+    sp.yaw = waypoint[3];
+    return sp;
+}
+
+void AEPlanner::rotate() {
+    // Rotate 360deg in place (recovery sweep) via 30deg steps with generous waits; a >180deg commanded-vs-actual gap would make the FCU take the short way round.
+    for (int s = 1; s <= 12; ++s) {
+        Eigen::Vector4d wp = pose;
+        wp[3] = pose[3] + s * (M_PI / 6.0);
+        pub_setpoint.publish(makeSetpoint(wp));
+        ros::Duration(2.0).sleep();
+    }
 }
 
 bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -544,7 +631,7 @@ bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
         return true;
     }
 
-    if (!ready_to_plan_) {
+    if (!ready_to_plan_ || !have_pose_) {
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
@@ -555,6 +642,7 @@ bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
         return true;
     }
 
+    captureOffset();
     changeState(STATE_PLANNING);
 
     res.success = true;
@@ -598,29 +686,21 @@ bool AEPlanner::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigge
         return true;
     }
 
-    if (!ready_to_plan_) {
+    if (!ready_to_plan_ || !have_pose_) {
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
-        ROS_ERROR_STREAM_THROTTLE(0.5, "[NBVPlanner]: " << ss.str());
+        ROS_ERROR_STREAM_THROTTLE(0.5, "[AEPlanner]: " << ss.str());
 
         res.success = false;
         res.message = ss.str();
         return true;
     }
-    initial_offset[0] = pose[0];
-    initial_offset[1] = pose[1];
-    initial_offset[2] = pose[2];
-    
-    geometry_msgs::Point offset_msg;
-    offset_msg.x = initial_offset[0];
-    offset_msg.y = initial_offset[1];
-    offset_msg.z = initial_offset[2];
-    
-    pub_offset.publish(offset_msg);
-    
+
+    captureOffset();   // manual re-capture; idempotent (boxes recompute from base values)
+
     std::stringstream ss;
-    ss << "Getting initial position offset: [" << initial_offset[0] << ", " << initial_offset[1] << ", " << initial_offset[2] << "]";
+    ss << "Start offset re-captured: [" << initial_offset.x() << ", " << initial_offset.y() << ", " << initial_offset.z() << "]";
 
     res.success = true;
     res.message = ss.str();
@@ -634,7 +714,7 @@ void AEPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg
     }
     ROS_INFO_ONCE("[AEPlanner]: getting LocalPose diagnostics");
     uav_local_pose = msg->pose;
-    
+
     const geometry_msgs::Quaternion& q = uav_local_pose.orientation;
 
     // Check for NaNs or zero-length quaternion
@@ -642,22 +722,28 @@ void AEPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg
         ROS_ERROR("[AEPlanner]: Invalid quaternion received (contains NaNs)");
         return;
     }
-    
-    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);    
+
+    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     if (norm < 0.1 || norm > 1.1) {
       ROS_WARN_THROTTLE(5, "[AEPlanner] Invalid quaternion detected. Norm: %.3f. Skipping this pose.", norm);
       return;
     }
-    
-    double yaw = 0.0;
-    try {
-        yaw = mrs_lib::getYaw(uav_local_pose);
-    } catch (const mrs_lib::AttitudeConverter::InvalidAttitudeException& e) {
-        ROS_ERROR_THROTTLE(1.0, "[AEPlanner]: Exception during getYaw(): %s — skipping this pose.", e.what());
+
+    double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+
+    pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
+    last_pose_time_ = ros::Time::now();
+    have_pose_ = true;
+}
+
+void AEPlanner::callbackVelocity(const geometry_msgs::TwistStamped::ConstPtr msg) {
+    if (!is_initialized) {
         return;
     }
-    
-    pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
+    const auto& v = msg->twist.linear;
+    current_speed_ = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    last_vel_time_ = ros::Time::now();
+    have_vel_ = true;
 }
 
 void AEPlanner::timerMain(const ros::TimerEvent& event) {
@@ -665,7 +751,16 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
         return;
     }
 
-    ready_to_plan_ = true;
+    /* prerequisites */
+
+    const bool got_local_pose = have_pose_ && (ros::Time::now() - last_pose_time_).toSec() < 2.0;
+
+    if (!got_local_pose) {
+        ROS_INFO_THROTTLE(1.0, "[AEPlanner]: waiting for data: LocalPose = FALSE");
+        return;
+    } else {
+        ready_to_plan_ = true;
+    }
 
     std_msgs::Bool starter;
     starter.data = true;
@@ -675,84 +770,124 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
 
     if (!set_variables) {
         GetTransformation();
+        if (!set_variables) return;   // keep retrying until the body->camera transform exists
         ROS_INFO("[AEPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
         ROS_INFO("[AEPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
-        set_variables = true;
     }
-    
+
     switch (state_) {
         case STATE_IDLE: {
-            ROS_INFO("[AEPlanner]: waiting for command");
+            ROS_INFO_THROTTLE(5.0, "[AEPlanner]: waiting for command");
             break;
         }
         case STATE_PLANNING: {
-            AEP();
+            // Optimistic edges (plan through unknown) only for the first optimistic_iterations_ replans to bootstrap from spawn; after that unknown is blocked so we don't drive into a pocket.
+            optimistic_edges_ = (iteration_ < optimistic_iterations_);
+
+            retreating_ = false;   // fresh forward attempt; a boxed-in backtrack inside AEP() re-sets this
+            {
+                ros::WallTime plan_t0 = ros::WallTime::now();
+                AEP();
+                total_planning_ms_ += (ros::WallTime::now() - plan_t0).toSec() * 1000.0;
+            }
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
                 break;
             }
 
+            // Boxed-in backtrack: fly to the previous node (back()); the backtrack already popped the current node.
+            if (retreating_ && !executed_path_.empty()) {
+                retreat_node_ = std::make_unique<rrt_star::Node>(executed_path_.back());
+                retreat_node_->parent = nullptr;
+                next_best_node = retreat_node_.get();
+            }
+
             iteration_ += 1;
+
+            next_start[0] = next_best_node->point[0];
+            next_start[1] = next_best_node->point[1];
+            next_start[2] = next_best_node->point[2];
+            next_start[3] = next_best_node->point[3];
+            have_commanded_ = true;
 
             visualize_frustum(next_best_node);
             visualize_unknown_voxels(next_best_node);
 
-            active_waypoints.clear();
+            waypoints_.clear();
+            waypoint_index_ = 0;
 
             while (next_best_node && next_best_node->parent) {
-                mavros_msgs::PositionTarget setpoint_reference;
-                    
-                setpoint_reference.header.frame_id = frame_id;
-                setpoint_reference.header.stamp = ros::Time::now();
-                setpoint_reference.coordinate_frame = 1;
-                setpoint_reference.type_mask = mavros_msgs::PositionTarget::IGNORE_VX | mavros_msgs::PositionTarget::IGNORE_VY | mavros_msgs::PositionTarget::IGNORE_VZ | mavros_msgs::PositionTarget::IGNORE_AFX | mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ | mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
-                    
-                setpoint_reference.position.x = next_best_node->point[0];
-                setpoint_reference.position.y = next_best_node->point[1];
-                setpoint_reference.position.z = next_best_node->point[2];
-                setpoint_reference.yaw = next_best_node->point[3];    
-                
-                active_waypoints.push_back(setpoint_reference);
+                waypoints_.push_back(next_best_node->point);
                 next_best_node = next_best_node->parent;
             }
+            std::reverse(waypoints_.begin(), waypoints_.end());
 
-            std::reverse(active_waypoints.begin(), active_waypoints.end());
+            // Retreat: retreat_node_ has no parent so the walk above is empty; fly straight to it (edge already flown/validated).
+            if (waypoints_.empty() && next_best_node) {
+                waypoints_.push_back(next_best_node->point);
+            }
 
-            current_wp_idx = 0;
-            has_active_path = true;
+            // Store the flown waypoints (forward moves only), seeding the root once so the stack holds the full path incl. takeoff; back() = the current node.
+            if (!retreating_) {
+                if (executed_path_.empty() && next_best_node) {
+                    executed_path_.push_back(next_best_node->point);
+                }
+                for (const auto& wp : waypoints_) {
+                    executed_path_.push_back(wp);
+                }
+            }
+
+            pub_setpoint.publish(makeSetpoint(waypoints_[0]));
 
             changeState(STATE_MOVING);
             break;
+
         }
         case STATE_MOVING: {
-            if (!has_active_path || current_wp_idx >= active_waypoints.size()) {
-                ROS_INFO("[AEPlanner]: Finished all waypoints.");
-                has_active_path = false;
+            if (waypoint_index_ >= waypoints_.size()) {
                 changeState(STATE_PLANNING);
                 break;
             }
 
-            mavros_msgs::PositionTarget current_sp = active_waypoints[current_wp_idx];
-            Eigen::Vector3d target = {
-                current_sp.position.x,
-                current_sp.position.y,
-                current_sp.position.z
-            };
+            const Eigen::Vector4d& wp = waypoints_[waypoint_index_];
+            pub_setpoint.publish(makeSetpoint(wp));   // keep streaming the current setpoint
 
-            double dist = distance(pose, target);
-            ROS_INFO_THROTTLE(1.0, "Distance to waypoint %lu: %f", current_wp_idx, dist);
+            double dist = distance(pose, wp);
+            double yaw_difference = std::fabs(std::remainder(wp[3] - pose[3], 2.0 * M_PI));
 
-            pub_setpoint.publish(current_sp);
+            // Velocity gate on the FINAL waypoint only (intermediates advance on distance+yaw); the chain end needs a true stop, falling back to distance-only if velocity is stale/absent.
+            const bool vel_fresh = have_vel_ && (ros::Time::now() - last_vel_time_).toSec() < 1.0;
+            const double speed = vel_fresh ? current_speed_ : 0.0;
+            if (!vel_fresh) ROS_WARN_ONCE("[AEPlanner]: no fresh velocity - waypoint gate is distance-only (check ~velocity_in)");
+            const bool is_final = (waypoint_index_ + 1 >= waypoints_.size());
+            ROS_INFO_THROTTLE(1.0, "[AEPlanner]: WP %zu/%zu: dist=%.2f, yaw=%.2f, speed=%.2f",
+                              waypoint_index_ + 1, waypoints_.size(), dist, yaw_difference, speed);
 
-            if (dist < 0.5) {
-                ROS_INFO("Reached waypoint %lu", current_wp_idx);
-                current_wp_idx++;
+            if (dist < waypoint_reach_distance_ && yaw_difference < 0.4 && (!is_final || speed < waypoint_reach_velocity_)) {
+                waypoint_index_++;
+
+                if (waypoint_index_ >= waypoints_.size()) {
+                    ROS_INFO("[AEPlanner]: Final waypoint reached.");
+                    changeState(STATE_PLANNING);
+                } else {
+                    ROS_INFO("[AEPlanner]: Publishing next waypoint");
+                    pub_setpoint.publish(makeSetpoint(waypoints_[waypoint_index_]));
+                }
             }
             break;
         }
         case STATE_STOPPED: {
             ROS_INFO_ONCE("[AEPlanner]: Total Iterations: %d", iteration_);
+            if (!stats_written_) {
+                std::string log_dir;
+                if (nh_private_.getParam("performance_log_dir", log_dir) && !log_dir.empty()) {
+                    std::ofstream dl(log_dir + "/data_log.txt", std::ios::app);
+                    if (dl.is_open())
+                        dl << "total_planning_time_ms=" << total_planning_ms_ << " iterations=" << iteration_ << "\n";
+                }
+                stats_written_ = true;
+            }
             ROS_INFO("[AEPlanner]: Shutting down.");
             ros::shutdown();
             return;
@@ -773,132 +908,15 @@ void AEPlanner::changeState(const State_t new_state) {
     state_ = new_state;
 }
 
-void AEPlanner::visualize_node(const Eigen::Vector4d& pos, const std::string& ns) {
-    visualization_msgs::Marker n;
-    n.header.stamp = ros::Time::now();
-    n.header.seq = node_id_counter_;
-    n.header.frame_id = frame_id;
-    n.id = node_id_counter_;
-    n.ns = "nodes";
-    n.type = visualization_msgs::Marker::SPHERE;
-    n.action = visualization_msgs::Marker::ADD;
-    n.pose.position.x = pos[0];
-    n.pose.position.y = pos[1];
-    n.pose.position.z = pos[2];
 
-    n.pose.orientation.x = 1;
-    n.pose.orientation.y = 0;
-    n.pose.orientation.z = 0;
-    n.pose.orientation.w = 0;
+void AEPlanner::visualize_tree(const std::vector<rrt_star::Node*>& nodes) { planner_helpers::visualize_tree(pub_markers, frame_id, nodes); }
 
-    n.scale.x = 0.2;
-    n.scale.y = 0.2;
-    n.scale.z = 0.2;
 
-    n.color.r = 0.4;
-    n.color.g = 0.7;
-    n.color.b = 0.2;
-    n.color.a = 1;
-
-    node_id_counter_++;
-
-    n.lifetime = ros::Duration(30.0);
-    n.frame_locked = false;
-    pub_markers.publish(n);
-}
-
-void AEPlanner::visualize_edge(rrt_star::Node* node, const std::string& ns) {
-    visualization_msgs::Marker e;
-    e.header.stamp = ros::Time::now();
-    e.header.seq = edge_id_counter_;
-    e.header.frame_id = frame_id;
-    e.id = edge_id_counter_;
-    e.ns = "tree_branches";
-    e.type = visualization_msgs::Marker::ARROW;
-    e.action = visualization_msgs::Marker::ADD;
-    //ROS_INFO("[AEPlanner]: HERE 8");
-    e.pose.position.x = node->parent->point[0];
-    e.pose.position.y = node->parent->point[1];
-    e.pose.position.z = node->parent->point[2];
-    //ROS_INFO("[AEPlanner]: HERE 9");
-    Eigen::Quaternion<double> q;
-    Eigen::Vector3d init(1.0, 0.0, 0.0);
-    Eigen::Vector3d dir(node->point[0] - node->parent->point[0],
-                        node->point[1] - node->parent->point[1],
-                        node->point[2] - node->parent->point[2]);
-    q.setFromTwoVectors(init, dir);
-    q.normalize();
-
-    e.pose.orientation.x = q.x();
-    e.pose.orientation.y = q.y();
-    e.pose.orientation.z = q.z();
-    e.pose.orientation.w = q.w();
-
-    e.scale.x = dir.norm();
-    e.scale.y = 0.05;
-    e.scale.z = 0.05;
-
-    e.color.r = 1.0;
-    e.color.g = 0.3;
-    e.color.b = 0.7;
-    e.color.a = 1.0;
-
-    edge_id_counter_++;
-
-    e.lifetime = ros::Duration(30.0);
-    e.frame_locked = false;
-    pub_markers.publish(e);
-}
-
-void AEPlanner::visualize_path(rrt_star::Node* node, const std::string& ns) {
-    rrt_star::Node* current = node;
-    
-    while (current->parent) {
-        visualization_msgs::Marker p;
-        p.header.stamp = ros::Time::now();
-        p.header.seq = path_id_counter_;
-        p.header.frame_id = frame_id;
-        p.id = path_id_counter_;
-        p.ns = "path";
-        p.type = visualization_msgs::Marker::ARROW;
-        p.action = visualization_msgs::Marker::ADD;
-        p.pose.position.x = current->parent->point[0];
-        p.pose.position.y = current->parent->point[1];
-        p.pose.position.z = current->parent->point[2];
-
-        Eigen::Quaternion<double> q;
-        Eigen::Vector3d init(1.0, 0.0, 0.0);
-        Eigen::Vector3d dir(current->point[0] - current->parent->point[0],
-                            current->point[1] - current->parent->point[1],
-                            current->point[2] - current->parent->point[2]);
-        q.setFromTwoVectors(init, dir);
-        q.normalize();
-        p.pose.orientation.x = q.x();
-        p.pose.orientation.y = q.y();
-        p.pose.orientation.z = q.z();
-        p.pose.orientation.w = q.w();
-
-        p.scale.x = dir.norm();
-        p.scale.y = 0.07;
-        p.scale.z = 0.07;
-
-        p.color.r = 0.7;
-        p.color.g = 0.7;
-        p.color.b = 0.3;
-        p.color.a = 1.0;
-
-        p.lifetime = ros::Duration(100.0);
-        p.frame_locked = false;
-        pub_markers.publish(p);
-
-        current = current->parent;
-        path_id_counter_++;
-    }
-}
+void AEPlanner::visualize_path(rrt_star::Node* node) { planner_helpers::visualize_path(pub_markers, frame_id, node, path_id_counter_); }
 
 void AEPlanner::visualize_frustum(rrt_star::Node* position) {
     Eigen::Vector4d trajectory_point_visualize = position->point;
-    
+
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = frame_id;
     frustum.header.stamp = ros::Time::now();
@@ -928,7 +946,7 @@ void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
-    
+
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
         visualization_msgs::Marker unknown_voxel;
@@ -940,9 +958,10 @@ void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
         unknown_voxel.action = visualization_msgs::Marker::ADD;
 
         // Voxel size
-        unknown_voxel.scale.x = 0.2;
-        unknown_voxel.scale.y = 0.2;
-        unknown_voxel.scale.z = 0.2;
+        double vsz = segment_evaluator.getVoxelSize();
+        unknown_voxel.scale.x = vsz;
+        unknown_voxel.scale.y = vsz;
+        unknown_voxel.scale.z = vsz;
 
         unknown_voxel.color.a = 0.5;
         unknown_voxel.color.r = 0.0;
@@ -958,48 +977,7 @@ void AEPlanner::visualize_unknown_voxels(rrt_star::Node* position) {
     pub_voxels.publish(voxels_marker);
 }
 
-void AEPlanner::clear_node() {
-    visualization_msgs::Marker clear_node;
-    clear_node.header.stamp = ros::Time::now();
-    clear_node.ns = "nodes";
-    clear_node.id = node_id_counter_;
-    clear_node.action = visualization_msgs::Marker::DELETE;
-    node_id_counter_--;
-    pub_markers.publish(clear_node);
-}
 
-void AEPlanner::clear_all_voxels() {
-    visualization_msgs::Marker clear_voxels;
-    clear_voxels.header.stamp = ros::Time::now();
-    clear_voxels.ns = "unknown_voxels";
-    clear_voxels.action = visualization_msgs::Marker::DELETEALL;
-    pub_voxels.publish(clear_voxels);
-}
+void AEPlanner::clear_all_voxels() { planner_helpers::clear_all_voxels(pub_voxels); }
 
-void AEPlanner::clearMarkers() {
-    // Clear nodes
-    visualization_msgs::Marker clear_nodes;
-    clear_nodes.header.stamp = ros::Time::now();
-    clear_nodes.ns = "nodes";
-    clear_nodes.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_nodes);
-
-    // Clear edges
-    visualization_msgs::Marker clear_edges;
-    clear_edges.header.stamp = ros::Time::now();
-    clear_edges.ns = "tree_branches";
-    clear_edges.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_edges);
-
-    // Clear path
-    visualization_msgs::Marker clear_path;
-    clear_path.header.stamp = ros::Time::now();
-    clear_path.ns = "path";
-    clear_path.action = visualization_msgs::Marker::DELETEALL;
-    pub_markers.publish(clear_path);
-
-    // Reset marker ID counters
-    node_id_counter_ = 0;
-    edge_id_counter_ = 0;
-    path_id_counter_ = 0;
-}
+void AEPlanner::clearMarkers() { planner_helpers::clearMarkers(pub_markers, node_id_counter_, edge_id_counter_, path_id_counter_); }

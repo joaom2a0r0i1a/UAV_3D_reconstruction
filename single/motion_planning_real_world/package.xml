@@ -18,11 +18,12 @@
   <depend>mrs_lib</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <exec_depend>motion_planning</exec_depend>
   <depend>visualization_msgs</depend>
   <depend>minkindr_conversions</depend>
   <depend>voxblox_ros</depend>
   <depend>std_srvs</depend>
-  <depend>motion_planning</depend>
   <depend>gain_evaluation</depend>
   <depend>cache_nodes</depend>
   <depend>mavros</depend>

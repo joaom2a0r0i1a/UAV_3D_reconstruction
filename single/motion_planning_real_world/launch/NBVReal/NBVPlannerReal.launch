@@ -9,7 +9,7 @@
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning_real_world" type="NBVReal" name="planner_node" output="screen">
-      <rosparam file="$(find gain_evaluation)/config/GainConfig.yaml" />
+      <rosparam file="$(find motion_planning_real_world)/config/GainConfigReal.yaml" />
       <rosparam file="$(find motion_planning_real_world)/config/NBVplannerReal.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
@@ -30,6 +30,7 @@
       <remap from="~offset_out" to="offset_out" />
       <!-- Subscribers -->
       <remap from="~local_pose_in" to="/mavros/local_position/pose" />
+      <remap from="~velocity_in" to="/mavros/local_position/velocity_local" />
       <!-- Services clients-->
       <remap from="~setpoint_out" to="/mavros/setpoint_raw/local" />
       <!-- Services servers-->

@@ -1,25 +1,24 @@
 #ifndef NBV_PLANNER_REAL_H
 #define NBV_PLANNER_REAL_H
 
+// Real-world RH-NBVP: port of motion_planning/NBV/NBVplanner. Deltas vs sim:
+// mavros PositionTarget instead of the MRS control stack, plain ROS/tf2 plumbing (no mrs_lib),
+// start offset auto-captured and applied to the bounded box + gain box (setWorldOffset),
+// no benchmark suites, execution horizon fixed to 1 (single step per replan).
+
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <std_msgs/Bool.h>
 #include <std_srvs/Trigger.h>
 
-#include <mrs_msgs/Reference.h>
-#include <mrs_msgs/Vec1.h>
-
-#include <sensor_msgs/NavSatFix.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Point.h>
 #include <geometry_msgs/TwistStamped.h>
-#include <geographic_msgs/GeoPoseStamped.h>
 #include <mavros_msgs/PositionTarget.h>
 
-#include <mrs_lib/param_loader.h>
-#include <mrs_lib/subscribe_handler.h>
-#include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
-#include <mrs_lib/transformer.h>
-#include <mrs_lib/msg_extractor.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <voxblox/core/tsdf_map.h>
 #include <voxblox_ros/ros_params.h>
@@ -32,6 +31,15 @@
 #include <Eigen/Core>
 #include <rrt_construction/rrt_star_kd.h>
 #include <gain_evaluation/gain_evaluator.h>
+#include "motion_planning_real_world/planner_helpers_real.h"
+
+#include <atomic>
+#include <chrono>
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <vector>
 
 typedef enum
 {
@@ -41,9 +49,8 @@ typedef enum
   STATE_STOPPED,
 } State_t;
 
-const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
+const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "STOPPED"};
 
-using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class NBVPlanner {
 public:
@@ -51,25 +58,41 @@ public:
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
+    bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
     void GetTransformation();
 
     void NBV();
+
+    // Fixed-yaw gain evaluation (duplicated from AEP; NBVP keeps each node's random yaw).
+    void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
+    std::vector<rrt_star::Node*> collectTreeNodes();
+    void logTreeNodes();
+
+    bool inBoundingBox(const Eigen::Vector4d& p) const;
+    rrt_star::Node* expandTreeNode(rrt_star::Node* root_ptr);
+
+    double distance(const Eigen::Vector4d& a, const Eigen::Vector4d& b);
+    void rotate();
+
+    // Snapshot the current pose as the start offset; shift bounded box + gain box; publish latched offset.
+    void captureOffset();
+    mavros_msgs::PositionTarget makeSetpoint(const Eigen::Vector4d& waypoint);
+    void commandWaypoint(const Eigen::Vector4d& waypoint, const Eigen::Vector4d& prev_waypoint);
 
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg);
+    void callbackVelocity(const geometry_msgs::TwistStamped::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
-    void changeState(const State_t new_state);
-    double distance(Eigen::Vector4d current_pose, Eigen::Vector3d waypoint);
 
-    void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
-    void visualize_edge(rrt_star::Node* node, const std::string& ns);
-    void visualize_path(rrt_star::Node* node, const std::string& ns);
-    void visualize_frustum(rrt_star::Node* position);
-    void visualize_unknown_voxels(rrt_star::Node* position);
-    void clear_node();
+    void changeState(const State_t new_state);
+
+    void visualize_tree(const std::vector<rrt_star::Node*>& nodes);
+    void visualize_path(rrt_star::Node* node);
+    void visualize_frustum(const Eigen::Vector4d& waypoint, int id);
+    void visualize_unknown_voxels(const Eigen::Vector4d& waypoint, int id_base);
+
     void clear_all_voxels();
     void clearMarkers();
 
@@ -88,19 +111,14 @@ private:
     voxblox::EsdfMap::Ptr esdf_map_;
     voxblox::TsdfMap::Ptr tsdf_map_;
 
-    // Transformer
-    std::unique_ptr<mrs_lib::Transformer> transformer_;
+    // TF (body -> camera extrinsics)
+    tf2_ros::Buffer tf_buffer_;
+    std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
     bool set_variables;
 
     // Transformations
     geometry_msgs::TransformStamped T_C_B_message;
     voxblox::Transformation T_C_B;
-    geometry_msgs::TransformStamped T_B_C_message;
-    voxblox::Transformation T_B_C;
-    geometry_msgs::TransformStamped T_C_W_message;
-    voxblox::Transformation T_C_W;
-    geometry_msgs::TransformStamped T_W_C_message;
-    voxblox::Transformation T_W_C;
 
     // Parameters
     std::string frame_id;
@@ -109,22 +127,41 @@ private:
     std::string ns;
     double best_score_;
 
-    // Bounded Box
+    // Bounded Box (shifted by the start offset; base_* = pristine yaml values)
     float min_x;
     float max_x;
     float min_y;
     float max_y;
     float min_z;
     float max_z;
+    float base_min_x, base_max_x, base_min_y, base_max_y, base_min_z, base_max_z;
     double bounded_radius;
+
+    // Start offset (captured on ~start; re-capturable via ~offset)
+    Eigen::Vector3d initial_offset{0.0, 0.0, 0.0};
 
     // Tree Parameters
     int N_max;
     int N_termination;
     double radius;
     double step_size;
+    double min_edge_length_;
+    bool fixed_step;   // false = classic RRT (edge <= step_size); true = every edge exactly step_size
     double tolerance;
     int num_yaw_samples;
+
+    // Gain-evaluation options
+    bool marginal_gain;
+    bool optimize_yaw;          // false = keep each node's random sampled yaw; true = pick argmax yaw per node (like AEP)
+    std::string eval_compute;   // "gpu" or "cpu"
+    bool marginal_split;
+    std::string objective_;
+    float last_marg_kernel_ms_, last_abs_kernel_ms_;
+
+    // GPU map cache (for gpu / flat-map fixed-yaw eval)
+    std::vector<uint8_t> flat_map_;
+    Eigen::Vector3d map_origin_;
+    Eigen::Vector3i map_dim_;
 
     // Timer Parameters
     double timer_main_rate;
@@ -139,29 +176,44 @@ private:
 
     // Planner Parameters
     double uav_radius;
+    double collision_check_resolution_;   // [m] edge-sampling spacing for isEdgeCollisionFree
+    double waypoint_reach_distance_;      // [m] a waypoint counts as reached within this dist (+ yaw < 0.4)
+    double waypoint_reach_velocity_;      // [m/s] velocity gate: the target waypoint also requires speed below this (true stop-and-go)
+    // --- optimistic-edges gate + IN-PLANNER backtrack (bounds the tree-build loop so NBV() can't spin) ---
+    bool   optimistic_edges_ = true;      // set each replan: unknown=traversable only for the first replans
+    int    optimistic_iterations_;        // # of initial replans allowed to plan through unknown space
+    bool   recovery_enabled_ = true;      // master toggle for the in-planner backtrack
+    double recovery_boxed_deadline_;      // [s] if the tree is still tiny after this, backtrack (boxed in)
+    int    recovery_min_tree_;            // "tree still empty" node count for the boxed-in check
+    double recovery_timeout_;             // [s] hard deadline: backtrack after this no matter what
     double lambda;
 
     // Tree variables
-    //std::vector<std::shared_ptr<rrt_star::Node>> tree;
-    std::vector<Eigen::Vector4d> path;
     std::vector<Eigen::Vector4d> prev_best_branch;
     std::vector<Eigen::Vector4d> best_branch;
     rrt_star::Node* next_best_node = nullptr;
-    std::unique_ptr<rrt_star::Node> previous_root;
-    Eigen::Vector4d trajectory_point;
+    std::unique_ptr<rrt_star::Node> previous_node;  // owning copy, survives clearKDTree()
+    std::vector<Eigen::Vector4d> executed_path_;    // flown poses (forward moves); boxed-in backtrack retreats along it
+    bool retreating_ = false;                       // set only by a backtrack, cleared each STATE_PLANNING cycle
+    std::unique_ptr<rrt_star::Node> retreat_node_;  // holds the current retreat pose
+    Eigen::Vector4d next_start;
+
+    // Single-step execution (execution horizon fixed to 1 in the real world)
+    std::vector<Eigen::Vector4d> exec_waypoints_;
+    mavros_msgs::PositionTarget active_setpoint_;
+    Eigen::Vector4d current_target_;
+    bool has_active_setpoint_ = false;
+    bool have_commanded_ = false;   // true after the first commandWaypoint (root = next_start from then on)
 
     // UAV variables
     bool is_initialized = false;
     Eigen::Vector4d pose;
-    Eigen::Vector3d initial_offset;
     geometry_msgs::Pose uav_local_pose;
-    mrs_msgs::Reference current_waypoint_;
-    
-    // Waypoint Following
-    std::vector<mavros_msgs::PositionTarget> active_waypoints;
-    size_t current_wp_idx = 0;
-    bool has_active_path = false;
-    Eigen::Vector3d current_waypoint;
+    ros::Time last_pose_time_;
+    bool have_pose_ = false;
+    double current_speed_ = 0.0;
+    ros::Time last_vel_time_;
+    bool have_vel_ = false;
 
     // State variables
     std::atomic<State_t> state_;
@@ -173,12 +225,15 @@ private:
     int path_id_counter_;
     int collision_id_counter_;
     int iteration_;
+    double total_planning_ms_ = 0.0;
+    bool stats_written_ = false;
 
     // Instances
     rrt_star RRTStar;
 
     // Subscribers
-    mrs_lib::SubscribeHandler<geometry_msgs::PoseStamped> sub_local_pose_diag;
+    ros::Subscriber sub_local_pose;
+    ros::Subscriber sub_velocity;
 
     // Publishers
     ros::Publisher pub_markers;

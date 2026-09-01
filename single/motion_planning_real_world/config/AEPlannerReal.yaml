@@ -6,6 +6,9 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
+# NOTE: bounded_box is RELATIVE TO THE TAKEOFF POSE — the planner captures the start offset on
+# ~start (re-capturable via ~offset) and shifts this box + the gain_evaluation box by it.
+
 # Basketball
 #bounded_box:
 #  min_x: -6.0 # [m]
@@ -14,7 +17,16 @@ timer_main:
 #  max_y: 6.0 # [m]
 #  min_z: 2.0 # [m]
 #  max_z: 8.0 # [m]
-  
+
+# School sim-test (ABSOLUTE school box pre-compensated for spawn -22,0; used with session_realtest.yml)
+#bounded_box:
+#  min_x: -3.0 # [m]
+#  max_x: 47.0 # [m]
+#  min_y: -20.0 # [m]
+#  max_y: 15.0 # [m]
+#  min_z: 1.0 # [m]
+#  max_z: 20.0 # [m]
+
 # IST Lamp
 bounded_box:
   min_x: -1.0 # [m]
@@ -30,11 +42,19 @@ local_planning:
   N_yaw_samples: 10
   radius: 2.5 # [m]
   step_size: 2.0 # [m]
+  min_edge_length: 0.2 # [m]
   tolerance: 0.5 # [m]
   g_zero: 1.0
 
 global_planning:
   N_min_nodes: 100
+  selection: "score"       # goal pick: "cost" (nearest), "gain" (most info), "score" (gain discounted by distance)
+
+evaluation:
+  marginal_gain: true      # true: marginal gain (frontier = path sum in global); false: absolute gain (original AEP)
+  objective: expdecay      # expdecay | rate_L
+  compute: "gpu"           # "gpu" (batched; absolute batches the whole tree) or "cpu" (sequential; marginal=hash)
+  marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
 
 camera:
   frame_id: "camera_link"
@@ -43,9 +63,17 @@ camera:
   height: 720
   min_distance: 0.2 # [m]
   max_distance: 5 # [m]
+  pitch: 10.0 # [deg] downward camera pitch (matches the front_pitched sensor)
 
 path:
   uav_radius: 2.0 # [m]
+  waypoint_reach_distance: 0.4 # [m] reached within this dist (+ yaw diff < 0.4 rad)
+  waypoint_reach_velocity: 0.15 # [m/s] velocity gate: chain-final waypoint also needs speed below this (true stop-and-go)
+  collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)
+  optimistic_iterations: 5 # edges may plan through UNKNOWN only for the first N replans (bootstrap); then unknown=blocked
+  recovery_enabled: true # master toggle for the in-planner backtrack
+  recovery_boxed_deadline: 4.0 # [s] if the tree is still tiny after this while planning -> backtrack (boxed in)
+  recovery_min_tree: 10 # tree node count below which it counts as "still empty" for the boxed-in check
+  recovery_timeout: 12.0 # [s] hard deadline: AEP() backtracks after this no matter what
   lambda: 0.5 # (tunning factor)
   global_lambda: 0.05 # (tunning factor)
-

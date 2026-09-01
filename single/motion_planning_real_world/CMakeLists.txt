@@ -23,10 +23,10 @@ set(CATKIN_DEPENDENCIES
   std_srvs
   std_msgs
   geometry_msgs
+  tf2_ros
   visualization_msgs
   voxblox_ros
   minkindr_conversions
-  motion_planning
   gain_evaluation
   cache_nodes
   mavros
@@ -44,6 +44,7 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
  # Define libraries
 set(LIBRARIES
+  PlannerHelpersReal
   NBVPlannerReal
   KinoNBVPlannerReal
   AEPlannerReal
@@ -69,8 +70,13 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   )
   
+ # mrs-free helpers shared by the real AEP + NBV planners
+add_library(PlannerHelpersReal
+  src/planner_helpers_real.cpp
+  )
+
    # Add library targets
-add_library(NBVPlannerReal 
+add_library(NBVPlannerReal
   src/NBVReal/NBVplannerReal.cpp
   )
 
@@ -91,15 +97,17 @@ add_library(KinoAEPlannerReal
 
 
  # Add dependencies for library targets
+add_dependencies(PlannerHelpersReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(NBVPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoNBVPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(AEPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 add_dependencies(KinoAEPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
-target_link_libraries(NBVPlannerReal ${catkin_LIBRARIES})
+target_link_libraries(PlannerHelpersReal ${catkin_LIBRARIES})
+target_link_libraries(NBVPlannerReal ${catkin_LIBRARIES} PlannerHelpersReal)
 target_link_libraries(KinoNBVPlannerReal ${catkin_LIBRARIES})
-target_link_libraries(AEPlannerReal ${catkin_LIBRARIES})
+target_link_libraries(AEPlannerReal ${catkin_LIBRARIES} PlannerHelpersReal)
 target_link_libraries(KinoAEPlannerReal ${catkin_LIBRARIES})
 
  # Add executable for NBVplanner_node.cpp
