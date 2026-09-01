@@ -1,0 +1,11 @@
+# IST Lamp volume evaluation box, takeoff relative, shifted per run by offset.txt.
+
+bounded_box:
+  min_x: 2.0 # [m]
+  max_x: 7.0 # [m]
+  min_y: -2.0 # [m]
+  max_y: 2.0 # [m]
+  min_z: 0.0 # [m]
+  max_z: 6.0 # [m]
+
+unobservable_volume: 0.0 # [m3]
