@@ -22,3 +22,6 @@ __pycache__/
 # Workshop paper draft (kept local, not tracked)
 worklog/workshop_paper_draft.txt
 current_config.env
+
+# Local network config for closed-loop HIL (real IPs stay local; commit config.sh.template only)
+single/motion_planning/tmux/one_drone/closed_loop_hil/config.sh

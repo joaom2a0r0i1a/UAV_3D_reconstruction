@@ -1,0 +1,7 @@
+# Network config for the closed-loop HIL scripts (campaign.sh + sim.sh source this).
+# Copy to config.sh (gitignored) and fill in YOUR values:
+#   cp config.sh.template config.sh
+# Values are defaults — anything already exported in the environment wins.
+: "${ORIN:=user@jetson.local}"      # SSH target for the onboard Jetson: user@host-or-ip
+: "${DESKTOP_IP:=192.168.1.10}"     # this desktop's LAN IP = the ROS master host
+export ORIN DESKTOP_IP
