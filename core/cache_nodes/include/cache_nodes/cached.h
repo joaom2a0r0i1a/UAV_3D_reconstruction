@@ -6,6 +6,7 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <mrs_msgs/UavState.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <mutex>
 #include <memory>
 
@@ -46,6 +47,8 @@ public:
 private:
     void GetTransformation();
     void callbackUavState(const mrs_msgs::UavState::ConstPtr& msg);
+    void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr& msg);   // real-world pose source (mavros)
+    void callbackOffset(const geometry_msgs::Point::ConstPtr& msg);            // real-world start offset -> shift gain box
     void timerReevaluate(const ros::TimerEvent&);
     void callbackGain(const cache_nodes::Node::ConstPtr& msg);
     bool callbackBestNode(cache_nodes::BestNode::Request& req, cache_nodes::BestNode::Response& res);
@@ -73,7 +76,11 @@ private:
     ros::ServiceServer ss_best_node;
     ros::Subscriber sub_gain;
     ros::Subscriber sub_uav_state;
+    ros::Subscriber sub_local_pose;   // real-world alternative to uav_state (whichever publishes wins)
+    ros::Subscriber sub_offset;       // planner's latched start offset (real world)
     ros::Timer reevaluate_timer;
+
+    bool use_ns_prefix_ = true;       // false for real world: frames are bare (map/base_link), no uavX/ prefix
 
     ros::CallbackQueue fast_queue_;
     std::unique_ptr<ros::AsyncSpinner> fast_spinner_;

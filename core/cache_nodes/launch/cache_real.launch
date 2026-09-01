@@ -1,0 +1,46 @@
+<launch>
+  <!-- Real-world cached frontier server: mavros pose source (fixes the reevaluation sphere being
+       stuck at the origin), bare TF frames (use_ns_prefix=false, fixes the camera-extrinsics
+       lookup), planner's latched start offset shifts the gain box, GainConfigReal box. -->
+  <arg name="voxel_size" default="0.2"/>
+  <arg name="voxels_per_side" default="16" />
+  <arg name="truncation_distance" default="1" />
+  <arg name="ray_length" default="5" />
+
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+  <arg name="world_frame" default="map" />
+  <!-- Frame args so the MRS-sim bridge test can pass prefixed frames (see RealPlannerSimTest.launch). -->
+  <arg name="frame_id" default="map" />
+  <arg name="body_frame" default="base_link" />
+  <arg name="camera_frame" default="camera_link" />
+  <arg name="pose_topic" default="/mavros/local_position/pose" />
+
+  <group ns="$(arg UAV_NAME)">
+    <node pkg="cache_nodes" type="cached" name="cache_nodes" output="screen">
+      <rosparam file="$(find motion_planning_real_world)/config/GainConfigReal.yaml" />
+      <rosparam file="$(find cache_nodes)/config/config.yaml" />
+      <param name="uav_namespace" value="$(arg UAV_NAME)" />
+      <param name="use_ns_prefix" value="false" />
+      <param name="frame_id" value="$(arg frame_id)" />
+      <param name="body/frame_id" value="$(arg body_frame)" />
+      <param name="camera/frame_id" value="$(arg camera_frame)" />
+      <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />
+      <remap from="~tsdf_map_in" to="voxblox_node/tsdf_map_out" />
+      <param name="use_tf_transforms" value="false" />
+      <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+      <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+      <param name="update_mesh_every_n_sec" value="0.0" />
+      <param name="publish_traversable" value="false" />
+      <param name="publish_pointclouds" value="false" />
+      <param name="max_ray_length" value="$(arg ray_length)" />
+      <param name="world_frame" value="$(arg world_frame)" />
+      <!-- Subscribers -->
+      <remap from="~tree_node_in" to="tree_node" />
+      <remap from="~local_pose_in" to="$(arg pose_topic)" />
+      <remap from="~offset_in" to="offset_out" />
+      <!-- Service Servers -->
+      <remap from="~best_node_in" to="~best_node" />
+    </node>
+  </group>
+
+</launch>

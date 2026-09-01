@@ -37,15 +37,20 @@ Cached::Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh)
         "tree_node_in", 10, boost::bind(&Cached::callbackGain, this, _1), ros::VoidConstPtr(), &fast_queue_);
     sub_gain = nh_private_.subscribe(tree_node_ops);
     sub_uav_state = nh_private_.subscribe("uav_state_in", 10, &Cached::callbackUavState, this);
+    
+    // Real-world sources (unmapped/silent in sim): mavros pose + the planner's latched start offset.
+    sub_local_pose = nh_private_.subscribe("local_pose_in", 10, &Cached::callbackLocalPose, this);
+    sub_offset = nh_private_.subscribe("offset_in", 1, &Cached::callbackOffset, this);
 
     tsdf_map_ = voxblox_server_.getTsdfMapPtr();
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
 
-    // Setup Tf Transformer
+    // Setup Tf Transformer; use_ns_prefix=false for real world (bare map/base_link frames — the uavX/ prefix would break the camera-extrinsics lookup).
+    param_loader.loadParam("use_ns_prefix", use_ns_prefix_, true);
     transformer_ = std::make_unique<mrs_lib::Transformer>("cached");
     transformer_->setDefaultFrame(frame_id);
-    transformer_->setDefaultPrefix(ns);
+    if (use_ns_prefix_) transformer_->setDefaultPrefix(ns);
     transformer_->retryLookupNewest(true);
 
     // Get vertical FoV and setup camera
@@ -82,6 +87,17 @@ void Cached::callbackUavState(const mrs_msgs::UavState::ConstPtr& msg) {
     x = msg->pose.position.x;
     y = msg->pose.position.y;
     z = msg->pose.position.z;
+}
+
+void Cached::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+    x = msg->pose.position.x;
+    y = msg->pose.position.y;
+    z = msg->pose.position.z;
+}
+
+void Cached::callbackOffset(const geometry_msgs::Point::ConstPtr& msg) {
+    evaluator.setWorldOffset(Eigen::Vector3d(msg->x, msg->y, msg->z));
+    ROS_INFO("[Cached]: Gain box shifted by start offset [%.2f, %.2f, %.2f]", msg->x, msg->y, msg->z);
 }
 
 void Cached::timerReevaluate(const ros::TimerEvent&) {
