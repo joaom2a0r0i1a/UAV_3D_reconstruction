@@ -19,11 +19,22 @@ GainEvaluator::GainEvaluator(const ros::NodeHandle& nh_private) {
   nh_private.param("gain_evaluation/min_z", min_z_, 0.0f);
   nh_private.param("gain_evaluation/max_z", max_z_, 14.5f);
 
-  nh_private.param("camera_intrinsics/hfov", fov_y_rad_, 1.51844f);
-  nh_private.param("camera_intrinsics/vfov", fov_p_rad_, 1.01229f);
+  nh_private.param("camera_intrinsics/h_fov", fov_y_rad_, 1.51844f);
+  nh_private.param("camera_intrinsics/v_fov", fov_p_rad_, 1.01229f);
   nh_private.param("camera_intrinsics/max_distance", r_max_, 5.0f);
   nh_private.param("camera_intrinsics/yaw_samples", yaw_samples_, 15);
   nh_private.param("camera_intrinsics/pitch", camera_pitch_, 10.0f);
+
+  // Yaml box for setWorldOffset (real-world start anchoring).
+  base_min_x_ = min_x_; base_max_x_ = max_x_;
+  base_min_y_ = min_y_; base_max_y_ = max_y_;
+  base_min_z_ = min_z_; base_max_z_ = max_z_;
+}
+
+void GainEvaluator::setWorldOffset(const Eigen::Vector3d& offset) {
+  min_x_ = base_min_x_ + (float)offset.x();  max_x_ = base_max_x_ + (float)offset.x();
+  min_y_ = base_min_y_ + (float)offset.y();  max_y_ = base_max_y_ + (float)offset.y();
+  min_z_ = base_min_z_ + (float)offset.z();  max_z_ = base_max_z_ + (float)offset.z();
 }
 
 GainEvaluator::~GainEvaluator() {

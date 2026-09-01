@@ -50,6 +50,9 @@ class GainEvaluator {
   // Function to set camera extrinsics.
   void setCameraExtrinsics(const voxblox::Transformation& T_C_B);
 
+  // Anchor the gain_evaluation box at a real-world start pose (box = yaml box + offset); absolute so a re-capture is safe, sim never calls it.
+  void setWorldOffset(const Eigen::Vector3d& offset);
+
   // Bind the TSDF layer (NON-OWNED; caller keeps it alive).
   void setTsdfLayer(voxblox::Layer<voxblox::TsdfVoxel>* tsdf_layer);
 
@@ -214,6 +217,8 @@ class GainEvaluator {
 
   // Get map Bounds
   float min_x_, min_y_, min_z_, max_x_, max_y_, max_z_;
+  // Yaml box - setWorldOffset recomputes min/max from these.
+  float base_min_x_, base_min_y_, base_min_z_, base_max_x_, base_max_y_, base_max_z_;
   float fov_y_rad_, fov_p_rad_;
   float r_max_;
   float dr_ = 0.2f;
