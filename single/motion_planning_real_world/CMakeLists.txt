@@ -66,7 +66,7 @@ catkin_package(
  # Set include directories
 include_directories(
   include
-  ${EIGEN_INCLUDE_DIR}
+  ${EIGEN3_INCLUDE_DIR}
   ${catkin_INCLUDE_DIRS}
   )
   
