@@ -56,7 +56,8 @@ def stats(v):
 
 result={}
 for L in sys.argv[1:]:
-    ld=os.path.join(DATA,L)
+    # absolute labels let results live outside the repo (real runs default to ~/real_experiments)
+    ld=L if os.path.isabs(L) else os.path.join(DATA,L)
     runs=[os.path.basename(d) for d in sorted(glob.glob(os.path.join(ld,'2*'))) if os.path.isdir(d)]
     good=[r for r in runs if os.path.exists(os.path.join(ld,r,'voxblox_data.csv'))
           and sum(1 for _ in open(os.path.join(ld,r,'voxblox_data.csv')))>1]
