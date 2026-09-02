@@ -2,7 +2,7 @@
 
 import rospy
 import numpy as np
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField.
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
 import cv2
 from cv_bridge import CvBridge
 from struct import pack, unpack
