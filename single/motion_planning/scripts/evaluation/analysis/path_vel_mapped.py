@@ -8,23 +8,41 @@ import rosbag
 
 DATA  = os.path.join(os.environ['MP'], 'data')
 OUT   = os.environ.get('OUT', '')
-TOPIC = '/uav1/estimation_manager/uav_state'
+
+# PV_TOPIC override for real-world bags: PoseStamped shares .header.stamp + .pose.position with the sim UavState, so nothing else changes.
+TOPIC = os.environ.get('PV_TOPIC', '/uav1/estimation_manager/uav_state')
 DT      = 0.2
 MIN_DUR = 120.0
 MATCH_S = 180.0
+# mavros glitch guard; without it the 2025 bags report a path of 3.3e12 m. No op in sim.
+MAX_POS   = float(os.environ.get('PV_MAX_POSITION', 1000.0))
+MAX_SPEED = float(os.environ.get('PV_MAX_SPEED', 20.0))
+# glitched messages also carry wild header stamps, which would become the run duration.
+MAX_DT    = float(os.environ.get('PV_MAX_DT', 5.0))
+
+def sane(x, y, z):
+    return (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)
+            and abs(x) <= MAX_POS and abs(y) <= MAX_POS and abs(z) <= MAX_POS)
 
 def ds_length(path):
-    ds=0.0; dx=dy=dz=None; tlk=None; t0=t1=None; n=0
+    ds=0.0; dx=dy=dz=None; tlk=None; t0=t1=None; n=0; skipped=0
     with rosbag.Bag(path) as bag:
         for _, msg, _ in bag.read_messages(topics=[TOPIC]):
             t=msg.header.stamp.to_sec()
             x,y,z=msg.pose.position.x,msg.pose.position.y,msg.pose.position.z
+            if not sane(x,y,z):
+                skipped+=1; continue
+            if t1 is not None and not (0.0 <= t - t1 <= MAX_DT):
+                skipped+=1; continue
             if t0 is None: t0=t
             t1=t; n+=1
             if tlk is None: dx,dy,dz,tlk=x,y,z,t
             elif t-tlk>=DT:
-                ds+=math.sqrt((x-dx)**2+(y-dy)**2+(z-dz)**2); dx,dy,dz,tlk=x,y,z,t
-    return dict(n=n, dur=(t1-t0 if t0 is not None else 0.0), ds=ds)
+                step=math.sqrt((x-dx)**2+(y-dy)**2+(z-dz)**2)
+                if step/(t-tlk) > MAX_SPEED:
+                    skipped+=1; dx,dy,dz,tlk=x,y,z,t; continue
+                ds+=step; dx,dy,dz,tlk=x,y,z,t
+    return dict(n=n, dur=(t1-t0 if t0 is not None else 0.0), ds=ds, skipped=skipped)
 
 def rundir_epoch(name): return datetime.datetime.strptime(name,'%Y%m%d_%H%M%S').timestamp()
 def bag_epoch(fn):
@@ -61,7 +79,8 @@ for L in sys.argv[1:]:
         if res['dur']<MIN_DUR:
             print(f"   run {r}: dur {res['dur']:.0f}s <PARTIAL excluded>"); continue
         v=res['ds']/res['dur'] if res['dur']>0 else 0.0
-        print(f"   run {r} <- {os.path.basename(best)}  dur={res['dur']:6.1f}s  ds={res['ds']:7.1f} m  v={v:.3f} m/s")
+        note = f"  (skipped {res['skipped']} glitched poses)" if res.get('skipped') else ""
+        print(f"   run {r} <- {os.path.basename(best)}  dur={res['dur']:6.1f}s  ds={res['ds']:7.1f} m  v={v:.3f} m/s{note}")
         paths.append(res['ds']); vels.append(v)
     n,pm,ps=stats(paths); _,vm,vs=stats(vels)
     print(f"   -> N={n}  path mean={pm:.1f}±{ps:.1f} m   avg_vel mean={vm:.3f}±{vs:.3f} m/s")
