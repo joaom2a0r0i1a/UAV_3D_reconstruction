@@ -9,14 +9,14 @@ timer_main:
 # NOTE: bounded_box is RELATIVE TO THE TAKEOFF POSE — the planner captures the start offset on
 # ~start (re-capturable via ~offset) and shifts this box + the gain_evaluation box by it.
 
-# Basketball
-#bounded_box:
-#  min_x: -6.0 # [m]
-#  max_x: 6.0 # [m]
-#  min_y: -6.0 # [m]
-#  max_y: 6.0 # [m]
-#  min_z: 2.0 # [m]
-#  max_z: 8.0 # [m]
+# Basketball (active)
+bounded_box:
+  min_x: -6.0 # [m]
+  max_x: 6.0 # [m]
+  min_y: -6.0 # [m]
+  max_y: 6.0 # [m]
+  min_z: 2.0 # [m]
+  max_z: 8.0 # [m]
 
 # School sim-test (ABSOLUTE school box pre-compensated for spawn -22,0; used with session_realtest.yml)
 #bounded_box:
@@ -28,13 +28,13 @@ timer_main:
 #  max_z: 20.0 # [m]
 
 # IST Lamp
-bounded_box:
-  min_x: -1.0 # [m]
-  max_x: 11.0 # [m]
-  min_y: -6.0 # [m]
-  max_y: 6.0 # [m]
-  min_z: 2.0 # [m]
-  max_z: 9.0 # [m]
+#bounded_box:
+#  min_x: -1.0 # [m]
+#  max_x: 11.0 # [m]
+#  min_y: -6.0 # [m]
+#  max_y: 6.0 # [m]
+#  min_z: 2.0 # [m]
+#  max_z: 9.0 # [m]
 
 local_planning:
   N_max: 20

@@ -6,23 +6,23 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
-# Basketball
-#bounded_box:
-#  min_x: -6.0 # [m]
-#  max_x: 6.0 # [m]
-#  min_y: -6.0 # [m]
-#  max_y: 6.0 # [m]
-#  min_z: 2.0 # [m]
-#  max_z: 8.0 # [m]
-  
-# IST Lamp
+# Basketball (active)
 bounded_box:
-  min_x: -1.0 # [m]
-  max_x: 11.0 # [m]
+  min_x: -6.0 # [m]
+  max_x: 6.0 # [m]
   min_y: -6.0 # [m]
   max_y: 6.0 # [m]
-  min_z: 3.0 # [m]
-  max_z: 9.0 # [m]
+  min_z: 2.0 # [m]
+  max_z: 8.0 # [m]
+  
+# IST Lamp
+#bounded_box:
+#  min_x: -1.0 # [m]
+#  max_x: 11.0 # [m]
+#  min_y: -6.0 # [m]
+#  max_y: 6.0 # [m]
+#  min_z: 3.0 # [m]
+#  max_z: 9.0 # [m]
 
 uav_parameters:
   max_vel: 0.5 # [m/s]

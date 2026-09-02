@@ -59,7 +59,7 @@ rosservice call /uav1/planner_node/start
 
 The test launch overrides the frames to the MRS convention (`uavX/world_origin`, `uavX/fcu`,
 prefixed camera frame) since the real planner's tf2 lookups don't auto-prefix. Boxes stay the
-real (takeoff-relative, Lamp-sized) ones — widen them in the yamls for bigger sim sweeps.
+real (takeoff-relative) ones — widen them in the yamls for bigger sim sweeps.
 
 ## Field link (Alfa AWUS036ACM, PC <-> Jetson)
 
