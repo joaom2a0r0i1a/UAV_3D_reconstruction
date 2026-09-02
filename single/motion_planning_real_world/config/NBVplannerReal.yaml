@@ -54,10 +54,10 @@ evaluation:
 
 camera:
   frame_id: "camera_link"
-  h_fov: 1.51844 # [rad]
-  width: 1080
-  height: 720
-  min_distance: 0.2 # [m]
+  h_fov: 1.38203 # [rad] measured, D455 colour at 640x480
+  width: 640
+  height: 480
+  min_distance: 0.3 # [m]
   max_distance: 5 # [m]
 
 path:

@@ -10,9 +10,9 @@
   <arg name="realsense_frame" default="camera_link" />
   <arg name="realsense_frame_slashless" default="$(arg UAV_NAME)_camera_link" />
 
-  <!-- Camera mount pitch: 10deg ACTIVE (0.175 rad, matches camera/pitch: 10.0 in the yamls); 15deg (0.261 rad) is commented below — if the mount swaps, also change camera/pitch. -->
-  <node pkg="tf2_ros" type="static_transform_publisher" name="$(arg fcu_frame_slashless)_to_$(arg realsense_frame_slashless)" args="0.03 0 -0.15 0 0.175 0 $(arg fcu_frame) $(arg realsense_frame)" />
-  <!--node pkg="tf2_ros" type="static_transform_publisher" name="$(arg fcu_frame_slashless)_to_$(arg realsense_frame_slashless)" args="0.03 0 -0.15 0 0.261 0 $(arg fcu_frame) $(arg realsense_frame)" /-->
+  <!-- Camera mount pitch: 15deg ACTIVE (0.261 rad, matches camera/pitch: 15.0 in the yamls); 10deg (0.175 rad) is commented below — if the mount swaps, also change camera/pitch. -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="$(arg fcu_frame_slashless)_to_$(arg realsense_frame_slashless)" args="0.03 0 -0.15 0 0.261 0 $(arg fcu_frame) $(arg realsense_frame)" />
+  <!--node pkg="tf2_ros" type="static_transform_publisher" name="$(arg fcu_frame_slashless)_to_$(arg realsense_frame_slashless)" args="0.03 0 -0.15 0 0.175 0 $(arg fcu_frame) $(arg realsense_frame)" /-->
   
   <node pkg="motion_planning_real_world" type="mavros_tf_broadcaster" name="mavros_tf_broadcaster" output="screen" />
 </launch>

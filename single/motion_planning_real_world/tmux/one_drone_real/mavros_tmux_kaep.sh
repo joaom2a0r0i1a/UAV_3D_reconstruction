@@ -46,7 +46,7 @@ input=(
   # tgt_system MUST equal the autopilot's SYSID_THISMAV or every setpoint is dropped.
   'mavros' 'sudo chmod 666 $FCU_DEV; roslaunch mavros apm.launch fcu_url:=$FCU_URL tgt_system:=$FCU_SYSID
 '
-  'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=640 depth_height:=360 depth_fps:=15 color_width:=640 color_height:=360 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
+  'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=640 depth_height:=480 depth_fps:=15 color_width:=640 color_height:=480 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
 '
   #'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=1080 depth_height:=720 depth_fps:=15 color_width:=640 color_height:=360 color_fps:=15 align_depth:=true filters:=decimation,temporal,spatial enable_pointcloud:=true
 #'

@@ -29,11 +29,11 @@ gain_evaluation:
 #  max_z: 6.0 # [m]
 
 camera_intrinsics:
-  h_fov: 1.51844 # [rad]
-  v_fov: 1.01229 # [rad]
+  h_fov: 1.38203 # [rad] measured on the D455 colour stream at 640x480, fx 386.92
+  v_fov: 1.11157 # [rad] measured, fy 386.42
   max_distance: 5 # [m]
   yaw_samples: 15
-  pitch: 10.0 # [deg]
+  pitch: 15.0 # [deg]
 
 accurate_frontiers: false
 checking_distance: 2.0
