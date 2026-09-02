@@ -5,12 +5,17 @@
   <arg name="ray_length" default="5" />
 
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+  <!-- Gain variant. "yaml" keeps evaluation/marginal_gain from the config file; pass
+       true for marginal or false for absolute to override it for this run. -->
+  <arg name="marginal_gain" default="yaml" />
   <arg name="world_frame" default="map" />
 
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning_real_world" type="NBVReal" name="planner_node" output="screen">
       <rosparam file="$(find motion_planning_real_world)/config/GainConfigReal.yaml" />
       <rosparam file="$(find motion_planning_real_world)/config/NBVplannerReal.yaml" />
+      <param name="evaluation/marginal_gain" value="true"  if="$(eval arg('marginal_gain') == 'true')" />
+      <param name="evaluation/marginal_gain" value="false" if="$(eval arg('marginal_gain') == 'false')" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />

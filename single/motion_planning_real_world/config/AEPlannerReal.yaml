@@ -51,7 +51,7 @@ global_planning:
   selection: "score"       # goal pick: "cost" (nearest), "gain" (most info), "score" (gain discounted by distance)
 
 evaluation:
-  marginal_gain: true      # true: marginal gain (frontier = path sum in global); false: absolute gain (original AEP)
+  marginal_gain: true      # true: marginal (frontier = path sum in global), false: absolute; launch arg wins
   objective: expdecay      # expdecay | rate_L
   compute: "gpu"           # "gpu" (batched; absolute batches the whole tree) or "cpu" (sequential; marginal=hash)
   marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel

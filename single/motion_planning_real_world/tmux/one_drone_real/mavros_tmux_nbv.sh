@@ -8,26 +8,32 @@
 # Short-Description: start the uav
 ### END INIT INFO
 if [ "$(id -u)" == "0" ]; then
-  exec sudo -u mrs "$0" "$@"
+  echo "run this as the normal user, not root"
+  exit 1
 fi
 
 source $HOME/.bashrc
 
-# location for storing the bag files
-# * do not change unless you know what you are doing
-MAIN_DIR=~/"bag_files"
+# which planner this session flies, and which gain variant is under test
+PLANNER=rhnbvp
+GAIN="${GAIN:-marginal}"
+source "$(dirname "$(readlink -f "$0")")/env.sh"
+
+# location for storing the tmux logs
+# * all sessions of all variants collect here, one folder per variant
+MAIN_DIR="$EXP_ROOT/tmux_logs"
 
 # the project name
-# * is used to define folder name in ~/$MAIN_DIR
-PROJECT_NAME=mavros_tmux_nbv_baseline
+# * is used to define folder name in $MAIN_DIR
+PROJECT_NAME="$RUN_LABEL"
 
 # the name of the TMUX session
 # * can be used for attaching as 'tmux a -t <session name>'
-SESSION_NAME=mav
+SESSION_NAME="$PLANNER"
 
 # following commands will be executed first in each window
 # * do NOT put ; at the end
-pre_input=""
+pre_input="export PLANNER=$PLANNER GAIN=$GAIN; source ./env.sh"
 
 # define commands
 # 'name' 'command'
@@ -35,31 +41,39 @@ pre_input=""
 # * "new line" after the command    => the command will be called after start
 # * NO "new line" after the command => the command will wait for user's <enter>
 input=(
-  'Rosbag' 'waitForOffboard; ./record.sh
+  'Rosbag' 'waitForMavros; ./record.sh eval
 '
-  'mavros' 'sudo chmod 666 /dev/ttyUSB0; roslaunch mavros apm.launch
+  # tgt_system MUST equal the autopilot's SYSID_THISMAV or every setpoint is dropped.
+  'mavros' 'sudo chmod 666 $FCU_DEV; roslaunch mavros apm.launch fcu_url:=$FCU_URL tgt_system:=$FCU_SYSID
 '
-  'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=1080 depth_height:=720 depth_fps:=15 color_width:=640 color_height:=360 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
+  'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=640 depth_height:=360 depth_fps:=15 color_width:=640 color_height:=360 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
 '
   #'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=1080 depth_height:=720 depth_fps:=15 color_width:=640 color_height:=360 color_fps:=15 align_depth:=true filters:=decimation,temporal,spatial enable_pointcloud:=true
 #'
   #'imu' 'waitForRos; rosrun imu_filter_madgwick imu_filter_node _use_mag:=false _publish_tf:=false _world_frame:="enu" /imu/data_raw:=/camera/imu /imu/data:=/rtabmap/imu
 #'
-  'tf_connect' 'waitForTime; roslaunch motion_planning_real_world tf_realsense_connect_mavros.launch
+  'tf_connect' 'waitForRos; roslaunch motion_planning_real_world tf_realsense_connect_mavros.launch
 '
-  'motion_planner' 'waitForControl; roslaunch motion_planning_real_world NBVPlannerReal.launch
+  'motion_planner' 'waitForMavros; roslaunch motion_planning_real_world NBVPlannerReal.launch marginal_gain:=$MARGINAL
 '
-  'planner_start' 'history -s "rosservice call /uav2/planner_node/start"
+  'planner_start' 'history -s "rosservice call /$UAV_NAME/planner_node/start"
+'
+  'experiment' 'waitForRos; mkdir -p $EXP_DIR; roslaunch motion_planning_real_world evaluate_map_real.launch data_directory:=$EXP_DIR
+'
+  'start_gate' 'waitForRos; roslaunch motion_planning_real_world start_gate.launch
 '
   'voxblox' 'waitForRos; roslaunch motion_planning_real_world processed_voxblox.launch
 '
-  'processed_pointclouds' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+  'cam_to_ptcld' 'waitForRos; roslaunch motion_planning_real_world cam_to_ptcld_real.launch
 '
+  # legacy freespace-package chain (replaced by cam_to_ptcld_real)
+  #'processed_pointclouds' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+#'
   #'processed_pointclouds_deactivated' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud_deactivated.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
 #'
 
 # do NOT modify the command list below
-  'EstimDiag' 'waitForHw; rostopic echo /mavros/local_position/pose
+  'EstimDiag' 'waitForMavros; rostopic echo /mavros/local_position/pose
 '
   'kernel_log' 'tail -f /var/log/kern.log -n 100
 '
@@ -80,10 +94,10 @@ attach=true
 ### DO NOT MODIFY BELOW ###
 ###########################
 
-export TMUX_BIN="/usr/bin/tmux -L mrs -f /etc/ctu-mrs/tmux.conf"
+export TMUX_BIN="/usr/bin/tmux -L uav"
 
 # find the session
-FOUND=$( $TMUX_BIN ls | grep $SESSION_NAME )
+FOUND=$( $TMUX_BIN ls 2>/dev/null | grep $SESSION_NAME )
 
 if [ $? == "0" ]; then
   echo "The session already exists"
@@ -142,10 +156,11 @@ done
 
 sleep 3
 
-# start loggers
+# start loggers (ts is moreutils, fall back to plain cat when it is missing)
+if command -v ts > /dev/null 2>&1; then LOG_FILTER="ts | cat"; else LOG_FILTER="cat"; fi
 for ((i=0; i < ${#names[*]}; i++));
 do
-  $TMUX_BIN pipe-pane -t $SESSION_NAME:$(($i+1)) -o "ts | cat >> $TMUX_DIR/$(($i+1))_${names[$i]}.log"
+  $TMUX_BIN pipe-pane -t $SESSION_NAME:$(($i+1)) -o "$LOG_FILTER >> $TMUX_DIR/$(($i+1))_${names[$i]}.log"
 done
 
 # send commands
@@ -173,10 +188,10 @@ if $attach; then
   then
     $TMUX_BIN -2 attach-session -t $SESSION_NAME
   else
-    tmux detach-client -E "tmux -L mrs a -t $SESSION_NAME"
+    tmux detach-client -E "tmux -L uav a -t $SESSION_NAME"
   fi
 else
   echo "The session was started"
   echo "You can later attach by calling:"
-  echo "  tmux -L mrs a -t $SESSION_NAME"
+  echo "  tmux -L uav a -t $SESSION_NAME"
 fi

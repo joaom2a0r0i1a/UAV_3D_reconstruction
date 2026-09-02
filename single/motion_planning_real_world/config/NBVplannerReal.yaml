@@ -46,7 +46,7 @@ rrt:
   tolerance: 1.0 # [m]
 
 evaluation:
-  marginal_gain: true      # true: marginal gain; false: absolute gain
+  marginal_gain: true      # true: marginal, false: absolute; launch arg marginal_gain wins
   optimize_yaw: true       # false: keep each node's random sampled yaw (classic NBVP); true: pick argmax yaw per node (like AEP)
   compute: "gpu"           # "gpu" (batched) or "cpu" (sequential; flat-map, marginal=hash)
   marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
