@@ -31,6 +31,7 @@
       <!-- Subscribers -->
       <remap from="~local_pose_in" to="/mavros/local_position/pose" />
       <remap from="~velocity_in" to="/mavros/local_position/velocity_local" />
+      <remap from="~state_in" to="/mavros/state" />
       <!-- Services clients-->
       <remap from="~setpoint_out" to="/mavros/setpoint_raw/local" />
       <!-- Services servers-->

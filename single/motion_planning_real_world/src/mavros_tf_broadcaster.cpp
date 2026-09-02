@@ -6,8 +6,12 @@
 
 class SafeTfBroadcaster {
 public:
-  SafeTfBroadcaster() : has_prev_time_(false), max_time_jump_sec_(5.0) {
+  SafeTfBroadcaster() : has_prev_time_(false), max_time_jump_sec_(5.0), has_prev_pos_(false) {
     ros::NodeHandle nh;
+    ros::NodeHandle nh_private("~");
+    // 1e4 was too loose; a 1524 m pose in the 2025 aep2 flight passed it into the map.
+    nh_private.param("max_position", max_position_, 500.0);
+    nh_private.param("max_speed", max_speed_, 20.0);
     pose_sub_ = nh.subscribe("/mavros/local_position/pose", 10, &SafeTfBroadcaster::poseCallback, this);
   }
 
@@ -31,12 +35,27 @@ public:
       return;
     }
 
-    // Check position sanity (optionally define bounds)
+    // Check position sanity
     const auto& p = msg->pose.position;
-    if (std::isnan(p.x) || std::isnan(p.y) || std::isnan(p.z) ||
-        std::abs(p.x) > 1e4 || std::abs(p.y) > 1e4 || std::abs(p.z) > 1e4) {
-      ROS_WARN_THROTTLE(5, "[TF BROADCAST] Invalid position values. Skipping transform.");
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+        std::abs(p.x) > max_position_ || std::abs(p.y) > max_position_ ||
+        std::abs(p.z) > max_position_) {
+      ROS_WARN_THROTTLE(5, "[TF BROADCAST] Implausible position [%.3g, %.3g, %.3g]. Skipping transform.",
+                        p.x, p.y, p.z);
       return;
+    }
+
+    // Check for jumps no drone could fly
+    if (has_prev_pos_ && has_prev_time_) {
+      const double dt = std::abs((current_time - prev_time_).toSec());
+      const double jump = std::sqrt(std::pow(p.x - prev_pos_[0], 2) +
+                                    std::pow(p.y - prev_pos_[1], 2) +
+                                    std::pow(p.z - prev_pos_[2], 2));
+      if (dt > 1e-3 && jump / dt > max_speed_) {
+        ROS_WARN_THROTTLE(5, "[TF BROADCAST] Position jumped %.2f m in %.3f s. Skipping transform.",
+                          jump, dt);
+        return;
+      }
     }
 
     // All checks passed — broadcast the transform
@@ -49,15 +68,21 @@ public:
     tf_broadcaster_.sendTransform(tf::StampedTransform(
         transform, current_time, "map", "base_link"));
 
-    // Update previous time
+    // Update previous time and position
     prev_time_ = current_time;
     has_prev_time_ = true;
+    prev_pos_[0] = p.x; prev_pos_[1] = p.y; prev_pos_[2] = p.z;
+    has_prev_pos_ = true;
   }
 
 private:
   ros::Subscriber pose_sub_;
   tf::TransformBroadcaster tf_broadcaster_;
   ros::Time prev_time_;
+  double max_position_;
+  double max_speed_;
+  double prev_pos_[3];
+  bool has_prev_pos_;
   bool has_prev_time_;
   double max_time_jump_sec_;
 };

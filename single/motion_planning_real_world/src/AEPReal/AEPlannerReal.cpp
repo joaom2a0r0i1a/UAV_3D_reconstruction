@@ -9,6 +9,8 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     // Frames, Coordinates and Dimensions
     nh_private_.param("frame_id", frame_id, std::string("map"));
     nh_private_.param("body/frame_id", body_frame_id, std::string("base_link"));
+    nh_private_.param("pose_sanity/max_distance", pose_max_distance_, 500.0);
+    nh_private_.param("pose_sanity/max_speed", pose_max_speed_, 20.0);
     nh_private_.param("camera/frame_id", camera_frame_id, std::string("camera_link"));
 
     // Bounded Box (relative to the start pose; shifted by captureOffset)
@@ -110,6 +112,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     /* Subscribers */
     sub_local_pose = nh_private_.subscribe("local_pose_in", 10, &AEPlanner::callbackLocalPose, this);
     sub_velocity = nh_private_.subscribe("velocity_in", 10, &AEPlanner::callbackVelocity, this);
+    sub_state = nh_private_.subscribe("state_in", 10, &AEPlanner::callbackState, this);
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &AEPlanner::callbackStart, this);
@@ -579,7 +582,14 @@ double AEPlanner::distance(const Eigen::Vector4d& a, const Eigen::Vector4d& b) {
 
 void AEPlanner::captureOffset() {
     initial_offset = pose.head<3>();
-    initial_offset.z() = 0.0;   // x/y anchor only: local-frame z is already ground-referenced (the old flow captured the offset ON THE GROUND; an airborne z-shift lifts the box floor above the mappable space)
+    // z from the ground reading latched at arming; the current pose is airborne.
+    if (have_ground_z_) {
+        initial_offset.z() = ground_z_;
+    } else {
+        initial_offset.z() = 0.0;
+        ROS_WARN("[AEPlanner]: never saw the disarmed to armed edge, using z offset 0. Start the "
+                 "planner stack before arming to correct the barometric bias.");
+    }
 
     // Shift the bounded box (base = yaml values, so a re-capture is idempotent).
     min_x = base_min_x + (float)initial_offset.x();  max_x = base_max_x + (float)initial_offset.x();
@@ -729,11 +739,46 @@ void AEPlanner::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg
       return;
     }
 
+    // mavros emits occasional wild poses (up to 1e35 in the 2025 flights).
+    const geometry_msgs::Point& p = uav_local_pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+        std::abs(p.x) > pose_max_distance_ || std::abs(p.y) > pose_max_distance_ ||
+        std::abs(p.z) > pose_max_distance_) {
+        ROS_WARN_THROTTLE(5, "[%s]: implausible pose [%.3g, %.3g, %.3g], skipping.",
+                          "AEPlanner", p.x, p.y, p.z);
+        return;
+    }
+    if (have_pose_) {
+        const double dt = (ros::Time::now() - last_pose_time_).toSec();
+        const double jump = std::sqrt(std::pow(p.x - pose[0], 2) + std::pow(p.y - pose[1], 2) +
+                                      std::pow(p.z - pose[2], 2));
+        if (dt > 1e-3 && jump / dt > pose_max_speed_) {
+            ROS_WARN_THROTTLE(5, "[%s]: pose jumped %.2f m in %.3f s, skipping.",
+                              "AEPlanner", jump, dt);
+            return;
+        }
+    }
+
     double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
 
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
     last_pose_time_ = ros::Time::now();
     have_pose_ = true;
+}
+
+// Latches the barometric z bias on the ground, which captureOffset removes.
+void AEPlanner::callbackState(const mavros_msgs::State::ConstPtr msg) {
+    if (!is_initialized) {
+        return;
+    }
+    // first arming edge only; mavros reports spurious re-arms in flight.
+    if (msg->armed && !prev_armed_ && have_pose_ && !have_ground_z_) {
+        ground_z_ = pose.z();
+        have_ground_z_ = true;
+        ROS_INFO("[AEPlanner]: armed on the ground, latching z = %.2f m as the takeoff reference.",
+                 ground_z_);
+    }
+    prev_armed_ = msg->armed;
 }
 
 void AEPlanner::callbackVelocity(const geometry_msgs::TwistStamped::ConstPtr msg) {

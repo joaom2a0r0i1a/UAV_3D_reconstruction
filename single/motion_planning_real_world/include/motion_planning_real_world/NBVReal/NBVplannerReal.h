@@ -16,6 +16,7 @@
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/TwistStamped.h>
 #include <mavros_msgs/PositionTarget.h>
+#include <mavros_msgs/State.h>
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -84,6 +85,7 @@ public:
     bool callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg);
     void callbackVelocity(const geometry_msgs::TwistStamped::ConstPtr msg);
+    void callbackState(const mavros_msgs::State::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
 
     void changeState(const State_t new_state);
@@ -211,6 +213,11 @@ private:
     geometry_msgs::Pose uav_local_pose;
     ros::Time last_pose_time_;
     bool have_pose_ = false;
+    bool prev_armed_ = false;    // for the disarmed to armed edge
+    double ground_z_ = 0.0;      // local z while still on the ground
+    bool have_ground_z_ = false;
+    double pose_max_distance_;   // reject poses further than this from the origin
+    double pose_max_speed_;      // reject poses implying a jump faster than this
     double current_speed_ = 0.0;
     ros::Time last_vel_time_;
     bool have_vel_ = false;
@@ -234,6 +241,7 @@ private:
     // Subscribers
     ros::Subscriber sub_local_pose;
     ros::Subscriber sub_velocity;
+    ros::Subscriber sub_state;
 
     // Publishers
     ros::Publisher pub_markers;
