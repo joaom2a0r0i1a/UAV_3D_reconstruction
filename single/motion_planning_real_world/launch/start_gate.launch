@@ -1,0 +1,21 @@
+<launch>
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+  <arg name="state_in" default="/mavros/state" />
+  <arg name="pose_in" default="/mavros/local_position/pose" />
+  <arg name="ns_planner" default="/$(arg UAV_NAME)/planner_node" />
+  <arg name="mode_required" default="GUIDED" />
+  <arg name="auto_start" default="false" />
+  <arg name="auto_start_settle" default="3.0" />
+  <arg name="planner_check_period" default="2.0" />
+
+  <node name="start_gate" pkg="motion_planning_real_world" type="start_gate.py"
+        output="screen" required="false" launch-prefix="">
+    <remap from="state_in" to="$(arg state_in)" />
+    <remap from="pose_in" to="$(arg pose_in)" />
+    <param name="ns_planner" value="$(arg ns_planner)" />
+    <param name="mode_required" value="$(arg mode_required)" />
+    <param name="auto_start" value="$(arg auto_start)" />
+    <param name="auto_start_settle" value="$(arg auto_start_settle)" />
+    <param name="planner_check_period" value="$(arg planner_check_period)" />
+  </node>
+</launch>

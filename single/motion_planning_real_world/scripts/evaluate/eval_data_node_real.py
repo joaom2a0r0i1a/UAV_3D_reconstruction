@@ -38,10 +38,12 @@ class EvalData(object):
         self.reset_ros = rospy.get_param(
             '~reset_ros', True)  # On shutdown stops the planner
 
-        # Early stop: after the planner self-terminates, wait a grace then pad coverage to time_limit and stop.
+        # Early stop: on planner death wait a grace, pad the curve, stop.
         self.early_stop = rospy.get_param('~early_stop', True)
         self.early_stop_grace = rospy.get_param('~early_stop_grace', 10.0)
-        self.planner_misses = 0        # consecutive failed pings, debounces a flaky ping
+        # unreachable for this long counts as dead; a duration, ticks can bunch up
+        self.planner_death_confirm = rospy.get_param('~planner_death_confirm', 15.0)
+        self.first_miss_t = None       # ros-time of the first failed ping
         self.planner_seen = False      # latch: only watch for death after it was alive
         self.grace_deadline = None     # ros-time at which to stop, once planner is gone
 
@@ -119,7 +121,7 @@ class EvalData(object):
             rospy.wait_for_message("simulation_ready", Bool)
         rospy.loginfo("Planner stack is up.")
 
-        # REAL-WORLD DELTA: don't call the start service — the operator takes off + GUIDEs, and the planner's latched ~offset_out (published in captureOffset at ~start) is the mission-start trigger and t0.
+        # The operator starts the planner; its latched offset_out is the trigger and t0.
         rospy.loginfo("Waiting for mission start (latched offset from the "
                       "planner; use start_gate.py or 'rosservice call "
                       "%s/start')...", self.ns_planner)
@@ -133,7 +135,7 @@ class EvalData(object):
         if self.evaluate:
             self.writelog("Mission started (offset received).")
 
-            # Persist the run offset so stage-2 eval shifts the volume box by it (eval_voxblox_node auto-reads '<run>/offset.txt').
+            # Stage 2 reads offset.txt to shift the volume box.
             with open(os.path.join(self.eval_directory, "offset.txt"),
                       'w') as f:
                 f.write("%.6f %.6f %.6f\n" %
@@ -158,7 +160,7 @@ class EvalData(object):
             self.eval_n_maps = 0
             self.eval_n_pointclouds = 1
 
-            # Register the most recent rosbag; poll ~20s since the recorder may not have created it yet.
+            # Register the newest bag; poll since the recorder may lag.
             bag_expr = re.compile(
                 r'tmp_bag_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.bag.')
             tmp_bags_dir = os.path.join(os.path.dirname(self.eval_directory),
@@ -195,7 +197,7 @@ class EvalData(object):
             map_name = "{0:05d}".format(self.eval_n_maps)
             self.eval_writer.writerow(
                 [map_name, time_ros, time_real, self.eval_n_pointclouds])
-            self.eval_data_file.flush()   # survive a hard power off in the field
+            self.eval_data_file.flush()   # survive a power off
             try:
                 self.eval_voxblox_service(
                     os.path.join(self.eval_directory, "voxblox_maps",
@@ -205,15 +207,16 @@ class EvalData(object):
             self.eval_n_pointclouds = 0
             self.eval_n_maps += 1
 
-        # Early stop: planner self-shuts-down when done; wait a grace, pad the curve to time_limit, finalize the bag, stop.
+        # Early stop path.
         if self.early_stop and self.time_limit > 0.0:
             if self._planner_alive():
                 self.planner_seen = True
-                self.planner_misses = 0
+                self.first_miss_t = None
                 self.grace_deadline = None   # a recovered ping must not leave the stop armed
             elif self.planner_seen:
-                self.planner_misses += 1
-                if self.planner_misses < 3:   # ignore a single flaky ping
+                if self.first_miss_t is None:
+                    self.first_miss_t = rospy.get_time()
+                if rospy.get_time() - self.first_miss_t < self.planner_death_confirm:
                     return
                 if self.grace_deadline is None:
                     self.writelog(
@@ -223,7 +226,7 @@ class EvalData(object):
                         "[eval] Planner terminated; %ds grace before stop." %
                         int(self.early_stop_grace))
                     self.grace_deadline = rospy.get_time() + self.early_stop_grace
-                # 'if' (not 'elif') so grace=0 stops on the same tick termination is detected.
+                # 'if' not 'elif' so grace=0 stops on the same tick.
                 if rospy.get_time() >= self.grace_deadline:
                     self._pad_to_time_limit()
                     self._finalize_rosbag()
@@ -238,7 +241,7 @@ class EvalData(object):
                 self.stop_experiment("Time limit reached.")
 
     def _planner_alive(self):
-        # Ping the planner node; False once it self-terminates (ros::shutdown).
+        # False once the planner self-terminates.
         full = self.ns_planner if self.ns_planner.startswith('/') \
             else (rospy.get_namespace() + self.ns_planner)
         try:
@@ -247,7 +250,7 @@ class EvalData(object):
             return False
 
     def _pad_to_time_limit(self):
-        # Hold the final map's coverage flat out to time_limit so the curve spans the full budget.
+        # Hold the final coverage flat to time_limit.
         if not self.evaluate:
             return
         last_map = "{0:05d}".format(max(self.eval_n_maps - 1, 0))
@@ -265,7 +268,7 @@ class EvalData(object):
             (last_map, pad_rows, self.time_limit))
 
     def _finalize_rosbag(self):
-        # Clean-kill the recorder so it renames tmp_bag_*.bag.active -> .bag
+        # Clean-kill so the bag renames .active -> .bag.
         try:
             os.system("rosnode kill /eval_bag_recorder >/dev/null 2>&1")
             time.sleep(3.0)  # wall clock: rospy.sleep raises once shutdown started
@@ -273,8 +276,7 @@ class EvalData(object):
             pass
 
     def eval_finish(self):
-        # Runs on every shutdown path, Ctrl+C included, so an aborted flight still
-        # leaves a closed bag and a complete run folder.
+        # Every shutdown path, Ctrl+C included, closes the bag and the folder.
         self._finalize_rosbag()
         self.eval_data_file.close()
         map_path = os.path.join(self.eval_directory, "voxblox_maps")
@@ -286,7 +288,7 @@ class EvalData(object):
                       (n_maps, self.eval_n_maps))
         self.eval_log_file.close()
         rospy.loginfo("On eval_data_node shutdown: closing data files.")
-        # Sentinel written last (after CSV closed): marks the run complete for offload_runs.sh.
+        # Sentinel last: marks the run complete for offload_runs.sh.
         try:
             open(os.path.join(self.eval_directory, ".run_complete"),
                  "w").close()
