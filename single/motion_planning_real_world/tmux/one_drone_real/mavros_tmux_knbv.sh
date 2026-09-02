@@ -45,7 +45,7 @@ input=(
 '
   # tgt_system MUST equal the autopilot's SYSID_THISMAV or every setpoint is dropped.
   # No chmod needed: the port is root:dialout and the user is in dialout.
-  'mavros' 'roslaunch mavros apm.launch fcu_url:=$FCU_URL tgt_system:=$FCU_SYSID
+  'mavros' 'waitForRos; roslaunch mavros apm.launch fcu_url:=$FCU_URL tgt_system:=$FCU_SYSID
 '
   'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=640 depth_height:=480 depth_fps:=15 color_width:=640 color_height:=480 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
 '
