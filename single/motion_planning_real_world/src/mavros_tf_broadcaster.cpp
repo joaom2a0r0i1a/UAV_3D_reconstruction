@@ -6,43 +6,47 @@
 
 class SafeTfBroadcaster {
 public:
-  SafeTfBroadcaster() : has_prev_time_(false), max_time_jump_sec_(5.0), has_prev_pos_(false) {
+  SafeTfBroadcaster() : has_prev_pos_(false), has_prev_time_(false) {
     ros::NodeHandle nh;
     ros::NodeHandle nh_private("~");
     // 1e4 was too loose; a 1524 m pose in the 2025 aep2 flight passed it into the map.
     nh_private.param("max_position", max_position_, 500.0);
     nh_private.param("max_speed", max_speed_, 20.0);
+    nh_private.param("max_time_jump", max_time_jump_sec_, 5.0);
     pose_sub_ = nh.subscribe("/mavros/local_position/pose", 10, &SafeTfBroadcaster::poseCallback, this);
   }
 
   void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
-    ros::Time current_time = msg->header.stamp;
-
-    // Check timestamp jump
-    if (has_prev_time_) {
-      double dt = std::abs((current_time - prev_time_).toSec());
-      if (dt > max_time_jump_sec_) {
-        ROS_WARN_STREAM_THROTTLE(10, "[TF BROADCAST] Timestamp jump detected: " << dt << "s. Skipping this transform.");
-        return;
-      }
-    }
+    const ros::Time current_time = msg->header.stamp;
+    const auto& q = msg->pose.orientation;
+    const auto& p = msg->pose.position;
 
     // Check quaternion validity
-    const auto& q = msg->pose.orientation;
-    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    const double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     if (std::isnan(norm) || norm < 0.1 || norm > 1.1) {
       ROS_WARN_THROTTLE(5, "[TF BROADCAST] Invalid quaternion detected. Norm: %.3f. Skipping transform.", norm);
       return;
     }
 
     // Check position sanity
-    const auto& p = msg->pose.position;
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
         std::abs(p.x) > max_position_ || std::abs(p.y) > max_position_ ||
         std::abs(p.z) > max_position_) {
       ROS_WARN_THROTTLE(5, "[TF BROADCAST] Implausible position [%.3g, %.3g, %.3g]. Skipping transform.",
                         p.x, p.y, p.z);
       return;
+    }
+
+    // Check timestamp jump
+    if (has_prev_time_) {
+      const double dt = std::abs((current_time - prev_time_).toSec());
+      if (dt > max_time_jump_sec_) {
+        // A gap in the pose stream is not this message's fault. Re-seed and carry on.
+        ROS_WARN("[TF BROADCAST] Pose stream gap of %.2f s. Resyncing (was frozen before this fix).", dt);
+        resync(current_time, p);
+        broadcast(current_time, p, q);
+        return;
+      }
     }
 
     // Check for jumps no drone could fly
@@ -58,19 +62,22 @@ public:
       }
     }
 
-    // All checks passed — broadcast the transform
+    broadcast(current_time, p, q);
+    resync(current_time, p);
+  }
+
+  void broadcast(const ros::Time& stamp, const geometry_msgs::Point& p,
+                 const geometry_msgs::Quaternion& q) {
     tf::Transform transform;
     transform.setOrigin(tf::Vector3(p.x, p.y, p.z));
     tf::Quaternion tf_q(q.x, q.y, q.z, q.w);
     tf_q.normalize();
     transform.setRotation(tf_q);
+    tf_broadcaster_.sendTransform(tf::StampedTransform(transform, stamp, "map", "base_link"));
+  }
 
-    tf_broadcaster_.sendTransform(tf::StampedTransform(
-        transform, current_time, "map", "base_link"));
-
-    // Update previous time and position
-    prev_time_ = current_time;
-    has_prev_time_ = true;
+  void resync(const ros::Time& stamp, const geometry_msgs::Point& p) {
+    prev_time_ = stamp;                 has_prev_time_ = true;
     prev_pos_[0] = p.x; prev_pos_[1] = p.y; prev_pos_[2] = p.z;
     has_prev_pos_ = true;
   }

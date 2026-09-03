@@ -14,8 +14,8 @@
     <node pkg="motion_planning_real_world" type="AEPReal" name="planner_node" output="screen">
       <rosparam file="$(find motion_planning_real_world)/config/GainConfigReal.yaml" />
       <rosparam file="$(find motion_planning_real_world)/config/AEPlannerReal.yaml" />
-      <param name="evaluation/marginal_gain" value="true"  if="$(eval arg('marginal_gain') == 'true')" />
-      <param name="evaluation/marginal_gain" value="false" if="$(eval arg('marginal_gain') == 'false')" />
+      <param name="evaluation/marginal_gain" value="true"  if="$(eval marginal_gain == True)" />
+      <param name="evaluation/marginal_gain" value="false" if="$(eval marginal_gain == False)" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
       <!-- Voxblox Planner -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />
