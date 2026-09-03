@@ -1,0 +1,17 @@
+local_planning:
+  g_zero: 1.0
+  num_yaw_samples: 15
+  dedup_radius: 0.2 # [m]
+
+frame_id: "map"
+
+body:
+  frame_id: "base_link"
+
+camera:
+  frame_id: "camera_link"
+  h_fov: 1.38203 # [rad]
+  width: 640
+  height: 480
+  min_distance: 0.3 # [m]
+  max_distance: 5 # [m]
