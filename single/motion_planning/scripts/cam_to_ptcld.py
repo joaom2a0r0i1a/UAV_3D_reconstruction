@@ -16,6 +16,7 @@ class GazeboSensorModel:
         self.bridge = CvBridge()
         self.model = rospy.get_param('~model_type', 'ground_truth')
         self.max_range = rospy.get_param('~maximum_distance', 0.0)  # 0 = no limit
+        self.min_range = rospy.get_param('~minimum_distance', 0.0)  # 0 = no limit
         self.flatten_distance = rospy.get_param('~flatten_distance', 0.0)
         self.publish_inf_depth = rospy.get_param('~publish_inf_depth', False)
 
@@ -84,6 +85,8 @@ class GazeboSensorModel:
 
         # Replace zeros or NaNs with infinity (no hit)
         invalid = np.isnan(depth) | (depth <= 0.0)
+        if self.min_range > 0:
+            invalid = invalid | (depth < self.min_range)
         depth = np.array(depth, dtype=np.float32)  # writable copy (slices/passthrough may be read-only)
         depth[invalid] = np.inf
 
