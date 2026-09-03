@@ -29,6 +29,8 @@ export UAV_NAME="${UAV_NAME:-uav1}"
 # MAVLink identity of the autopilot, its SYSID_THISMAV parameter. mavros addresses every
 # command to this id, so a mismatch means the FCU silently drops all setpoints.
 export FCU_SYSID="${FCU_SYSID:-2}"
+# start_gate fires the planner itself once mode+armed+pose hold for auto_start_settle
+export AUTO_START="${AUTO_START:-true}"
 
 # Serial link to the autopilot. SERIAL2 is MAVLink2 at 921600, SERIAL1 at 57600.
 export FCU_URL="${FCU_URL:-/dev/ttyUSB0:921600}"
