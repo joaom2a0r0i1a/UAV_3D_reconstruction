@@ -33,7 +33,7 @@ camera_intrinsics:
   v_fov: 1.11157 # [rad] measured, fy 386.42
   max_distance: 5 # [m]
   yaw_samples: 15
-  pitch: 15.0 # [deg]
+  pitch: 10.0 # [deg]
 
 accurate_frontiers: false
 checking_distance: 2.0

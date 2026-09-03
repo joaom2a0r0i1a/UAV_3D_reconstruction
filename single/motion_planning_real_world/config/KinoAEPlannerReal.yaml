@@ -31,8 +31,8 @@ uav_parameters:
   max_heading_accel: 2.0 # [rad/s^2]
 
 local_planning:
-  N_max: 20
-  N_termination: 200
+  N_max: 200
+  N_termination: 400
   N_yaw_samples: 10
   radius: 2.5 # [m]
   step_size: 2.0 # [m]
@@ -40,7 +40,7 @@ local_planning:
   g_zero: 1.0
 
 global_planning:
-  N_min_nodes: 100
+  N_min_nodes: 400
   global_max_acceleration_iterations: 2
 
 camera:
@@ -52,7 +52,7 @@ camera:
   max_distance: 5 # [m]
 
 path:
-  uav_radius: 2.0 # [m]
+  uav_radius: 1.5 # [m] must stay well under the voxblox ESDF clamp (esdf_max_distance_m, default 2.0): free space saturates at 2.0, so a radius at/near it makes every edge read as a collision
   lambda: 0.25 # (tunning factor)
   lambda2: 0.5 # (tunning factor)
   global_lambda: 0.025 # (tunning factor)

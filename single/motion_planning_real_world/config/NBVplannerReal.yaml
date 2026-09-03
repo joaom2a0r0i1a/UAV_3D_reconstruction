@@ -36,8 +36,8 @@ bounded_box:
 #  max_z: 9.0 # [m]
 
 rrt:
-  N_max: 20
-  N_termination: 200
+  N_max: 200
+  N_termination: 400
   N_yaw_samples: 10
   radius: 2.0 # [m]
   step_size: 2.0 # [m]
@@ -61,7 +61,7 @@ camera:
   max_distance: 5 # [m]
 
 path:
-  uav_radius: 2.0 # [m]
+  uav_radius: 1.5 # [m] must stay well under the voxblox ESDF clamp (esdf_max_distance_m, default 2.0): free space saturates at 2.0, so a radius at/near it makes every edge read as a collision
   waypoint_reach_distance: 0.4 # [m] reached within this dist (+ yaw diff < 0.4 rad)
   waypoint_reach_velocity: 0.15 # [m/s] velocity gate: chain-final waypoint also needs speed below this (true stop-and-go)
   collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)

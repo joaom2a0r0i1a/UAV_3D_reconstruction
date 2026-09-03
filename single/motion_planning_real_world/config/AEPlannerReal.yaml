@@ -37,8 +37,8 @@ bounded_box:
 #  max_z: 9.0 # [m]
 
 local_planning:
-  N_max: 20
-  N_termination: 200
+  N_max: 200
+  N_termination: 400
   N_yaw_samples: 10
   radius: 2.5 # [m]
   step_size: 2.0 # [m]
@@ -47,7 +47,7 @@ local_planning:
   g_zero: 1.0
 
 global_planning:
-  N_min_nodes: 100
+  N_min_nodes: 400
   selection: "score"       # goal pick: "cost" (nearest), "gain" (most info), "score" (gain discounted by distance)
 
 evaluation:
@@ -63,10 +63,10 @@ camera:
   height: 480
   min_distance: 0.3 # [m]
   max_distance: 5 # [m]
-  pitch: 15.0 # [deg] downward camera pitch (matches the physical mount)
+  pitch: 10.0 # [deg] downward camera pitch (matches the physical mount)
 
 path:
-  uav_radius: 2.0 # [m]
+  uav_radius: 1.5 # [m] must stay well under the voxblox ESDF clamp (esdf_max_distance_m, default 2.0): free space saturates at 2.0, so a radius at/near it makes every edge read as a collision
   waypoint_reach_distance: 0.4 # [m] reached within this dist (+ yaw diff < 0.4 rad)
   waypoint_reach_velocity: 0.15 # [m/s] velocity gate: chain-final waypoint also needs speed below this (true stop-and-go)
   collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)
