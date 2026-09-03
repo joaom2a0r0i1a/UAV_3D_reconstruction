@@ -35,8 +35,8 @@ rrt:
   N_termination: 400
   N_yaw_samples: 10
   radius: 2.0 # [m]
-  step_size: 2.0 # [m]
-  tolerance: 1.0 # [m]
+  step_size: 1.5 # [m]
+  tolerance: 0.5 # [m]
 
 camera:
   frame_id: "camera_link"

@@ -34,8 +34,8 @@ local_planning:
   N_max: 200
   N_termination: 400
   N_yaw_samples: 10
-  radius: 2.5 # [m]
-  step_size: 2.0 # [m]
+  radius: 2.0 # [m]
+  step_size: 1.5 # [m]
   tolerance: 0.5 # [m]
   g_zero: 1.0
 

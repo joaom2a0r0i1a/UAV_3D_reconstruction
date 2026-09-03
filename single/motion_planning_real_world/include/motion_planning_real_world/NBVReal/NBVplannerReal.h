@@ -213,6 +213,8 @@ private:
     geometry_msgs::Pose uav_local_pose;
     ros::Time last_pose_time_;
     bool have_pose_ = false;
+    double rotation_step_deg_;   // recovery sweep step
+    double rotation_settle_;     // wait per step
     bool prev_armed_ = false;    // for the disarmed to armed edge
     double ground_z_ = 0.0;      // local z while still on the ground
     bool have_ground_z_ = false;

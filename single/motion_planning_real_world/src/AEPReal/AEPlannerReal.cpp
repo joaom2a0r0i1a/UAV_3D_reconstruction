@@ -62,6 +62,8 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     nh_private_.param("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
     nh_private_.param("path/recovery_min_tree", recovery_min_tree_, 10);
     nh_private_.param("path/recovery_timeout", recovery_timeout_, 12.0);
+    nh_private_.param("rotation/step_deg", rotation_step_deg_, 45.0);
+    nh_private_.param("rotation/settle", rotation_settle_, 1.0);
     nh_private_.param("path/lambda", lambda, 0.5);
     nh_private_.param("path/global_lambda", global_lambda, 0.05);
 
@@ -625,12 +627,15 @@ mavros_msgs::PositionTarget AEPlanner::makeSetpoint(const Eigen::Vector4d& waypo
 }
 
 void AEPlanner::rotate() {
-    // Rotate 360deg in place (recovery sweep) via 30deg steps with generous waits; a >180deg commanded-vs-actual gap would make the FCU take the short way round.
-    for (int s = 1; s <= 12; ++s) {
+    // Rotate 360deg in place (recovery sweep). Keep the step well under 180deg or the FCU
+    // takes the short way round. Defaults 45deg/1.0s = 8 steps, ~8s (was 30deg/2.0s = 24s).
+    const int steps = std::max(3, (int)std::ceil(360.0 / rotation_step_deg_));
+    const double step = 2.0 * M_PI / steps;
+    for (int s = 1; s <= steps; ++s) {
         Eigen::Vector4d wp = pose;
-        wp[3] = pose[3] + s * (M_PI / 6.0);
+        wp[3] = pose[3] + s * step;
         pub_setpoint.publish(makeSetpoint(wp));
-        ros::Duration(2.0).sleep();
+        ros::Duration(rotation_settle_).sleep();
     }
 }
 

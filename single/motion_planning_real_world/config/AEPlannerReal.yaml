@@ -40,8 +40,8 @@ local_planning:
   N_max: 200
   N_termination: 400
   N_yaw_samples: 10
-  radius: 2.5 # [m]
-  step_size: 2.0 # [m]
+  radius: 2.0 # [m]
+  step_size: 1.5 # [m]
   min_edge_length: 0.2 # [m]
   tolerance: 0.5 # [m]
   g_zero: 1.0
@@ -77,3 +77,7 @@ path:
   recovery_timeout: 12.0 # [s] hard deadline: AEP() backtracks after this no matter what
   lambda: 0.5 # (tunning factor)
   global_lambda: 0.05 # (tunning factor)
+
+rotation:
+  step_deg: 45.0 # [deg] recovery sweep step (8 steps); keep well under 180
+  settle: 1.0 # [s] wait per step; 45deg at ATC_SLEW_YAW 60deg/s needs 0.75
