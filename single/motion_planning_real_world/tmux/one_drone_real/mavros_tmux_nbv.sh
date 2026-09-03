@@ -61,11 +61,9 @@ input=(
 '
   'motion_planner' 'waitForMavros; roslaunch motion_planning_real_world NBVPlannerReal.launch marginal_gain:=$MARGINAL
 '
-  'planner_start' 'history -s "rosservice call /$UAV_NAME/planner_node/start"
-'
   'experiment' 'waitForRos; mkdir -p $EXP_DIR; roslaunch motion_planning_real_world evaluate_map_real.launch data_directory:=$EXP_DIR
 '
-  'start_gate' 'waitForRos; roslaunch motion_planning_real_world start_gate.launch
+  'start_gate' 'waitForRos; roslaunch motion_planning_real_world start_gate.launch auto_start:=$AUTO_START
 '
   'voxblox' 'waitForRos; roslaunch motion_planning_real_world processed_voxblox.launch
 '
@@ -77,10 +75,13 @@ input=(
   #'processed_pointclouds_deactivated' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud_deactivated.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
 #'
 
+  'diag' 'waitForRos; ./session_diag.sh
+'
+
 # do NOT modify the command list below
   'EstimDiag' 'waitForMavros; rostopic echo /mavros/local_position/pose
 '
-  'kernel_log' 'tail -f /var/log/kern.log -n 100
+  'kernel_log' 'stdbuf -oL tail -F -n 100 /var/log/kern.log
 '
   'roscore' 'roscore
 '
