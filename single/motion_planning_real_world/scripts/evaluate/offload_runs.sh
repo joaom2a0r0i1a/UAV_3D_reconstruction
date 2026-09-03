@@ -3,7 +3,9 @@
 set -u
 
 # ---- config ----
-PC_HOST="${PC_HOST:-lt-l4@192.168.50.2}"                      # PC over the Alfa link (see README)
+# Tried in order: Alfa link (field, fixed), then the PC's ISR lease (lab, moves on DHCP).
+# Set PC_HOST to skip probing.
+PC_HOSTS="${PC_HOSTS:-lt-l4@192.168.50.2 lt-l4@10.16.145.180}"
 PC_ROOT="${PC_ROOT:-/home/lt-l4/real_experiments}"        # results live outside the repo
 PC_BAGS_ROOT="${PC_BAGS_ROOT:-$PC_ROOT/session_bags}"
 JETSON_ROOT="${JETSON_ROOT:-$HOME/real_experiments}"
@@ -28,10 +30,20 @@ DRY=""
 [ "${1:-}" = "--dry-run" ] && DRY="--dry-run" && echo "[offload] DRY RUN — nothing moves"
 
 command -v rsync >/dev/null || { echo "rsync missing"; exit 1; }
-ssh -o ConnectTimeout=5 "$PC_HOST" true || { echo "[offload] PC $PC_HOST unreachable"; exit 1; }
 
-offload_dir() {  # $1 = source dir, $2 = destination dir (on PC)
-  local SRC="$1" DST="$2"
+if [ -z "${PC_HOST:-}" ]; then
+  for H in $PC_HOSTS; do
+    if ssh -n -o ConnectTimeout=5 -o BatchMode=yes "$H" true 2>/dev/null; then
+      PC_HOST="$H"; echo "[offload] PC reachable at $PC_HOST"; break
+    fi
+    echo "[offload] $H unreachable, trying next"
+  done
+fi
+[ -n "${PC_HOST:-}" ] || { echo "[offload] no PC reachable (tried: $PC_HOSTS)"; exit 1; }
+ssh -n -o ConnectTimeout=5 "$PC_HOST" true || { echo "[offload] PC $PC_HOST unreachable"; exit 1; }
+
+offload_dir() {  # $1 = source dir, $2 = destination dir (on PC), $3 = "keep" to not delete
+  local SRC="$1" DST="$2" KEEP="${3:-}"
   ssh -n "$PC_HOST" "mkdir -p '$DST'"
   echo "[offload] copy  $SRC -> $PC_HOST:$DST"
   rsync -a --partial --info=progress2 $DRY "$SRC/" "$PC_HOST:$DST/" || return 1
@@ -46,6 +58,10 @@ offload_dir() {  # $1 = source dir, $2 = destination dir (on PC)
   local LINE="$(date -Is) verified $SRC -> $PC_HOST:$DST bytes=$BYTES"
   echo "$LINE" >> "$MANIFEST"
   ssh -n "$PC_HOST" "echo '$LINE' >> '$PC_ROOT/offload_manifest.log'"
+  if [ "$KEEP" = "keep" ]; then
+    echo "[offload] kept Jetson copy of $SRC (copy-only)"
+    return 0
+  fi
   rm -rf "$SRC"
   echo "[offload] deleted Jetson copy of $SRC"
   return 0
@@ -81,6 +97,16 @@ if [ -d "$BAGS_ROOT" ]; then
     REL="bag_files/$(basename "$BD")"
     offload_dir "$BD" "$PC_BAGS_ROOT/$REL" || FAIL=1
   done 3< <(find "$BAGS_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+fi
+
+# 4. tmux session logs. COPY ONLY: they are tiny and useful on the Jetson, and deleting
+#    iterator.txt / "latest" would restart the session numbering at 1.
+TMUX_LOGS="$JETSON_ROOT/tmux_logs"
+if [ -d "$TMUX_LOGS" ]; then
+  while IFS= read -r SD <&3; do
+    REL="${SD#"$JETSON_ROOT/"}"
+    offload_dir "$SD" "$PC_ROOT/$REL" keep || FAIL=1
+  done 3< <(find "$TMUX_LOGS" -mindepth 2 -maxdepth 2 -type d 2>/dev/null | sort)
 fi
 
 G=$(free_gb)
