@@ -64,7 +64,7 @@ done 3< <(find "$JETSON_ROOT" -maxdepth 5 \( -name ".run_complete" -o -name ".cr
 # 2. Per-label tmp_bags pools (eval bags) — only when the label dir has no unfinished run left.
 while IFS= read -r TB <&3; do
   LABEL_DIR="$(dirname "$TB")"
-  if ls -d "$LABEL_DIR"/2*_* >/dev/null 2>&1; then
+  if ls -d "$LABEL_DIR"/[0-9]*_* >/dev/null 2>&1; then
     echo "[offload] $TB kept (label still has run dirs without sentinel or pending offload)"
     continue
   fi

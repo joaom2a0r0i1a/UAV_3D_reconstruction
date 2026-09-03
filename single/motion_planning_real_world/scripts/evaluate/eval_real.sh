@@ -21,7 +21,7 @@ else
     [ -d "$d" ] || continue
     name="$(basename "$d")"
     case "$name" in multi_series_evaluation|series_evaluation|tmp_bags|graphs) continue;; esac
-    ls -d "$d"2*_* >/dev/null 2>&1 && LABELS+=("$name")
+    ls -d "$d"[0-9]*_* >/dev/null 2>&1 && LABELS+=("$name")
   done
 fi
 [ "${#LABELS[@]}" -gt 0 ] || { echo "no labels with runs found under $EXP_DIR"; exit 1; }
@@ -41,7 +41,7 @@ run_eval_launch() {  # $1 target_dir, $2 method, $3 multi_series, extra log: $4
 
 # ---- Stage A: per-run evaluation (skip already-evaluated runs) ----
 for L in "${LABELS[@]}"; do
-  for RUN in "$EXP_DIR/$L"/2*_*/; do
+  for RUN in "$EXP_DIR/$L"/[0-9]*_*/; do
     [ -d "$RUN" ] || continue
     if [ -f "$RUN/graphs/SimulationOverview.png" ]; then
       echo "[eval_real] $RUN already evaluated, skipping"; continue
