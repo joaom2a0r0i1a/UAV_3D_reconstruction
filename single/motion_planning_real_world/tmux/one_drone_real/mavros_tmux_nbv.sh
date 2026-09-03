@@ -19,6 +19,10 @@ PLANNER=rhnbvp
 GAIN="${GAIN:-marginal}"
 source "$(dirname "$(readlink -f "$0")")/env.sh"
 
+# clock first: the RTC has no backup cell, and stepping time after roscore is up
+# would corrupt bag/TF timestamps (see sync_time.sh)
+"$(dirname "$(readlink -f "$0")")/sync_time.sh"
+
 # location for storing the tmux logs
 # * all sessions of all variants collect here, one folder per variant
 MAIN_DIR="$EXP_ROOT/tmux_logs"
