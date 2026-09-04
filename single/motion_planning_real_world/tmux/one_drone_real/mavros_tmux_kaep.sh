@@ -45,7 +45,7 @@ pre_input="export PLANNER=$PLANNER GAIN=$GAIN; source ./env.sh"
 # * "new line" after the command    => the command will be called after start
 # * NO "new line" after the command => the command will wait for user's <enter>
 input=(
-  'Rosbag' 'waitForMavros; ./record.sh
+  'Rosbag' 'waitForMavros; ./record.sh $RECORD_PROFILE
 '
   # tgt_system MUST equal the autopilot's SYSID_THISMAV or every setpoint is dropped.
   # No chmod needed: the port is root:dialout and the user is in dialout.
