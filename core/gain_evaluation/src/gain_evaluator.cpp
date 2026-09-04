@@ -135,8 +135,7 @@ std::pair<double, double> GainEvaluator::pickYawWindow(const std::vector<float>&
 
 double GainEvaluator::getVerticalFoV(double horizontal_fov, int resolution_x, int resolution_y){
   double aspect_ratio = (double)resolution_x / (double)resolution_y;
-  //double vertical_fov = 2.0 * std::atan(std::tan(horizontal_fov / 2.0) / aspect_ratio);
-  double vertical_fov = horizontal_fov / aspect_ratio;
+  double vertical_fov = 2.0 * std::atan(std::tan(horizontal_fov / 2.0) / aspect_ratio);
   return vertical_fov;
 }
 
