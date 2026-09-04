@@ -7,7 +7,7 @@
   <arg name="frame_id"    default="camera_aligned_depth_to_color_frame" />
   <arg name="pointcloud_out" default="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points" />
   <arg name="flatten_distance" default="6.0" />
-  <arg name="minimum_distance" default="0.0" />
+  <arg name="minimum_distance" default="0.3" />
   <arg name="invalid_is_far" default="false" />
   <arg name="downsample_step" default="4" />
 
