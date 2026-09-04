@@ -8,15 +8,42 @@ timer_main:
 
 # NOTE: bounded_box is RELATIVE TO THE TAKEOFF POSE — the planner captures the start offset on ~start (re-capturable via ~offset) and shifts this box + the gain box by it.
 
-# Patio Lamp (active) - IST Alameda patio, lamp + surrounding region. Drone starts facing
+# Patio Lamp - IST Alameda patio, lamp + surrounding region. Drone starts facing
 # NORTH, so +y is forward/north and +x is right/east.
+#bounded_box:
+#  min_x: -2.5 # [m]  HARD LIMIT -4 inset by uav_radius 1.5: inBoundingBox tests the node CENTRE
+#  max_x: 9.0 # [m]
+#  min_y: -2.0 # [m]
+#  max_y: 11.5 # [m]  HARD LIMIT 13 (tree) inset by uav_radius 1.5, same reason
+#  min_z: 2.0 # [m]
+#  max_z: 9.0 # [m]
+
+# Short Grove (active) (three trees, 22 m) - z ceiling carries a +1 m slope allowance, see Delta-h note
 bounded_box:
-  min_x: -2.5 # [m]  HARD LIMIT -4 inset by uav_radius 1.5: inBoundingBox tests the node CENTRE
-  max_x: 9.0 # [m]
-  min_y: -2.0 # [m]
-  max_y: 11.5 # [m]  HARD LIMIT 13 (tree) inset by uav_radius 1.5, same reason
-  min_z: 2.0 # [m]
-  max_z: 9.0 # [m]
+  min_x: -25.0 # [m]  gain -22 + 3 m (2x uav_radius) of manoeuvring margin
+  max_x: 3.0 # [m]
+  min_y: -5.5 # [m]  centre-of-mass limit; body reaches -7.0, open ground beyond
+  max_y: 5.5 # [m]
+  min_z: 3.0 # [m]
+  max_z: 11.0 # [m]
+
+# Long Grove (four trees, 32 m) - battery-marginal at 0.15 m/s effective, see notes
+#bounded_box:
+#  min_x: -35.0 # [m]  gain -32 + 3 m (2x uav_radius) of manoeuvring margin
+#  max_x: 3.0 # [m]
+#  min_y: -4.0 # [m]
+#  max_y: 5.5 # [m]
+#  min_z: 3.0 # [m]
+#  max_z: 12.5 # [m]
+
+# Long Clearing (no trees, same dimensions as Long Grove - occlusion-free control)
+#bounded_box:
+#  min_x: -35.0 # [m]  gain -32 + 3 m (2x uav_radius) of manoeuvring margin
+#  max_x: 3.0 # [m]
+#  min_y: -4.0 # [m]
+#  max_y: 5.5 # [m]
+#  min_z: 3.0 # [m]
+#  max_z: 12.5 # [m]
 
 # Basketball
 #bounded_box:
@@ -50,7 +77,7 @@ rrt:
   N_termination: 400
   N_yaw_samples: 10
   radius: 2.0 # [m]
-  step_size: 1.5 # [m]
+  step_size: 2.0 # [m] bigger scenarios need longer legs; also cuts stop-start cycles
   min_edge_length: 0.2     # [m]
   fixed_step: false        # false: classic RRT, edge length = min(dist, step_size); true: EVERY edge = exactly step_size
   tolerance: 0.5 # [m]

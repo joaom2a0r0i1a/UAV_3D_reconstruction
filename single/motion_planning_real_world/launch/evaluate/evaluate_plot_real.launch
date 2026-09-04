@@ -4,7 +4,7 @@
   <!-- Data source -->
   <arg name="target_directory" default="$(find motion_planning)/data/real_world" />
   <arg name="gt_file_path" default=""/>
-  <arg name="experiment_config" default="PatioLamp.yaml"/>
+  <arg name="experiment_config" default="ShortGrove.yaml"/>
   <arg name="method" default="single"/>
 
   <!-- what to evaluate (volume-only defaults) -->

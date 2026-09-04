@@ -4,7 +4,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RW_PKG="$(cd "$SCRIPT_DIR/../.." && pwd)"                       # motion_planning_real_world
 MP="$(cd "$RW_PKG/../motion_planning" && pwd)"                  # motion_planning (sim pkg)
-EVAL_CONFIG="${EVAL_CONFIG:-PatioLamp.yaml}"
+EVAL_CONFIG="${EVAL_CONFIG:-ShortGrove.yaml}"
 ROS_PORT="${ROS_PORT:-11351}"
 export MPLBACKEND=Agg
 

@@ -11,15 +11,42 @@
 #  min_z: 0.0 # [m]
 #  max_z: 14.5 # [m]
 
-# Patio Lamp (active) - measured region: 10 m across (4 left, 6 right), 13 m north, 6 m up.
+# Patio Lamp - measured region: 10 m across (4 left, 6 right), 13 m north, 6 m up.
 # Not inset by uav_radius: this bounds VOXELS, not the drone.
+#gain_evaluation:
+#  min_x: -4.0 # [m]
+#  max_x: 6.0 # [m]
+#  min_y: 0.0 # [m]
+#  max_y: 13.0 # [m]
+#  min_z: 0.0 # [m]
+#  max_z: 6.0 # [m]
+
+# Short Grove (active) (three trees, 22 m along x, 5 m wide, canopy ~7 m + 1 m slope allowance)
 gain_evaluation:
-  min_x: -4.0 # [m]
-  max_x: 6.0 # [m]
-  min_y: 0.0 # [m]
-  max_y: 13.0 # [m]
+  min_x: -22.0 # [m]
+  max_x: 0.0 # [m]
+  min_y: -2.5 # [m]
+  max_y: 2.5 # [m]
   min_z: 0.0 # [m]
-  max_z: 6.0 # [m]
+  max_z: 8.0 # [m]
+
+# Long Grove (four trees, 32 m along x, canopy ~8 m + 1.5 m slope allowance)
+#gain_evaluation:
+#  min_x: -32.0 # [m]
+#  max_x: 0.0 # [m]
+#  min_y: -2.5 # [m]
+#  max_y: 2.5 # [m]
+#  min_z: 0.0 # [m]
+#  max_z: 9.5 # [m]
+
+# Long Clearing (no trees, same dimensions as Long Grove - occlusion-free control)
+#gain_evaluation:
+#  min_x: -32.0 # [m]
+#  max_x: 0.0 # [m]
+#  min_y: -2.5 # [m]
+#  max_y: 2.5 # [m]
+#  min_z: 0.0 # [m]
+#  max_z: 9.5 # [m]
 
 # Basketball
 #gain_evaluation:
