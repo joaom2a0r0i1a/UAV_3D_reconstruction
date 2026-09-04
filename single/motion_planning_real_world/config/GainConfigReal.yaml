@@ -11,14 +11,24 @@
 #  min_z: 0.0 # [m]
 #  max_z: 14.5 # [m]
 
-# Basketball (active)
+# Patio Lamp (active) - measured region: 10 m across (4 left, 6 right), 13 m north, 6 m up.
+# Not inset by uav_radius: this bounds VOXELS, not the drone.
 gain_evaluation:
   min_x: -4.0 # [m]
-  max_x: 4.0 # [m]
-  min_y: -4.0 # [m]
-  max_y: 4.0 # [m]
+  max_x: 6.0 # [m]
+  min_y: 0.0 # [m]
+  max_y: 13.0 # [m]
   min_z: 0.0 # [m]
-  max_z: 5.0 # [m]
+  max_z: 6.0 # [m]
+
+# Basketball
+#gain_evaluation:
+#  min_x: -4.0 # [m]
+#  max_x: 4.0 # [m]
+#  min_y: -4.0 # [m]
+#  max_y: 4.0 # [m]
+#  min_z: 0.0 # [m]
+#  max_z: 5.0 # [m]
 
 # IST Lamp
 #  min_x: 2.0 # [m]

@@ -2,7 +2,7 @@
   <!-- Stage 1 recorder. It never starts the planner; its clock begins on offset_out. -->
   <arg name="record_data" default="true"/>
   <arg name="data_directory" default="$(env HOME)/real_experiments/current"/>
-  <arg name="data_frequency" default="5.0" />
+  <arg name="data_frequency" default="10.0" />
   <arg name="time_limit" default="10" />
   <arg name="early_stop" default="true" />
   <arg name="early_stop_grace" default="10.0" />
