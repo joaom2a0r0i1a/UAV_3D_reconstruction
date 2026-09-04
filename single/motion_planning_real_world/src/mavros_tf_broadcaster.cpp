@@ -12,7 +12,7 @@ public:
     // 1e4 was too loose; a 1524 m pose in the 2025 aep2 flight passed it into the map.
     nh_private.param("max_position", max_position_, 500.0);
     nh_private.param("max_speed", max_speed_, 20.0);
-    nh_private.param("max_time_jump", max_time_jump_sec_, 5.0);
+    nh_private.param("max_time_jump", max_time_jump_sec_, 20.0);
     pose_sub_ = nh.subscribe("/mavros/local_position/pose", 10, &SafeTfBroadcaster::poseCallback, this);
   }
 
@@ -41,10 +41,7 @@ public:
     if (has_prev_time_) {
       const double dt = std::abs((current_time - prev_time_).toSec());
       if (dt > max_time_jump_sec_) {
-        // A gap in the pose stream is not this message's fault. Re-seed and carry on.
-        ROS_WARN("[TF BROADCAST] Pose stream gap of %.2f s. Resyncing (was frozen before this fix).", dt);
-        resync(current_time, p);
-        broadcast(current_time, p, q);
+        ROS_WARN_THROTTLE(10, "[TF BROADCAST] Timestamp jump of %.2f s. Skipping this transform.", dt);
         return;
       }
     }
