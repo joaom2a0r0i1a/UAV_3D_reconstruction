@@ -64,6 +64,10 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     nh_private_.param("path/recovery_timeout", recovery_timeout_, 12.0);
     nh_private_.param("rotation/step_deg", rotation_step_deg_, 45.0);
     nh_private_.param("rotation/settle", rotation_settle_, 1.0);
+    nh_private_.param("exploration/initial", exploration_initial_, true);
+    nh_private_.param("exploration/climb", exploration_climb_, 1.5);
+    nh_private_.param("exploration/settle", exploration_settle_, 5.0);
+    nh_private_.param("exploration/return_to_start", exploration_return_, true);
     nh_private_.param("path/lambda", lambda, 0.5);
     nh_private_.param("path/global_lambda", global_lambda, 0.05);
 
@@ -639,6 +643,40 @@ void AEPlanner::rotate() {
     }
 }
 
+void AEPlanner::explorationSweep() {
+    // Up, rotate, down. A yaw sweep alone keeps the same optical centre, so no ray ever
+    // passes through voxels sitting beside it and the TSDF cannot carve them away.
+    // Climbing moves the centre, which is what actually clears near-field artifacts.
+    const Eigen::Vector4d start = pose;
+    const double ceiling = (double)max_z - uav_radius;   // max_z is already offset-shifted
+    double z_top = std::min(start[2] + exploration_climb_, ceiling);
+    if (z_top <= start[2] + 0.05) {
+        ROS_WARN("[AEPlanner]: Exploration sweep skipped: no headroom (z %.2f, ceiling %.2f).",
+                 start[2], ceiling);
+        return;
+    }
+    ROS_INFO("[AEPlanner]: Exploration sweep: up %.2f -> %.2f m, rotate, down.", start[2], z_top);
+
+    Eigen::Vector4d up = start; up[2] = z_top;
+    pub_setpoint.publish(makeSetpoint(up));
+    ros::Duration(exploration_settle_).sleep();
+
+    const int steps = std::max(3, (int)std::ceil(360.0 / rotation_step_deg_));
+    const double step = 2.0 * M_PI / steps;
+    for (int i = 1; i <= steps; ++i) {
+        Eigen::Vector4d wp = up;
+        wp[3] = start[3] + i * step;
+        pub_setpoint.publish(makeSetpoint(wp));
+        ros::Duration(rotation_settle_).sleep();
+    }
+
+    if (exploration_return_) {
+        pub_setpoint.publish(makeSetpoint(start));
+        ros::Duration(exploration_settle_).sleep();
+    }
+    ROS_INFO("[AEPlanner]: Exploration sweep done.");
+}
+
 bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
     if (!is_initialized) {
         res.success = false;
@@ -659,6 +697,7 @@ bool AEPlanner::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
 
     captureOffset();
     changeState(STATE_PLANNING);
+    pending_exploration_ = exploration_initial_;   // run it in the timer, not here
 
     res.success = true;
     res.message = "starting";
@@ -831,6 +870,10 @@ void AEPlanner::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
+            if (pending_exploration_) {
+                pending_exploration_ = false;
+                explorationSweep();
+            }
             // Optimistic edges (plan through unknown) only for the first optimistic_iterations_ replans to bootstrap from spawn; after that unknown is blocked so we don't drive into a pocket.
             optimistic_edges_ = (iteration_ < optimistic_iterations_);
 

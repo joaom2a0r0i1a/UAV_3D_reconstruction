@@ -92,6 +92,7 @@ public:
     void cacheNode(rrt_star::Node* Node, double gain, double yaw);
     double distance(const Eigen::Vector4d& a, const Eigen::Vector4d& b);
     void rotate();
+    void explorationSweep();
 
     // Snapshot the current pose as the start offset; shift bounded box + gain box; publish latched offset.
     void captureOffset();
@@ -242,6 +243,11 @@ private:
     geometry_msgs::Pose uav_local_pose;
     ros::Time last_pose_time_;
     bool have_pose_ = false;
+    bool exploration_initial_;   // up-rotate-down before the first plan
+    double exploration_climb_;
+    double exploration_settle_;
+    bool exploration_return_;
+    bool pending_exploration_ = false;
     double rotation_step_deg_;   // recovery sweep step
     double rotation_settle_;     // wait per step
     bool prev_armed_ = false;    // for the disarmed to armed edge
