@@ -36,6 +36,9 @@ VIZ_TOPICS=(
 CAMERA_TOPICS=(
   /camera/color/image_raw/compressed
   /camera/color/camera_info
+  # Raw aligned depth: with rgb + camera_info + tf this is a complete rtabmap / Open3D input,
+  # and it also allows re-running voxblox offline finer than the 0.2 m the planner needs live.
+  /camera/aligned_depth_to_color/image_raw
 )
 
 # Enough to re-run cam_to_ptcld + voxblox offline. Colour is stored compressed, so a replay

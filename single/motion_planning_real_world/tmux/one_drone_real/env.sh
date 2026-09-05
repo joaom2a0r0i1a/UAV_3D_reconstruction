@@ -22,7 +22,7 @@ esac
 export EXP_ROOT="${EXP_ROOT:-$HOME/real_experiments}"
 export EXP_DIR="${EXP_DIR:-$EXP_ROOT/$RUN_LABEL}"
 
-# eval | eval-viz | eval-camera | mapping-replay | full-debug  (eval-camera ~2.1 MB/s)
+# eval | eval-viz | eval-camera | mapping-replay | full-debug  (eval-camera ~11.1 MB/s)
 export RECORD_PROFILE="${RECORD_PROFILE:-eval-camera}"
 
 # ---- ROS + MAVLink identities --------------------------------------------------------

@@ -99,8 +99,8 @@ camera:
 
 path:
   uav_radius: 1.5 # [m] must stay well under the voxblox ESDF clamp (esdf_max_distance_m, default 2.0): free space saturates at 2.0, so a radius at/near it makes every edge read as a collision
-  waypoint_reach_distance: 0.4 # [m] reached within this dist (+ yaw diff < 0.4 rad)
-  waypoint_reach_velocity: 0.15 # [m/s] velocity gate: chain-final waypoint also needs speed below this (true stop-and-go)
+  waypoint_reach_distance: 0.5 # [m] reached within this dist (+ yaw diff < 0.4 rad); RTK keeps the true error well inside this
+  waypoint_reach_velocity: 0.225 # [m/s] velocity gate; 0.15 was binding on 85%/74% of 2026-09-04 waypoints
   collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)
   optimistic_iterations: 5 # edges may plan through UNKNOWN only for the first N replans (bootstrap); then unknown=blocked
   recovery_enabled: true # master toggle for the in-planner backtrack
@@ -116,5 +116,5 @@ rotation:
 exploration:
   initial: false # up, rotate, down once before the first plan; a yaw sweep alone keeps the same optical centre so it cannot carve near-field artifacts
   climb: 1.5 # [m] relative climb
-  settle: 5.0 # [s] per vertical leg; 1.5 m at WPNAV_SPEED_UP 70 cm/s is ~2.1 s
+  settle: 4.0 # [s] after the climb and the return; a 1.5 m vertical move measured ~4.0 s on 2026-09-04
   return_to_start: true
