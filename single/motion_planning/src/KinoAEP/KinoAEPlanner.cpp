@@ -271,7 +271,8 @@ void KinoAEPlanner::localPlanner() {
             kino_rrt_star::Trajectory* nearest_trajectory_best = nullptr;
             KinoRRTStar.findNearestKD(node_position.head(3), nearest_trajectory_best);
 
-            kino_rrt_star::Trajectory* new_trajectory_best = best_branch[i].get();
+            std::unique_ptr<kino_rrt_star::Trajectory> new_trajectory_best_owned = best_branch[i]->clone();
+            kino_rrt_star::Trajectory* new_trajectory_best = new_trajectory_best_owned.get();
             new_trajectory_best->parent = nearest_trajectory_best;
             visualize_node(new_trajectory_best->TrajectoryPoints.back()->point, node_size, ns);
 
@@ -299,7 +300,7 @@ void KinoAEPlanner::localPlanner() {
 
             ROS_INFO("[KinoNBVPlanner]: Best Score BB: %f", new_trajectory_best->score);
 
-            kino_rrt_star::Trajectory* added_bb = KinoRRTStar.addKDTreeTrajectory(std::move(best_branch[i]));
+            kino_rrt_star::Trajectory* added_bb = KinoRRTStar.addKDTreeTrajectory(std::move(new_trajectory_best_owned));
             visualize_trajectory(added_bb, ns);
 
             ++j;
