@@ -58,6 +58,4 @@ windows:
   - processed_pointclouds:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning process_pointcloud.launch 
-          config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml 
-          config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
+        - waitForControl; roslaunch motion_planning_real_world cam_to_ptcld_real.launch

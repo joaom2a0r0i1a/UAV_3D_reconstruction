@@ -53,14 +53,8 @@ input=(
 '
   'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=640 depth_height:=480 depth_fps:=15 color_width:=640 color_height:=480 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
 '
-  #'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=1080 depth_height:=720 depth_fps:=15 color_width:=640 color_height:=360 color_fps:=15 align_depth:=true filters:=decimation,temporal,spatial enable_pointcloud:=true
-#'
-  #'imu' 'waitForRos; rosrun imu_filter_madgwick imu_filter_node _use_mag:=false _publish_tf:=false _world_frame:="enu" /imu/data_raw:=/camera/imu /imu/data:=/rtabmap/imu
-#'
   'tf_connect' 'waitForRos; roslaunch motion_planning_real_world tf_realsense_connect_mavros.launch
 '
-  #'mavros_test' 'waitForControl; roslaunch motion_planning_real_world KinoNBVPlannerReal.launch
-#'
   'motion_planner' 'waitForMavros; roslaunch motion_planning_real_world AEPlannerReal.launch marginal_gain:=$MARGINAL
 '
   'cached_nodes' 'waitForRos; roslaunch cache_nodes cache_real.launch
@@ -73,9 +67,6 @@ input=(
 '
   'cam_to_ptcld' 'waitForRos; roslaunch motion_planning_real_world cam_to_ptcld_real.launch
 '
-  # legacy freespace-package chain (replaced by cam_to_ptcld_real, see data/CAM_TO_PTCLD_ADOPTION_PLAN.md)
-  #'processed_pointclouds' 'waitForRos; roslaunch motion_planning_real_world process_pointcloud.launch config_pcl_filter_rs_front_pitched:=./config/rs_front_pitched_filter.yaml config_pcl_freespace:=./config/rs_front_pitched_freespace.yaml
-#'
 
   'diag' 'waitForRos; ./session_diag.sh
 '
