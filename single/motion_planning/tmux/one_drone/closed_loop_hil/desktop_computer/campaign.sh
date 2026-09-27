@@ -27,7 +27,7 @@ teardown_sim(){   # SAFE: killProcessRecursive on pane pids (NO pkill — that s
 }
 
 # Readiness = the processed cloud is streaming on BOTH the PC and the Orin (same link, same topic).
-# As soon as both are true, start the Orin worker — no blind fixed sleep.
+# Start the Orin worker as soon as both are true, with no fixed sleep.
 desk_cloud(){ docker exec noetic_ws bash -lc "$DESK_SRC; timeout 5 rostopic hz $CLOUD 2>/dev/null | grep -m1 -q 'average rate'" >/dev/null 2>&1 && echo 1 || echo 0; }
 orin_cloud(){ timeout 12 ssh -o ConnectTimeout=6 "$ORIN" "$ORIN_SRC; timeout 5 rostopic hz $CLOUD 2>/dev/null | grep -m1 -q 'average rate'" >/dev/null 2>&1 && echo 1 || echo 0; }
 wait_link_ready(){
@@ -55,5 +55,5 @@ for V in $VOXELS; do for N in $NS; do
 done; done
 
 echo "CAMPAIGN DONE -> $OUT/.  Analyze per voxel (from motion_planning/):"
-echo "  MPLBACKEND=Agg MP=\$PWD X2_LOG=$PWD/$OUT X2_TAG=timing_yawopt_0p2_n X2_SUFFIX=_hilB_0p2 python3 scripts/evaluation/figures/x2_online.py"
-echo "  MPLBACKEND=Agg MP=\$PWD X2_LOG=$PWD/$OUT X2_TAG=timing_yawopt_0p1_n X2_SUFFIX=_hilB_0p1 python3 scripts/evaluation/figures/x2_online.py"
+echo "  MPLBACKEND=Agg MP=\$PWD TIMING_LOG=$PWD/$OUT TIMING_TAG=timing_yawopt_0p2_n TIMING_SUFFIX=_hilB_0p2 python3 scripts/evaluation/figures/timing_analyze.py"
+echo "  MPLBACKEND=Agg MP=\$PWD TIMING_LOG=$PWD/$OUT TIMING_TAG=timing_yawopt_0p1_n TIMING_SUFFIX=_hilB_0p1 python3 scripts/evaluation/figures/timing_analyze.py"

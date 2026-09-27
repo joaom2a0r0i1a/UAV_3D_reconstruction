@@ -72,6 +72,10 @@ if(CATKIN_ENABLE_TESTING)
   target_link_libraries(gpu_tester gain_evaluation ${catkin_LIBRARIES})
 endif()
 
+# Offline scenario exporter for the supplementary video. Read only on its inputs.
+add_executable(video_export src/video_export.cpp)
+target_link_libraries(video_export gain_evaluation ${catkin_LIBRARIES})
+
 install(TARGETS ${LIBRARIES}
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

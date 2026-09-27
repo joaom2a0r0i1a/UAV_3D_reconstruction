@@ -1,31 +1,31 @@
 #!/usr/bin/env python3
-# X2 cost-vs-N, FULLY ONLINE, cached CPU-G_all, proper field names (user 2026-08-02).
-# Sources (live sim benchmarkGains, whole-tree PHASE-B entries, nodes>=0.7N):
-#   [X2rep]    total / gain_computation / cpu_to_gpu_transfer  -> marginal GPU-G_all
-#   [X2repABS] total / gain_computation / cpu_to_gpu_transfer  -> absolute GPU
-#   [X2cpu]    cpu_absolute + cpu_gain_all  -> CPU baselines
-#   [X2full]   tree_construction / gain_evaluation / scoring / full_algorithm / gain_computation
+# Gain evaluation cost versus tree size, from the planner's own timing logs.
+# Parses four log tags written during the run, whole tree entries with nodes >= 0.7N:
+#   [timing_marg]  marginal on GPU
+#   [timing_abs]   absolute on GPU
+#   [timing_cpu]   CPU baselines
+#   [timing_full]  full algorithm breakdown
 import os, re, statistics as st
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 MP  = os.environ.get("MP") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))  # motion_planning pkg root
-LOG = os.environ.get("X2_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
+LOG = os.environ.get("TIMING_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
 OUT = os.path.join(MP, "data")
 NS  = [50, 100, 500, 1000, 5000, 10000]
 BUDGET, BUDGET2 = 500.0, 1000.0
-# Fixed-yaw X2 by default; set X2_TAG=timing_yawopt_n X2_SUFFIX=_yawopt for the yaw-optimization run.
-TAG = os.environ.get("X2_TAG", "timing_n")
-SUF = os.environ.get("X2_SUFFIX", "")
+# Fixed-yaw timing suite by default; set TIMING_TAG=timing_yawopt_n TIMING_SUFFIX=_yawopt for the yaw-optimization run.
+TAG = os.environ.get("TIMING_TAG", "timing_n")
+SUF = os.environ.get("TIMING_SUFFIX", "")
 MAX_CAPS = 10   # cap whole-tree captures per N (N=10000 has 12; use first 10 for consistency)
 
 def msd(xs): return (st.mean(xs), (st.stdev(xs) if len(xs) > 1 else 0.0), len(xs)) if xs else (None, None, 0)  # sample std (n-1)
 
 PATS = {
-  "mg":  re.compile(r"\[X2rep\] nodes=(\d+) total_ms=([0-9.]+) gain_computation_ms=([0-9.]+) cpu_to_gpu_transfer_ms=([0-9.]+)"),
-  "ab":  re.compile(r"\[X2repABS\] nodes=(\d+) total_ms=([0-9.]+) gain_computation_ms=([0-9.]+) cpu_to_gpu_transfer_ms=([0-9.]+)"),
-  "cpu": re.compile(r"\[X2cpu\] nodes=(\d+) cpu_absolute_ms=([0-9.]+) cpu_gain_all_ms=([0-9.]+)"),
-  "full":re.compile(r"\[X2full\] nodes=(\d+) tree_construction_ms=([0-9.]+) gain_evaluation_ms=([0-9.]+) scoring_ms=([0-9.]+) full_algorithm_ms=([0-9.]+) gain_computation_ms=([0-9.]+)"),
+  "mg":  re.compile(r"\[timing_marg\] nodes=(\d+) total_ms=([0-9.]+) gain_computation_ms=([0-9.]+) cpu_to_gpu_transfer_ms=([0-9.]+)"),
+  "ab":  re.compile(r"\[timing_abs\] nodes=(\d+) total_ms=([0-9.]+) gain_computation_ms=([0-9.]+) cpu_to_gpu_transfer_ms=([0-9.]+)"),
+  "cpu": re.compile(r"\[timing_cpu\] nodes=(\d+) cpu_absolute_ms=([0-9.]+) cpu_gain_all_ms=([0-9.]+)"),
+  "full":re.compile(r"\[timing_full\] nodes=(\d+) tree_construction_ms=([0-9.]+) gain_evaluation_ms=([0-9.]+) scoring_ms=([0-9.]+) full_algorithm_ms=([0-9.]+) gain_computation_ms=([0-9.]+)"),
 }
 KEYS = ["mg_total","mg_comp","mg_xfer","ab_total","ab_comp","ab_xfer",
         "cpu_abs","cpu_all","f_tree","f_eval","f_score","f_full","f_comp"]
@@ -62,7 +62,7 @@ METRICS = [
 ]
 ncap = {n: P["mg_total"][2] for n, P in rows}
 w = 17
-lines = ["X2 online timings: mean +/- sample-std (ms), over the whole-tree captures (planning iterations) per N",
+lines = ["timing suite online timings: mean +/- sample-std (ms), over the whole-tree captures (planning iterations) per N",
          "captures/N: " + "   ".join(f"N={n}: {ncap[n]}" for n in NS), ""]
 head = f"{'metric':>22} | " + " ".join(f"{('N='+str(n)):>{w}}" for n in NS)
 lines += [head, "-" * len(head)]
@@ -75,7 +75,7 @@ for key, lab in METRICS:
 # speedup row (CPU-G_all / GPU-G_all total), mean-based
 sp = [f"{(g(P,'cpu_all')/g(P,'mg_total')):.0f}x" if (g(P,'cpu_all') and g(P,'mg_total')) else "-" for _, P in rows]
 lines += ["-" * len(head), f"{'CPU-G_all / GPU-G_all':>22} | " + " ".join(f"{v:>{w}}" for v in sp)]
-tbl = "\n".join(lines); print(tbl); open(f"{OUT}/x2_online_table{SUF}.txt", "w").write(tbl + "\n")
+tbl = "\n".join(lines); print(tbl); open(f"{OUT}/timing_table{SUF}.txt", "w").write(tbl + "\n")
 
 def draw(fname, title, specs, logy=True, budget=False):
     fig, ax = plt.subplots(figsize=(8.6, 5.9))
@@ -95,7 +95,7 @@ def draw(fname, title, specs, logy=True, budget=False):
     fig.tight_layout(); fig.savefig(f"{OUT}/{fname}", dpi=130); plt.close(fig)
 
 # Fig A: gain evaluation time vs tree size (log y). GPU G_all shows total + its two parts.
-draw(f"x2_cost_vs_N{SUF}.png", "Gain evaluation time versus tree size", [
+draw(f"timing_cost_vs_N{SUF}.png", "Gain evaluation time versus tree size", [
     ("cpu_all","#c0392b","o",r"$G_\mathrm{all}$ (CPU)"),
     ("cpu_abs","#d4ac0d","P",r"$G_\mathrm{absolute}$ (CPU)"),
     ("mg_total","#2471a3","s",r"$G_\mathrm{all}$ (GPU)"),
@@ -105,15 +105,14 @@ draw(f"x2_cost_vs_N{SUF}.png", "Gain evaluation time versus tree size", [
 ], budget=True)
 
 # Fig A2: same comparison on a LINEAR y-axis, method totals only (no compute/transfer breakdown).
-draw(f"x2_cost_vs_N_lineary{SUF}.png", "Gain evaluation time versus tree size (linear scale)", [
+draw(f"timing_cost_vs_N_lineary{SUF}.png", "Gain evaluation time versus tree size (linear scale)", [
     ("cpu_all","#c0392b","o",r"$G_\mathrm{all}$ (CPU)"),
     ("cpu_abs","#d4ac0d","P",r"$G_\mathrm{absolute}$ (CPU)"),
     ("mg_total","#2471a3","s",r"$G_\mathrm{all}$ (GPU)"),
     ("ab_total","#8e44ad","*",r"$G_\mathrm{absolute}$ (GPU)"),
 ], logy=False, budget=True)
 
-# Fig B: EXPLICIT decomposition -- stacked bars, y = actual time (ms). Each bar's height is the total,
-# split into gain computation (bottom) + CPU->GPU transfer (top). Values labeled; decimals shown <1ms.
+# Stacked bars in ms: gain computation at the bottom, host to device transfer on top.
 def fmt_ms(v):
     if v < 1:  return f"{v:.2f}"
     if v < 10: return f"{v:.1f}"
@@ -142,16 +141,16 @@ def decomp(fname, title, comp_key, tot_key):
     ax.set_xticks(xs); ax.set_xticklabels([str(n) for n in xs])
     fig.tight_layout(); fig.savefig(f"{OUT}/{fname}", dpi=130); plt.close(fig)
 
-decomp(f"x2_marg_compute_vs_transfer{SUF}.png",
+decomp(f"timing_marg_compute_vs_transfer{SUF}.png",
        r"All-ancestors ($G_\mathrm{all}$) GPU gain time: computation versus transfer", "mg_comp", "mg_total")
-decomp(f"x2_abs_compute_vs_transfer{SUF}.png",
+decomp(f"timing_abs_compute_vs_transfer{SUF}.png",
        r"$G_\mathrm{absolute}$ (GPU) gain time: computation versus transfer", "ab_comp", "ab_total")
 
 # Fig C: planning-cycle time breakdown
-draw(f"x2_full_algorithm{SUF}.png", "Planning-cycle time breakdown versus tree size", [
+draw(f"timing_full_algorithm{SUF}.png", "Planning-cycle time breakdown versus tree size", [
     ("f_tree","#c0392b","o","Tree construction"),
     ("f_eval","#2471a3","s","Gain evaluation (GPU)"),
     ("f_score","#8e44ad","D","Scoring"),
     ("f_full","#000000","*","Full planning cycle"),
 ])
-print(f"\nwrote {OUT}/x2_online_table.txt + x2_cost_vs_N.png + x2_marg_compute_vs_transfer.png + x2_full_algorithm.png")
+print(f"\nwrote {OUT}/timing_table.txt + timing_cost_vs_N.png + timing_marg_compute_vs_transfer.png + timing_full_algorithm.png")

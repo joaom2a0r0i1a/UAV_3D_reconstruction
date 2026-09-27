@@ -59,5 +59,5 @@ touches the real configs, the container, or tmux.
 | `nbvp_school_step_fixed.conf` | nbvp_overnight_20260730, nbvp_day2b_n250_fixedstep, nbvp_step05_n50_1200 |
 
 Shared infra kept as-is: `run_experiments.sh`, `supervise_runs.sh`, `session.yml`,
-`start.sh`, `kill.sh`, `multi_start.sh`. Eval-only helpers `aep_eval.sh`/`pol_eval.sh`
-are covered by `--eval-only`.
+`start.sh`, `kill.sh`. Eval-only helpers `aep_eval.sh`/`pol_eval.sh` are covered
+by `--eval-only`.

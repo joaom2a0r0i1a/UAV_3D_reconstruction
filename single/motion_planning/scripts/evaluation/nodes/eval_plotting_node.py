@@ -394,9 +394,8 @@ class EvalPlotting(object):
             rospy.loginfo_once("Creating graph 'MultiSeriesOverview'")
             x = means['RosTime']
             unit = "s"
-            if x[-1] >= 300:
-                unit = "min"
-                x = np.divide(x, 60)
+            self._ms_xmax = max(getattr(self, '_ms_xmax', 0.0), float(x[-1]))
+            x_minutes = np.divide(means['RosTime'], 60.0)
 
             # Plot ends of data series for unequal lengths
             early_stops = []
@@ -462,10 +461,10 @@ class EvalPlotting(object):
                 #axes[0, 1].set_ylim(0, 1)
                 axes[0, 1].set_ylim(0, 100)
 
-                # bounds_error=False -> unreached milestones yield nan instead of aborting the comparison.
-                interp_function = interp1d(unknown, x, bounds_error=False, fill_value=np.nan)
-                std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'], x, bounds_error=False, fill_value=np.nan)
-                std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'], x, bounds_error=False, fill_value=np.nan)
+                # bounds_error=False so an unreached milestone gives nan instead of aborting.
+                interp_function = interp1d(unknown, x_minutes, bounds_error=False, fill_value=np.nan)
+                std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'], x_minutes, bounds_error=False, fill_value=np.nan)
+                std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'], x_minutes, bounds_error=False, fill_value=np.nan)
                 y_value_25 = 75
                 y_value_50 = 50
                 y_value_95 = 5
@@ -497,9 +496,9 @@ class EvalPlotting(object):
                 axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
                 axes[0, 1].set_ylim(0, 100)
 
-                interp_function = interp1d(unknown, x, bounds_error=False, fill_value=np.nan)
-                std_interp_function_1 = interp1d(unknown - std_deviations, x, bounds_error=False, fill_value=np.nan)
-                std_interp_function_2 = interp1d(unknown + std_deviations, x, bounds_error=False, fill_value=np.nan)
+                interp_function = interp1d(unknown, x_minutes, bounds_error=False, fill_value=np.nan)
+                std_interp_function_1 = interp1d(unknown - std_deviations, x_minutes, bounds_error=False, fill_value=np.nan)
+                std_interp_function_2 = interp1d(unknown + std_deviations, x_minutes, bounds_error=False, fill_value=np.nan)
                 y_value_25 = 75
                 y_value_50 = 50
                 y_value_95 = 5
@@ -544,6 +543,17 @@ class EvalPlotting(object):
         # Adding legend
         handles, labels = axes[0, 1].get_legend_handles_labels()
         axes[0, 1].legend(handles, labels, loc='upper right')
+
+        # Relabel the ticks in minutes once, from the global max, so every series shares a unit.
+        if getattr(self, '_ms_xmax', 0.0) >= 300:
+            from matplotlib.ticker import FuncFormatter, MultipleLocator
+            step = 60.0 if self._ms_xmax >= 180 else 30.0
+            fmt = FuncFormatter(lambda v, _pos: "%g" % (v / 60.0))
+            for ax in np.ravel(axes):
+                ax.xaxis.set_major_locator(MultipleLocator(step))
+                ax.xaxis.set_major_formatter(fmt)
+                ax.set_xlabel("Simulated Time [min]")
+        self._ms_xmax = 0.0
 
         save_name = os.path.join(target_dir, folder_name, "MultiSeriesOverview.png")
         plt.savefig(save_name, dpi=300, format='png', bbox_inches='tight')

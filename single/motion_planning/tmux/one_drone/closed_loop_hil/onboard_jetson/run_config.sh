@@ -1,5 +1,5 @@
 #!/bin/bash
-# ONE HIL Path-B X2 config on the ORIN (RH-NBVP, yaw-opt).  Args:  VOXEL(0.2|0.1)  N_MAX
+# ONE HIL Path-B timing config on the ORIN (RH-NBVP, yaw-opt).  Args:  VOXEL(0.2|0.1)  N_MAX
 # Methodology mirrors data/timing/X2_desktop: timing_after_s=600 (10-min sim-time delay), collect
 # NEED=10 whole-tree captures (nodes>=0.7*N). Leaves ~/hilB_logs/timing_yawopt_<vt>_n<N>.log.
 # Precondition: the DESKTOP sim is already running FRESH and the ROS link is up (~/hil_env.sh).
@@ -12,10 +12,10 @@ NEED=10 ; XMAX=25 ; THR=$(awk "BEGIN{printf \"%d\", 0.7*$N}")   # collect 10 mat
 NTERM=$(awk "BEGIN{v=2*$N; if(v<300)v=300; printf \"%d\", v}")  # >N_max REQUIRED or RH-NBVP self-terminates on any zero-gain iter
 TAFTER=${TAFTER:-600}     # sim-time delay before benchmarking (600 = the real 10-min methodology; lower for a quick chain test)
 
-# --- yaml: RH-NBVP yaw-opt X2 timing, N_max=N, 10-min delay ---
+# yaml: RH-NBVP yaw-opt timing suite, N_max=N, 10-min delay
 sed -i -E \
   -e 's/^  optimize_yaw:.*/  optimize_yaw: true/'   -e 's/^  marginal_gain:.*/  marginal_gain: true/' \
-  -e 's/^  compute:.*/  compute: "gpu"/'            -e 's/^  suite:.*/  suite: "x2"/' \
+  -e 's/^  compute:.*/  compute: "gpu"/'            -e 's/^  suite:.*/  suite: "timing"/' \
   -e 's/^  enabled:.*/  enabled: true/' \
   -e "s/^  N_max:.*/  N_max: $N/"                   -e "s/^  N_termination:.*/  N_termination: $NTERM/" \
   -e "s/^  timing_after_s:.*/  timing_after_s: ${TAFTER}.0/"  -e "s/^  x2_max:.*/  x2_max: $XMAX/" \
@@ -32,16 +32,16 @@ sleep 2; rosservice call /uav1/planner_node/start 2>/dev/null || true
 echo ">>> [$VT N$N] started; waiting for $NEED whole-tree captures (nodes>=$THR)  [600s sim-time delay first]"
 
 # --- wait for 10 mature captures, or a wall-clock cap ---
-mature(){ grep -a '\[X2rep\]' "$LOG" 2>/dev/null | grep -oE 'nodes=[0-9]+' | cut -d= -f2 | awk -v t=$THR '$1>=t' | wc -l; }
+mature(){ grep -a '\[timing_marg\]' "$LOG" 2>/dev/null | grep -oE 'nodes=[0-9]+' | cut -d= -f2 | awk -v t=$THR '$1>=t' | wc -l; }
 end=$((SECONDS+${WALLCAP:-2400}))    # wall cap per config (default 40min; raise via WALLCAP for heavy 0.1/N10000 accumulation)
 while [ $SECONDS -lt $end ]; do
   m=$(mature)
-  echo "  [$VT N$N] mature=$m/$NEED  (total X2rep=$(grep -ac '\[X2rep\]' "$LOG" 2>/dev/null))"
+  echo "  [$VT N$N] mature=$m/$NEED  (total timing_marg=$(grep -ac '\[timing_marg\]' "$LOG" 2>/dev/null))"
   [ "$m" -ge "$NEED" ] && { echo ">>> [$VT N$N] reached $m mature."; break; }
   sleep 20
 done
 
-# --- teardown Orin stack (graceful, then session, then targeted pkill — Orin is native OS) ---
+# Teardown: graceful first, then the session, then a targeted pkill.
 for w in planner voxblox cache; do tmux -L mrs send-keys -t hilorin:$w C-c 2>/dev/null; done
 sleep 8; tmux -L mrs kill-session -t hilorin 2>/dev/null
 pkill -INT -f 'roslaunch motion_planning|roslaunch cache_nodes' 2>/dev/null; sleep 3

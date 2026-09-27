@@ -44,11 +44,11 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
 
-    // Benchmark / X2 timing
+    // Benchmark timing
     param_loader.loadParam("benchmark/enabled", benchmark_mode, false);
     param_loader.loadParam("benchmark/timing_after_s", timing_after_s_, 600.0);
-    param_loader.loadParam("benchmark/x2_max", x2_capture_max_, 10);
-    param_loader.loadParam("benchmark/suite", bench_suite_, std::string("x2"));
+    param_loader.loadParam("benchmark/max_replans", capture_max_, 10);
+    param_loader.loadParam("benchmark/suite", bench_suite_, std::string("timing"));
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);
@@ -77,8 +77,8 @@ NBVPlanner::NBVPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     // Benchmark run state
     replan_count_ = 0;
     nbv_started_ = false;
-    x2_timing_window_ = false;
-    x2_capture_count_ = 0;
+    timing_window_ = false;
+    capture_count_ = 0;
 
     // Get vertical FoV and setup camera
     vertical_fov = segment_evaluator.getVerticalFoV(horizontal_fov, resolution_x, resolution_y);
@@ -214,13 +214,13 @@ void NBVPlanner::NBV() {
     best_score_ = 0;
     ++replan_count_;
 
-    // X2 timing: only benchmark once sim-time passes the threshold (early collision-heavy replans skew timings).
+    // Timing: only benchmark once sim-time passes the threshold (early collision-heavy replans skew timings).
     double sim_now = ros::Time::now().toSec();
-    bool x2_was_open = x2_timing_window_;
-    x2_timing_window_ = (sim_now >= timing_after_s_);
-    if (x2_timing_window_ && !x2_was_open)
-        ROS_WARN("[X2] timing window OPEN at sim_t=%.1fs (threshold=%.1fs, replan=%d)", sim_now, timing_after_s_, replan_count_);
-    bool x2_do_capture = benchmark_mode && x2_timing_window_ && (x2_capture_count_ < x2_capture_max_);
+    bool was_open = timing_window_;
+    timing_window_ = (sim_now >= timing_after_s_);
+    if (timing_window_ && !was_open)
+        ROS_WARN("[timing] timing window OPEN at sim_t=%.1fs (threshold=%.1fs, replan=%d)", sim_now, timing_after_s_, replan_count_);
+    bool do_capture = benchmark_mode && timing_window_ && (capture_count_ < capture_max_);
 
     if (benchmark_mode) bench_ = {};
 
@@ -275,7 +275,7 @@ void NBVPlanner::NBV() {
     const int BATCH_SIZE = 2 * N_max;
     collision_id_counter_ = 0;
     bool terminated = false;
-    double x2_tree_ms = 0.0, x2_eval_ms = 0.0, x2_score_ms = 0.0, x2_kernel_ms = 0.0;
+    double tree_ms = 0.0, eval_ms = 0.0, score_ms = 0.0, kernel_ms = 0.0;
     ros::WallTime plan_start_ = ros::WallTime::now();   // bounds the tree build so NBV() can never spin (single-threaded timer)
 
     while (j < N_max || best_score_ == 0.0) {
@@ -306,7 +306,7 @@ void NBVPlanner::NBV() {
         if (cap <= 0) break;
 
         std::vector<rrt_star::Node*> batch_nodes;
-        auto x2_tree0 = std::chrono::high_resolution_clock::now();
+        auto tree0 = std::chrono::high_resolution_clock::now();
         for (int k = 0; k < cap && j <= N_termination; ++k) {
 
             // Boxed-in guard: when every sample collides, k-- spins this inner loop and the outer check never runs.
@@ -319,7 +319,7 @@ void NBVPlanner::NBV() {
             batch_nodes.push_back(added_node);
             j++;
         }
-        x2_tree_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_tree0).count();
+        tree_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - tree0).count();
 
         if (batch_nodes.empty()) continue;
 
@@ -327,30 +327,30 @@ void NBVPlanner::NBV() {
         std::vector<rrt_star::Node*> score_nodes = batch_nodes;
         std::vector<rrt_star::Node*> gain_nodes  = batch_nodes;
 
-        auto x2_eval0 = std::chrono::high_resolution_clock::now();
+        auto eval0 = std::chrono::high_resolution_clock::now();
         evaluateGains(gain_nodes);
-        x2_eval_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_eval0).count();
-        if (eval_compute == "gpu" && marginal_gain) x2_kernel_ms += last_marg_kernel_ms_;
-        if (x2_do_capture) benchmarkGains(gain_nodes);
+        eval_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - eval0).count();
+        if (eval_compute == "gpu" && marginal_gain) kernel_ms += last_marg_kernel_ms_;
+        if (do_capture) benchmarkGains(gain_nodes);
 
-        auto x2_score0 = std::chrono::high_resolution_clock::now();
+        auto score0 = std::chrono::high_resolution_clock::now();
         for (rrt_star::Node* node : score_nodes) {
             segment_evaluator.computeScore(node, lambda);
             if (node->score > best_score_) { best_score_ = node->score; best_node = node; }
         }
-        x2_score_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - x2_score0).count();
+        score_ms += std::chrono::duration<double, std::milli>(std::chrono::high_resolution_clock::now() - score0).count();
         visualize_tree(collectTreeNodes(), ns);
 
         if (j >= N_termination) { terminated = true; break; }
     }
 
     // Per-replan full-algorithm timing, logged only inside the timing window.
-    if (benchmark_mode && x2_timing_window_) {
-        double x2_full_ms = x2_tree_ms + x2_eval_ms + x2_score_ms;
-        ROS_INFO("[X2full] nodes=%zu tree_construction_ms=%.3f gain_evaluation_ms=%.3f scoring_ms=%.3f full_algorithm_ms=%.3f gain_computation_ms=%.3f",
-                 RRTStar.getNodes().size(), x2_tree_ms, x2_eval_ms, x2_score_ms, x2_full_ms, x2_kernel_ms);
+    if (benchmark_mode && timing_window_) {
+        double full_ms = tree_ms + eval_ms + score_ms;
+        ROS_INFO("[timing_full] nodes=%zu tree_construction_ms=%.3f gain_evaluation_ms=%.3f scoring_ms=%.3f full_algorithm_ms=%.3f gain_computation_ms=%.3f",
+                 RRTStar.getNodes().size(), tree_ms, eval_ms, score_ms, full_ms, kernel_ms);
     }
-    if (x2_do_capture) ++x2_capture_count_;
+    if (do_capture) ++capture_count_;
 
     logTreeNodes();
 

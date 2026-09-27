@@ -53,7 +53,7 @@ evaluation:
   compute: "gpu"           # "gpu" (batched; absolute batches the whole tree) or "cpu" (sequential; marginal=hash)
   marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
   benchmark: true          # master on/off for the in-loop benchmark
-  benchmark_suite: "x2"    # suite(s) when benchmark=true: "correctness" | "x1" | "x2" (comma-sep); x2 = timing (HIL)
+  benchmark_suite: "timing"    # suite(s) when benchmark=true: "batch_check" | "accuracy" | "timing" (comma-sep); timing is what HIL runs
 
 camera:
   frame_id: "rgbd_front_pitched/aligned_depth_to_color"

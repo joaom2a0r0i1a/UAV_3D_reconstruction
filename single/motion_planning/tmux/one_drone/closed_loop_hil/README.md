@@ -1,4 +1,4 @@
-# Closed-loop HIL (Hardware-in-the-Loop) — X2 gain-evaluation timing
+# Closed-loop HIL (Hardware-in-the-Loop): gain-evaluation timing
 
 Gazebo + MRS control run on the **desktop computer**; voxblox + RH-NBVP planner + GPU
 gain run on the **onboard Jetson Orin**, over a shared ROS network. We benchmark the
@@ -19,9 +19,9 @@ closed_loop_hil/
                         container; reads ../../config/*.yaml + ../../current_config.env.
   onboard_jetson/       run on the Jetson Orin (also mirrored under jm_ws on the Jetson)
     run_config.sh V N   one config: seds NBVPlanner.yaml (N_max, N_termination=max(2N,300),
-                        timing_after_s=600, x2_max=25, recovery_timeout=900), launches the
+                        timing_after_s=600, max_replans=25, recovery_timeout=900), launches the
                         stack, starts the mission, waits for 10 whole-tree captures, tears down.
-    stack.sh            launches voxblox + RH-NBVP planner (x2 suite) + cache; planner
+    stack.sh            launches voxblox + RH-NBVP planner (timing suite) + cache; planner
                         console tee'd to the log. Sources ~/hil_env.sh.
     env.sh.template     template for the Jetson's ~/hil_env.sh (ROS master/IP).
 ```
@@ -39,7 +39,7 @@ VOXELS="0.1" NS="10000" WALLCAP=3600 bash campaign.sh   # heavy config: 60-min c
 ```
 Pulled logs land in `desktop_computer/raw_logs/` (staging). Move the keepers into
 `data/timing/X2_jetson_hilB/voxel_size_0_{2,1}/logs/` and analyse with
-`scripts/evaluation/figures/x2_online.py` (see that folder's README for exact commands).
+`scripts/evaluation/figures/timing_analyze.py` (see that folder's README for exact commands).
 
 ## Gotchas (baked into run_config.sh)
 - **`N_termination > N_max`** or RH-NBVP self-terminates after one cycle.

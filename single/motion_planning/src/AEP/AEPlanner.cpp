@@ -40,7 +40,7 @@ AEPlanner::AEPlanner(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("evaluation/marginal_split", marginal_split, false);
     param_loader.loadParam("evaluation/objective", objective_, std::string("expdecay"));
     param_loader.loadParam("evaluation/benchmark", benchmark_mode, false);
-    param_loader.loadParam("evaluation/benchmark_suite", bench_suite_, std::string("x2"));
+    param_loader.loadParam("evaluation/benchmark_suite", bench_suite_, std::string("timing"));
 
     // Camera
     param_loader.loadParam("camera/h_fov", horizontal_fov);

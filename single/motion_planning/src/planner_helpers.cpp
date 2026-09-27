@@ -206,7 +206,7 @@ void clearMarkers(ros::Publisher& pub_markers, int& node_id_counter, int& edge_i
     path_id_counter = 0;
 }
 
-// Nodes shallow-first + the tree root, so committed ancestor views subtract in order (X1/X2 CPU marginal).
+// Nodes shallow-first + the tree root, so committed ancestor views subtract in order (CPU marginal reference).
 namespace {
 struct DepthContext {
     std::vector<rrt_star::Node*> depth_nodes;
@@ -226,8 +226,8 @@ void clearObserved(const DepthContext& c) {
 }
 }  // namespace
 
-// [correctness] Batched-pool marginal gain vs the independent layered reference. Yaw-optimizing; self-contained.
-void benchmarkGpuCorrectness(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+// [batch_check] Batched-pool marginal gain vs the independent layered reference. Yaw-optimizing; self-contained.
+void benchmarkBatchCheck(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                              bool optimize_yaw, bool marginal_split, const char* phase) {
     if (nodes.empty()) return;
     const size_t n = nodes.size();
@@ -235,13 +235,13 @@ void benchmarkGpuCorrectness(GainEvaluator& seg, const std::vector<rrt_star::Nod
     for (size_t i = 0; i < n; ++i) { sg[i] = nodes[i]->gain; sy[i] = nodes[i]->point[3]; }
     long ref_flips = 0;
     auto d = seg.checkMarginalBatchedAgainstReference(nodes, optimize_yaw, marginal_split, ref_flips);   // {max|dGain|, max|dYaw|}
-    ROS_INFO("[bench_correctness] phase=%s nodes=%zu max|dGain|=%.3e yaw_flips=%ld max|dYaw|=%.4f",
+    ROS_INFO("[bench_batch_check] phase=%s nodes=%zu max|dGain|=%.3e yaw_flips=%ld max|dYaw|=%.4f",
              phase, n, d.first, ref_flips, d.second);
     for (size_t i = 0; i < n; ++i) { nodes[i]->gain = sg[i]; nodes[i]->point[3] = sy[i]; }
 }
 
-// [X1] Per-node gain VALUES: CPU {abs, 1-parent, all} + GPU {abs, all} -> NBV_X1_CSV for R². Accuracy, not time.
-void benchmarkX1Accuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+// [accuracy] Per-node gain VALUES: CPU {abs, 1-parent, all} + GPU {abs, all} -> NBV_ACCURACY_CSV for R². Accuracy, not time.
+void benchmarkAccuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                          const std::vector<uint8_t>& flat_map, bool optimize_yaw, int replan_count, const char* phase) {
     if (nodes.empty()) return;
     const size_t n = nodes.size();
@@ -288,17 +288,17 @@ void benchmarkX1Accuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>&
     for (size_t i = 0; i < n; ++i) { g_g1p_cpu[i] = g1p_of[nodes[i]]; g_gall_cpu[i] = gall_of[nodes[i]]; }
 
     // Per-node CSV: replan,depth,abs_cpu,abs_gpu,p1_cpu,p1_gpu,all_cpu,all_gpu.
-    const char* x1_csv_path = std::getenv("NBV_X1_CSV");
-    std::ofstream x1;
-    if (x1_csv_path) x1.open(x1_csv_path, std::ios::app);
+    const char* csv_path = std::getenv("NBV_ACCURACY_CSV");
+    std::ofstream csv;
+    if (csv_path) csv.open(csv_path, std::ios::app);
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];
         int depth = 0; for (rrt_star::Node* a = nd->parent; a != nullptr; a = a->parent) ++depth;
-        if (x1.is_open())
-            x1 << replan_count << ',' << depth << ',' << g_abs_cpu[i] << ',' << g_abs_gpu[i] << ','
+        if (csv.is_open())
+            csv << replan_count << ',' << depth << ',' << g_abs_cpu[i] << ',' << g_abs_gpu[i] << ','
                << g_g1p_cpu[i] << ',' << g_g1p_gpu[i] << ',' << g_gall_cpu[i] << ',' << g_gall_gpu[i] << '\n';
         else
-            ROS_INFO("[X1][%s] abs c/g=%7.3f/%7.3f | p1 c/g=%7.3f/%7.3f | all c/g=%7.3f/%7.3f",
+            ROS_INFO("[accuracy][%s] abs c/g=%7.3f/%7.3f | p1 c/g=%7.3f/%7.3f | all c/g=%7.3f/%7.3f",
                      phase, g_abs_cpu[i], g_abs_gpu[i], g_g1p_cpu[i], g_g1p_gpu[i], g_gall_cpu[i], g_gall_gpu[i]);
     }
 
@@ -306,8 +306,8 @@ void benchmarkX1Accuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>&
     for (size_t i = 0; i < n; ++i) { nodes[i]->gain = saved_gain[i]; nodes[i]->point[3] = saved_yaw[i]; }
 }
 
-// [X2] Cost: absolute + G_all only, CPU and GPU, timed on the SAME tree. Self-contained (one restore+resync at the end).
-void benchmarkX2Timing(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
+// [timing] Cost: absolute + G_all only, CPU and GPU, timed on the SAME tree. Self-contained (one restore+resync at the end).
+void benchmarkTiming(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                        const std::vector<uint8_t>& flat_map, BenchAccum& acc,
                        bool optimize_yaw, bool marginal_split, int replan_count, const char* phase) {
     if (nodes.empty()) return;
@@ -348,30 +348,30 @@ void benchmarkX2Timing(GainEvaluator& seg, const std::vector<rrt_star::Node*>& n
     acc.ms_abs_cpu  += t_abs_cpu;  acc.ms_gall_cpu     += t_gall_cpu;
     acc.nodes += (int)n;
 
-    ROS_INFO("[X2rep] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
+    ROS_INFO("[timing_marg] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
              n, t_gall_gpu, k_gall, t_gall_gpu - k_gall);
-    ROS_INFO("[X2repABS] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
+    ROS_INFO("[timing_abs] nodes=%zu total_ms=%.3f gain_computation_ms=%.3f cpu_to_gpu_transfer_ms=%.3f",
              n, t_abs_gpu, k_abs, t_abs_gpu - k_abs);
-    ROS_INFO("[X2cpu] nodes=%zu cpu_absolute_ms=%.3f cpu_gain_all_ms=%.3f", n, t_abs_cpu, t_gall_cpu);
+    ROS_INFO("[timing_cpu] nodes=%zu cpu_absolute_ms=%.3f cpu_gain_all_ms=%.3f", n, t_abs_cpu, t_gall_cpu);
 
     // Restore production gain+yaw; the GPU G_all pass (run first) already left the pool consistent with point[3].
     for (size_t i = 0; i < n; ++i) { nodes[i]->gain = saved_gain[i]; nodes[i]->point[3] = saved_yaw[i]; }
 }
 
-// Run whichever suite(s) the comma-separated string names ("correctness"/"x1"/"x2").
+// Run whichever suite(s) the comma-separated string names ("batch_check"/"accuracy"/"timing").
 void runBenchSuite(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                    const std::vector<uint8_t>& flat_map, BenchAccum& acc, const std::string& suite,
                    bool optimize_yaw, bool marginal_split, int replan_count, const char* phase) {
     if (nodes.empty()) return;
-    if (suite.find("correctness") != std::string::npos) benchmarkGpuCorrectness(seg, nodes, optimize_yaw, marginal_split, phase);
-    if (suite.find("x1") != std::string::npos)          benchmarkX1Accuracy(seg, nodes, flat_map, optimize_yaw, replan_count, phase);
-    if (suite.find("x2") != std::string::npos)          benchmarkX2Timing(seg, nodes, flat_map, acc, optimize_yaw, marginal_split, replan_count, phase);
+    if (suite.find("batch_check") != std::string::npos) benchmarkBatchCheck(seg, nodes, optimize_yaw, marginal_split, phase);
+    if (suite.find("accuracy") != std::string::npos)    benchmarkAccuracy(seg, nodes, flat_map, optimize_yaw, replan_count, phase);
+    if (suite.find("timing") != std::string::npos)      benchmarkTiming(seg, nodes, flat_map, acc, optimize_yaw, marginal_split, replan_count, phase);
 }
 
 void logBenchSummary(const BenchAccum& a) {
     if (a.nodes <= 0) return;
     double bn = (double)a.nodes;
-    ROS_INFO("\n=== X2 GAIN TIMING (%d nodes) ===\n"
+    ROS_INFO("\n=== GAIN TIMING (%d nodes) ===\n"
              "GPU G_all : %9.3f ms | %7.4f ms/node total (kernel %9.3f ms | transfer %9.3f ms)\n"
              "GPU abs   : %9.3f ms | %7.4f ms/node total (kernel %9.3f ms | transfer %9.3f ms)\n"
              "CPU G_all : %9.3f ms | %7.4f ms/node\n"

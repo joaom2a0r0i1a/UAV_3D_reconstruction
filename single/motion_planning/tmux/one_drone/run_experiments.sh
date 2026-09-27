@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# run_experiments.sh — sweep the AEP planner over several configurations,
+# run_experiments.sh: sweep the AEP planner over several configurations,
 # running NUM_RUNS repetitions of each. Modeled on multi_start.sh.
 #
 # Each config is pushed to the planner via env vars written to
@@ -55,7 +55,7 @@ EXPLORE_CONFIGS=(
 # Benchmark mode: all methods are timed/compared on the same tree per planning
 # iteration, so a single benchmark=true run yields the B/C/D comparisons.
 # (Full per-method CSV columns + v4 timing still require the AEPlanner.cpp
-#  changes noted in the plan — this just enables the instrumentation.)
+#  changes noted in the plan; this just enables the instrumentation.)
 BENCHMARK_CONFIGS=(
   "BENCH_gpu_marg:false:true:gpu:false:true"
 )
@@ -72,7 +72,7 @@ export EXP_DATA_DIR=$6
 export EXP_TIME_LIMIT=$7
 export AEP_EARLY_STOP=${AEP_EARLY_STOP:-false}
 export AEP_EARLY_STOP_GRACE=${AEP_EARLY_STOP_GRACE:-60.0}
-export NBV_X1_CSV=${NBV_X1_CSV:-}
+export NBV_ACCURACY_CSV=${NBV_ACCURACY_CSV:-}
 export VOXEL_SIZE=${VOXEL_SIZE:-0.2}
 EOF
 }
@@ -179,5 +179,5 @@ if [ "$MODE" = "explore" ]; then
   echo "  roslaunch motion_planning full_voxblox_eval.launch multi_series:=true"
   echo "  (ensure eval_plotting_node.py's multi_series label list matches the swept labels)"
 else
-  echo "  benchmark: grep '\[bench_correctness\]' / '\[X2rep' lines from the run's rosout log"
+  echo "  benchmark: grep '\[bench_batch_check]' / '\[timing' lines from the run's rosout log"
 fi

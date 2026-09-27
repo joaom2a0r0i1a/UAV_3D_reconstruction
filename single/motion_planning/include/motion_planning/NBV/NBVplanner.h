@@ -153,7 +153,7 @@ private:
     bool marginal_split;
     std::string objective_;
     bool benchmark_mode;
-    std::string bench_suite_ = "x2";   // which suite(s): correctness | x1 | x2 (comma-sep)
+    std::string bench_suite_ = "timing";   // which suite(s): batch_check | accuracy | timing (comma-sep)
 
     // Benchmark accumulators (reset each NBV cycle)
     planner_helpers::BenchAccum bench_;
@@ -167,9 +167,9 @@ private:
     int  replan_count_;
     double     timing_after_s_;
     bool       nbv_started_;
-    bool       x2_timing_window_;
-    int        x2_capture_count_;
-    int        x2_capture_max_;
+    bool       timing_window_;
+    int        capture_count_;
+    int        capture_max_;
 
     // Timer Parameters
     double timer_main_rate;
