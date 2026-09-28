@@ -93,7 +93,7 @@ target_link_libraries(KRH_NBVP_fleet_lib ${catkin_LIBRARIES})
 target_link_libraries(AEP_fleet_lib ${catkin_LIBRARIES})
 target_link_libraries(KAEP_fleet_lib ${catkin_LIBRARIES})
 
- # Add executable for RH_NBVP_node.cpp
+ # Add executables
 add_executable(RH_NBVP_fleet src/RH_NBVP_fleet_node.cpp)
 add_executable(KRH_NBVP_fleet src/KRH_NBVP_fleet_node.cpp)
 add_executable(AEP_fleet src/AEP_fleet_node.cpp)

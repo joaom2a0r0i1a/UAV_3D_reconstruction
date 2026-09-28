@@ -1,22 +1,6 @@
 #!/bin/bash
-#
-# supervise_runs.sh — HOST-SIDE supervisor for run_experiments.sh.
-#
-# The noetic_ws container is interactive (docker run -it, PID1=bash, no restart
-# policy), so it stops whenever its main shell ends — which has been killing runs
-# ~mid-flight. This supervisor runs on the host (so it survives container death),
-# drives ONE run at a time via run_experiments.sh, and on any mid-run drop it:
-#   restarts the container -> discards the partial run -> retries that run.
-# A run counts as good only when its voxblox_data.csv is flushed (>1 line), which
-# happens on eval_data_node's clean self-stop at the end of the run.
-#
-# Usage: ./supervise_runs.sh [LABEL] [TARGET_RUNS] [SIM_TIME] [CONFIG_SPEC]
-#   ./supervise_runs.sh GPU_marg_RRT 2 1850
-#   ./supervise_runs.sh GPU_marg_RRT 2 1850 "GPU_marg_RRT:false:true:gpu:false:false"
-#
-# If CONFIG_SPEC (4th arg) is given it is injected into run_experiments.sh via
-# EXP_CONFIG_SPEC, so no EXPLORE_CONFIGS hand-editing is needed. If omitted,
-# run_experiments.sh must have exactly the matching config active in its array.
+# Host-side supervisor for run_experiments.sh, restarts the container and retries dropped runs
+# Usage ./supervise_runs.sh [LABEL] [TARGET_RUNS] [SIM_TIME] [CONFIG_SPEC]
 
 CONTAINER=noetic_ws
 LABEL="${1:-GPU_marg_RRT}"
@@ -29,18 +13,19 @@ ONE_CTR=/home/ros1/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planni
 DATA_HOST=/home/lt-l4/ros1_motion_ws/src/UAV_3D_reconstruction/single/motion_planning/data
 LABELDIR="$DATA_HOST/$LABEL"
 
-csv_rows() { wc -l < "$1/voxblox_data.csv" 2>/dev/null || echo 0; }
+csv_rows() { wc -l <"$1/voxblox_data.csv" 2>/dev/null || echo 0; }
 
 good_runs() {
   local n=0 d
   for d in "$LABELDIR"/2*; do
     [ -d "$d" ] || continue
-    [ "$(csv_rows "$d")" -gt 1 ] && n=$((n+1))
+    [ "$(csv_rows "$d")" -gt 1 ] && n=$((n + 1))
   done
   echo "$n"
 }
 
-purge_partials() {   # remove any un-flushed ($<=1 row) run dirs of this label
+# Remove unfinished run dirs of this label
+purge_partials() {
   local d
   for d in "$LABELDIR"/2*; do
     [ -d "$d" ] || continue
@@ -54,14 +39,8 @@ ensure_container() {
     docker start "$CONTAINER" >/dev/null 2>&1
     sleep 6
   fi
-  # Clear ALL stale sim procs so a fresh run can bind the mavlink UDP ports (px4 14005 / mavros 14006)
-  # AND the ROS master (11311). CRITICAL: killing gzserver/rosmaster alone is NOT enough -- stale `px4`
-  # (SITL) and `mavros_node` survive the tmux teardown (px4 detaches; killProcessRecursive misses it) and
-  # keep holding their UDP ports, so the NEXT run's mavros never connects (State: DISARMED NO_GPS, "Have
-  # not received Mavros state") -> UAV never ready -> eval_data_node times out -> run produces no data.
-  # DIRECT docker exec — NOT `bash -lc 'pkill'`: a login shell silently no-ops the pkills, so stale px4/
-  # mavros survive between runs, the next take-off fails, and the run logs full CSV at ~0% coverage (a
-  # "good" run that is actually dead). See memory long-batch-takeoff-degradation.
+  # Kill stale px4, mavros and rosmaster so the next run can bind its ports
+  # Direct docker exec, a login shell silently skips pkill
   docker exec "$CONTAINER" tmux -L mrs kill-server 2>/dev/null
   docker exec "$CONTAINER" pkill -9 -x px4 2>/dev/null
   docker exec "$CONTAINER" pkill -9 -f mavros 2>/dev/null
@@ -72,7 +51,7 @@ ensure_container() {
   docker exec "$CONTAINER" pkill -9 -f "roslaunch mrs" 2>/dev/null
   docker exec "$CONTAINER" pkill -9 -f "roslaunch motion_planning" 2>/dev/null
   docker exec "$CONTAINER" rm -f "$ONE_CTR/current_config.env" 2>/dev/null
-  sleep 4   # let the UDP ports (14005/14006) and master port fully release before the next launch
+  sleep 4
 }
 
 echo "=========================================================="
@@ -85,7 +64,7 @@ echo ">>> starting with $(good_runs)/$TARGET_RUNS good runs"
 while [ "$(good_runs)" -lt "$TARGET_RUNS" ]; do
   have=$(good_runs)
   attempt=0
-  while : ; do
+  while :; do
     attempt=$((attempt + 1))
     if [ "$attempt" -gt "$MAX_ATTEMPTS_PER_RUN" ]; then
       echo ">>> ABORT: $MAX_ATTEMPTS_PER_RUN failed attempts for run $((have + 1)); container keeps dropping."
@@ -95,13 +74,18 @@ while [ "$(good_runs)" -lt "$TARGET_RUNS" ]; do
     ensure_container
     pre=$(ls -1d "$LABELDIR"/2* 2>/dev/null | sort)
     echo ">>> [$LABEL] run $((have + 1))/$TARGET_RUNS — attempt $attempt ($(date +%H:%M:%S))"
-    docker exec -e EXP_CONFIG_SPEC="$SPEC" -e AEP_EARLY_STOP="${AEP_EARLY_STOP:-false}" -e AEP_EARLY_STOP_GRACE="${AEP_EARLY_STOP_GRACE:-60.0}" -e VOXEL_SIZE="${VOXEL_SIZE:-0.2}" -w "$ONE_CTR" "$CONTAINER" bash -lc "./run_experiments.sh explore 1 $SIM_TIME"
+    # Forward every campaign setting to the container
+    fwd=()
+    for v in $(compgen -e | grep -E '^(PLANNER_|AEP_|RH_NBVP_|VOXEL_)'); do fwd+=(-e "$v=${!v}"); done
+    docker exec "${fwd[@]}" -e EXP_CONFIG_SPEC="$SPEC" -e AEP_EARLY_STOP="${AEP_EARLY_STOP:-false}" -e AEP_EARLY_STOP_GRACE="${AEP_EARLY_STOP_GRACE:-60.0}" -e VOXEL_SIZE="${VOXEL_SIZE:-0.2}" -w "$ONE_CTR" "$CONTAINER" bash -lc "./run_experiments.sh explore 1 $SIM_TIME"
     rc=$?
     post=$(ls -1d "$LABELDIR"/2* 2>/dev/null | sort)
     newdir=$(comm -13 <(printf '%s\n' "$pre") <(printf '%s\n' "$post") | tail -1)
     cup=$(docker ps --filter name="$CONTAINER" --format '{{.Names}}')
-    rows=0; [ -n "$newdir" ] && rows=$(csv_rows "$newdir")
-    crashed=0; [ -n "$newdir" ] && [ -f "$newdir/.crashed" ] && crashed=1
+    rows=0
+    [ -n "$newdir" ] && rows=$(csv_rows "$newdir")
+    crashed=0
+    [ -n "$newdir" ] && [ -f "$newdir/.crashed" ] && crashed=1
     if [ -n "$newdir" ] && [ "$rows" -gt 1 ] && [ "$crashed" = 0 ]; then
       echo ">>> SUCCESS: $(basename "$newdir") rows=$rows maps=$(ls "$newdir/voxblox_maps" 2>/dev/null | wc -l)"
       break

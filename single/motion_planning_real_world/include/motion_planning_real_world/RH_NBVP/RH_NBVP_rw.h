@@ -1,11 +1,6 @@
 #ifndef RH_NBVP_RW_H
 #define RH_NBVP_RW_H
 
-// Real-world RH-NBVP: port of motion_planning/RH_NBVP/RH_NBVP_rw. Deltas vs sim:
-// mavros PositionTarget instead of the MRS control stack, plain ROS/tf2 plumbing (no mrs_lib),
-// start offset auto-captured and applied to the bounded box + gain box (setWorldOffset),
-// no benchmark suites, execution horizon fixed to 1 (single step per replan).
-
 #include <ros/ros.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -22,10 +17,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox_ros/tsdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -42,19 +34,17 @@
 #include <string>
 #include <vector>
 
-typedef enum
-{
-  STATE_IDLE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "STOPPED"};
 
-
 class RH_NBVP_rw {
-public:
+  public:
     RH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -64,7 +54,7 @@ public:
 
     void planStep();
 
-    // Fixed-yaw gain evaluation (duplicated from AEP; RH_NBVP keeps each node's random yaw).
+    // Gain Evaluation
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     std::vector<rrt_star::Node*> collectTreeNodes();
     void logTreeNodes();
@@ -76,7 +66,7 @@ public:
     void rotate();
     void explorationSweep();
 
-    // Snapshot the current pose as the start offset; shift bounded box + gain box; publish latched offset.
+    // Start Offset
     void captureOffset();
     mavros_msgs::PositionTarget makeSetpoint(const Eigen::Vector4d& waypoint);
     void commandWaypoint(const Eigen::Vector4d& waypoint, const Eigen::Vector4d& prev_waypoint);
@@ -99,7 +89,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -114,7 +104,7 @@ private:
     voxblox::EsdfMap::Ptr esdf_map_;
     voxblox::TsdfMap::Ptr tsdf_map_;
 
-    // TF (body -> camera extrinsics)
+    // Camera Extrinsics
     tf2_ros::Buffer tf_buffer_;
     std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
     bool set_variables;
@@ -130,7 +120,7 @@ private:
     std::string ns;
     double best_score_;
 
-    // Bounded Box (shifted by the start offset; base_* = pristine yaml values)
+    // Bounded Box
     float min_x;
     float max_x;
     float min_y;
@@ -140,7 +130,7 @@ private:
     float base_min_x, base_max_x, base_min_y, base_max_y, base_min_z, base_max_z;
     double bounded_radius;
 
-    // Start offset (captured on ~start; re-capturable via ~offset)
+    // Start Offset
     Eigen::Vector3d initial_offset{0.0, 0.0, 0.0};
 
     // Tree Parameters
@@ -149,19 +139,19 @@ private:
     double radius;
     double step_size;
     double min_edge_length_;
-    bool fixed_step;   // false = classic RRT (edge <= step_size); true = every edge exactly step_size
+    bool fixed_step;
     double tolerance;
     int num_yaw_samples;
 
-    // Gain-evaluation options
+    // Gain Evaluation Options
     bool marginal_gain;
-    bool optimize_yaw;          // false = keep each node's random sampled yaw; true = pick argmax yaw per node (like AEP)
-    std::string eval_compute;   // "gpu" or "cpu"
+    bool optimize_yaw;
+    std::string eval_compute;
     bool marginal_split;
     std::string objective_;
     float last_marg_kernel_ms_, last_abs_kernel_ms_;
 
-    // GPU map cache (for gpu / flat-map fixed-yaw eval)
+    // GPU Map Cache
     std::vector<uint8_t> flat_map_;
     Eigen::Vector3d map_origin_;
     Eigen::Vector3i map_dim_;
@@ -179,34 +169,39 @@ private:
 
     // Planner Parameters
     double uav_radius;
-    double collision_check_resolution_;   // [m] edge-sampling spacing for isEdgeCollisionFree
-    double waypoint_reach_distance_;      // [m] a waypoint counts as reached within this dist (+ yaw < 0.4)
-    double waypoint_reach_velocity_;      // [m/s] velocity gate: the target waypoint also requires speed below this (true stop-and-go)
-    // --- optimistic-edges gate + IN-PLANNER backtrack (bounds the tree-build loop so planStep() can't spin) ---
-    bool   optimistic_edges_ = true;      // set each replan: unknown=traversable only for the first replans
-    int    optimistic_iterations_;        // # of initial replans allowed to plan through unknown space
-    bool   recovery_enabled_ = true;      // master toggle for the in-planner backtrack
-    double recovery_boxed_deadline_;      // [s] if the tree is still tiny after this, backtrack (boxed in)
-    int    recovery_min_tree_;            // "tree still empty" node count for the boxed-in check
-    double recovery_timeout_;             // [s] hard deadline: backtrack after this no matter what
+    double collision_check_resolution_;
+    double waypoint_reach_distance_;
+    double waypoint_reach_velocity_;
     double lambda;
+
+    // Optimistic Edges
+    bool optimistic_edges_ = true;
+    int optimistic_iterations_;
+
+    // Recovery
+    bool recovery_enabled_ = true;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
 
     // Tree variables
     std::vector<Eigen::Vector4d> prev_best_branch;
     std::vector<Eigen::Vector4d> best_branch;
     rrt_star::Node* next_best_node = nullptr;
-    std::unique_ptr<rrt_star::Node> previous_node;  // owning copy, survives clearKDTree()
-    std::vector<Eigen::Vector4d> executed_path_;    // flown poses (forward moves); boxed-in backtrack retreats along it
-    bool retreating_ = false;                       // set only by a backtrack, cleared each STATE_PLANNING cycle
-    std::unique_ptr<rrt_star::Node> retreat_node_;  // holds the current retreat pose
+    std::unique_ptr<rrt_star::Node> previous_node;
     Eigen::Vector4d next_start;
 
-    // Single-step execution (execution horizon fixed to 1 in the real world)
+    // Retreat Along Flown Path
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
+    std::unique_ptr<rrt_star::Node> retreat_node_;
+
+    // Single Step Execution
     std::vector<Eigen::Vector4d> exec_waypoints_;
     mavros_msgs::PositionTarget active_setpoint_;
     Eigen::Vector4d current_target_;
     bool has_active_setpoint_ = false;
-    bool have_commanded_ = false;   // true after the first commandWaypoint (root = next_start from then on)
+    bool have_commanded_ = false;
 
     // UAV variables
     bool is_initialized = false;
@@ -214,25 +209,29 @@ private:
     geometry_msgs::Pose uav_local_pose;
     ros::Time last_pose_time_;
     bool have_pose_ = false;
-    bool exploration_initial_;   // up-rotate-down before the first plan
-    double exploration_climb_;
-    double exploration_settle_;
-    bool exploration_return_;
-    bool pending_exploration_ = false;
-    double rotation_step_deg_;   // recovery sweep step
-    double rotation_settle_;     // wait per step
-    bool prev_armed_ = false;    // for the disarmed to armed edge
-    double ground_z_ = 0.0;      // local z while still on the ground
+    bool prev_armed_ = false;
+    double ground_z_ = 0.0;
     bool have_ground_z_ = false;
-    double pose_max_distance_;   // reject poses further than this from the origin
-    double pose_max_speed_;      // reject poses implying a jump faster than this
     double current_speed_ = 0.0;
     ros::Time last_vel_time_;
     bool have_vel_ = false;
 
+    // Exploration Sweep
+    bool exploration_initial_;
+    double exploration_climb_;
+    double exploration_settle_;
+    bool exploration_return_;
+    bool pending_exploration_ = false;
+    double rotation_step_deg_;
+    double rotation_settle_;
+
+    // Pose Sanity Gates
+    double pose_max_distance_;
+    double pose_max_speed_;
+
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -268,4 +267,4 @@ private:
     ros::Timer timer_main;
 };
 
-#endif // RH_NBVP_RW_H
+#endif  // RH_NBVP_RW_H

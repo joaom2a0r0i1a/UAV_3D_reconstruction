@@ -1,9 +1,7 @@
 #include "motion_planning_real_world/KAEP/KAEP_rw.h"
 
-KAEP_rw::KAEP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
-
-    //ns = "uav1";
-
+KAEP_rw::KAEP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
+    : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "KAEP_rw");
 
@@ -22,7 +20,7 @@ KAEP_rw::KAEP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) :
     param_loader.loadParam("bounded_box/max_y", max_y);
     param_loader.loadParam("bounded_box/min_z", min_z);
     param_loader.loadParam("bounded_box/max_z", max_z);
-    
+
     // UAV Parameters
     param_loader.loadParam("uav_parameters/max_vel", max_velocity);
     param_loader.loadParam("uav_parameters/max_accel", max_accel);
@@ -76,7 +74,7 @@ KAEP_rw::KAEP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) :
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     segment_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
     segment_evaluator.setEsdfMap(esdf_map_);
-            
+
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("KAEP_rw");
     transformer_->setDefaultFrame(frame_id);
@@ -91,7 +89,7 @@ KAEP_rw::KAEP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) :
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
-    
+
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 500);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
@@ -145,18 +143,6 @@ bool KAEP_rw::isTrajectoryCollisionFree(kino_rrt_star::Trajectory* trajectory) c
         return false;
     }
 
-    /*int size = trajectory->TrajectoryPoints.size();
-    int half_size = std::floor(size/2);
-    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator start = trajectory->TrajectoryPoints.begin() + half_size;
-    std::vector<std::shared_ptr<kino_rrt_star::Node>>::iterator end = trajectory->TrajectoryPoints.end();
-    std::vector<std::shared_ptr<kino_rrt_star::Node>> sliced_nodes(start, end);
-
-    for (const std::shared_ptr<kino_rrt_star::Node>& node : sliced_nodes) {
-        if (getMapDistance(node->point.head(3)) < uav_radius) {
-            return false;
-        }
-    }*/
-
     return true;
 }
 
@@ -201,17 +187,17 @@ void KAEP_rw::planStep() {
         }
         if (GlobalFrontiers.size() == 0) {
             changeState(STATE_STOPPED);
-            return;   
+            return;
         }
         ROS_INFO("[KAEP_rw]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_trajectory);
-        
+
         if (go_terminate) {
             ROS_INFO("[KAEP_rw]: No information gain. Terminate.");
             changeState(STATE_STOPPED);
-            return;   
+            return;
         }
-        
+
         next_best_trajectory = best_global_trajectory;
         goto_global_planning = false;
     }
@@ -250,36 +236,23 @@ void KAEP_rw::localPlanner() {
     KinoRRTStar.clearKDTree();
     kino_rrt_star::Trajectory* root_ptr = KinoRRTStar.addKDTreeTrajectory(std::move(Root));
     clearMarkers();
-    visualize_node(root_ptr->TrajectoryPoints.back()->point, 2*node_size, ns);
+    visualize_node(root_ptr->TrajectoryPoints.back()->point, 2 * node_size, ns);
 
     bool isFirstIteration = true;
-    int j = 1; // initialized at one because of the root node
+    int j = 1;
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
     if (best_branch.size() > 0) {
         previous_trajectory = best_branch[0]->clone();
     }
     while (j < N_max || best_score_ <= g_zero) {
-        /*// Backtrack
-        if (collision_id_counter_ > 10000 * j) {
-            if (previous_trajectory) {
-                //next_best_trajectory = previous_trajectory;
-                //rotate();
-            } else {
-                ROS_INFO("[KAEP_rw]: Trying the existing Nodes");
-                collision_id_counter_ = 0;
-                break;
-            }
-            return;
-        }*/
-
-        // Add previous best branch 
+        // Add previous best branch
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
-                continue; // Skip first iteration (root)
+                continue;
             }
-            
+
             const Eigen::Vector4d& node_position = best_branch[i]->TrajectoryPoints.back()->point;
 
             kino_rrt_star::Trajectory* nearest_trajectory_best = nullptr;
@@ -295,7 +268,7 @@ void KAEP_rw::localPlanner() {
             raw_best->gain = result_best.first;
 
             if (result_best.second > M_PI) {
-                result_best.second -= 2*M_PI;
+                result_best.second -= 2 * M_PI;
             }
 
             raw_best->TrajectoryPoints.back()->point[3] = result_best.second;
@@ -323,7 +296,7 @@ void KAEP_rw::localPlanner() {
         if (j >= N_max && best_score_ > g_zero) {
             break;
         }
-    
+
         best_branch.clear();
 
         Eigen::Vector3d rand_point;
@@ -345,9 +318,7 @@ void KAEP_rw::localPlanner() {
 
             bool OutOfBounds = false;
 
-           if (new_trajectory->TrajectoryPoints.back()->point[0] > initial_offset[0] + max_x || new_trajectory->TrajectoryPoints.back()->point[0] < initial_offset[0] + min_x 
-                || new_trajectory->TrajectoryPoints.back()->point[1] < initial_offset[1] + min_y || new_trajectory->TrajectoryPoints.back()->point[1] > initial_offset[1] + max_y 
-                || new_trajectory->TrajectoryPoints.back()->point[2] < initial_offset[2] + min_z || new_trajectory->TrajectoryPoints.back()->point[2] > initial_offset[2] + max_z) {
+            if (new_trajectory->TrajectoryPoints.back()->point[0] > initial_offset[0] + max_x || new_trajectory->TrajectoryPoints.back()->point[0] < initial_offset[0] + min_x || new_trajectory->TrajectoryPoints.back()->point[1] < initial_offset[1] + min_y || new_trajectory->TrajectoryPoints.back()->point[1] > initial_offset[1] + max_y || new_trajectory->TrajectoryPoints.back()->point[2] < initial_offset[2] + min_z || new_trajectory->TrajectoryPoints.back()->point[2] > initial_offset[2] + max_z) {
                 OutOfBounds = true;
                 break;
             }
@@ -364,7 +335,7 @@ void KAEP_rw::localPlanner() {
                 /*if (collision_id_counter_ > 1000 * j) {
                     break;
                 }*/
-               // Avoid Memory Leak
+                // Avoid Memory Leak
                 new_trajectory.reset();
                 continue;
             }
@@ -378,7 +349,7 @@ void KAEP_rw::localPlanner() {
 
             // Convert from [0, 2*PI[ to [-PI, PI[
             if (result.second > M_PI) {
-                result.second -= 2*M_PI;
+                result.second -= 2 * M_PI;
             }
 
             new_trajectory->TrajectoryPoints.back()->point[3] = result.second;
@@ -403,7 +374,6 @@ void KAEP_rw::localPlanner() {
 
             kino_rrt_star::Trajectory* added = KinoRRTStar.addKDTreeTrajectory(std::move(new_trajectory));
             visualize_trajectory(added, ns);
-        
         }
 
         if (accel_iteration == 0) {
@@ -422,13 +392,12 @@ void KAEP_rw::localPlanner() {
         }
 
         ++j;
-
     }
 
     ROS_INFO("[KAEP_rw]: Final Best Score: %f", best_score_);
     ROS_INFO("[KAEP_rw]: Node Iterations: %d", j);
     ROS_INFO("[KAEP_rw]: Full Node Iterations: %d", expanded_num_nodes);
-    
+
     if (best_trajectory) {
         reset_velocity = false;
         next_best_trajectory = best_trajectory;
@@ -498,9 +467,7 @@ void KAEP_rw::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers,
             KinoRRTStar.steer_trajectory_linear(global_nearest_trajectory, max_velocity, reset_velocity, accel, step_size, global_new_trajectory);
             bool OutOfBounds = false;
 
-           if (global_new_trajectory->TrajectoryPoints.back()->point[0] > initial_offset[0] + max_x || global_new_trajectory->TrajectoryPoints.back()->point[0] < initial_offset[0] + min_x
-                || global_new_trajectory->TrajectoryPoints.back()->point[1] < initial_offset[1] + min_y || global_new_trajectory->TrajectoryPoints.back()->point[1] > initial_offset[1] + max_y
-                || global_new_trajectory->TrajectoryPoints.back()->point[2] < initial_offset[2] + min_z || global_new_trajectory->TrajectoryPoints.back()->point[2] > initial_offset[2] + max_z) {
+            if (global_new_trajectory->TrajectoryPoints.back()->point[0] > initial_offset[0] + max_x || global_new_trajectory->TrajectoryPoints.back()->point[0] < initial_offset[0] + min_x || global_new_trajectory->TrajectoryPoints.back()->point[1] < initial_offset[1] + min_y || global_new_trajectory->TrajectoryPoints.back()->point[1] > initial_offset[1] + max_y || global_new_trajectory->TrajectoryPoints.back()->point[2] < initial_offset[2] + min_z || global_new_trajectory->TrajectoryPoints.back()->point[2] > initial_offset[2] + max_z) {
                 OutOfBounds = true;
                 break;
             }
@@ -514,7 +481,7 @@ void KAEP_rw::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers,
             // Collision Check
             if (!isTrajectoryCollisionFree(global_new_trajectory.get())) {
                 collision_id_counter_++;
-               // Avoid Memory Leak
+                // Avoid Memory Leak
                 global_new_trajectory.reset();
                 continue;
             }
@@ -533,7 +500,6 @@ void KAEP_rw::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontiers,
                 all_global_goals.push_back(added_global);
                 goal_reached = false;
             }
-
         }
 
         if (accel_iteration == 0) {
@@ -589,9 +555,9 @@ bool KAEP_rw::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers,
         std::pair<double, double> result = segment_evaluator.computeGainRaycasting(trajectory_point_global, true, initial_offset);
         trajectory->gain = result.first;
 
-        // Convert from [0, 2*PI[ to [-PI, PI[ 
+        // Convert from [0, 2*PI[ to [-PI, PI[
         if (result.second > M_PI) {
-            result.second -= 2*M_PI;
+            result.second -= 2 * M_PI;
         }
 
         trajectory->TrajectoryPoints.back()->point[3] = result.second;
@@ -600,7 +566,8 @@ bool KAEP_rw::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers,
         // Make sure the heading of the last node is correct
         trajectory->TrajectoryPoints.back()->point[3] = result.second;
 
-        trajectory_point_global.head<3>() = nearest_goal; trajectory_point_global[3] = 0.0;
+        trajectory_point_global.head<3>() = nearest_goal;
+        trajectory_point_global[3] = 0.0;
         std::pair<double, double> result_original = segment_evaluator.computeGainRaycasting(trajectory_point_global, true, initial_offset);
         //ROS_INFO("[KAEP_rw]: Goal Best Gain: %f", result_original.first);
         goals_tree.clearKDTreePoints();
@@ -642,7 +609,7 @@ void KAEP_rw::getBestGlobalTrajectory(const std::vector<kino_rrt_star::Trajector
 
     ROS_INFO("[KAEP_rw]: Chosen Goal: [%f, %f, %f]", best_global_trajectory->TrajectoryPoints.back()->point[0], best_global_trajectory->TrajectoryPoints.back()->point[1], best_global_trajectory->TrajectoryPoints.back()->point[2]);
     ROS_INFO("[KAEP_rw]: Chosen Goal Gain, Cost & Score: [%f, %f, %f]", best_global_trajectory->gain, best_global_trajectory->cost2, best_global_trajectory->score);
-    
+
     if (best_global_trajectory->gain < 0.2) {
         go_terminate = true;
     }
@@ -686,7 +653,6 @@ bool KAEP_rw::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::
     res.success = true;
     res.message = "starting";
     return true;
-
 }
 
 bool KAEP_rw::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -714,7 +680,6 @@ bool KAEP_rw::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::R
     res.success = true;
     res.message = ss.str();
     return true;
-
 }
 
 bool KAEP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -737,21 +702,20 @@ bool KAEP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger:
     initial_offset[0] = pose[0];
     initial_offset[1] = pose[1];
     initial_offset[2] = pose[2];
-    
+
     geometry_msgs::Point offset_msg;
     offset_msg.x = initial_offset[0];
     offset_msg.y = initial_offset[1];
     offset_msg.z = initial_offset[2];
-    
+
     pub_offset.publish(offset_msg);
-    
+
     std::stringstream ss;
     ss << "Getting initial position offset: [" << initial_offset[0] << ", " << initial_offset[1] << ", " << initial_offset[2] << "]";
 
     res.success = true;
     res.message = ss.str();
     return true;
-
 }
 
 void KAEP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) {
@@ -760,7 +724,7 @@ void KAEP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) 
     }
     ROS_INFO_ONCE("[KAEP_rw]: getting LocalPose diagnostics");
     uav_local_pose = msg->pose;
-    
+
     const geometry_msgs::Quaternion& q = uav_local_pose.orientation;
 
     // Check for NaNs or zero-length quaternion
@@ -768,13 +732,13 @@ void KAEP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) 
         ROS_ERROR("[KAEP_rw]: Invalid quaternion received (contains NaNs)");
         return;
     }
-    
-    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);    
+
+    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     if (norm < 0.1 || norm > 1.1) {
-      ROS_WARN_THROTTLE(5, "[KAEP_rw] Invalid quaternion detected. Norm: %.3f. Skipping this pose.", norm);
-      return;
+        ROS_WARN_THROTTLE(5, "[KAEP_rw] Invalid quaternion detected. Norm: %.3f. Skipping this pose.", norm);
+        return;
     }
-    
+
     double yaw = 0.0;
     try {
         yaw = mrs_lib::getYaw(uav_local_pose);
@@ -782,7 +746,7 @@ void KAEP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) 
         ROS_ERROR_THROTTLE(1.0, "[KAEP_rw]: Exception during getYaw(): %s — skipping this pose.", e.what());
         return;
     }
-    
+
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
 }
 
@@ -799,7 +763,7 @@ void KAEP_rw::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
     }
-    
+
     ready_to_plan_ = true;
 
     std_msgs::Bool starter;
@@ -814,7 +778,7 @@ void KAEP_rw::timerMain(const ros::TimerEvent& event) {
         ROS_INFO("[KAEP_rw]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
         set_variables = true;
     }
-    
+
     switch (state_) {
         case STATE_IDLE: {
             ROS_INFO("[KAEP_rw]: waiting for command");
@@ -829,7 +793,7 @@ void KAEP_rw::timerMain(const ros::TimerEvent& event) {
             }
 
             iteration_ += 1;
-            
+
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back().get());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back().get());
 
@@ -838,12 +802,12 @@ void KAEP_rw::timerMain(const ros::TimerEvent& event) {
             while (next_best_trajectory && next_best_trajectory->parent) {
                 for (int i = next_best_trajectory->TrajectoryPoints.size() - 1; i >= 0; i--) {
                     mavros_msgs::PositionTarget setpoint_reference;
-                    
+
                     setpoint_reference.header.frame_id = frame_id;
                     setpoint_reference.header.stamp = ros::Time::now();
                     setpoint_reference.coordinate_frame = 1;
                     setpoint_reference.type_mask = 2496;
-                    
+
                     setpoint_reference.position.x = next_best_trajectory->TrajectoryPoints[i]->point[0];
                     setpoint_reference.position.y = next_best_trajectory->TrajectoryPoints[i]->point[1];
                     setpoint_reference.position.z = next_best_trajectory->TrajectoryPoints[i]->point[2];
@@ -851,7 +815,7 @@ void KAEP_rw::timerMain(const ros::TimerEvent& event) {
                     setpoint_reference.velocity.y = next_best_trajectory->TrajectoryPoints[i]->velocity[1];
                     setpoint_reference.velocity.z = next_best_trajectory->TrajectoryPoints[i]->velocity[2];
                     setpoint_reference.yaw = next_best_trajectory->TrajectoryPoints[i]->point[3];
-                    
+
                     setpoint_targets.push_back(setpoint_reference);
                 }
                 next_best_trajectory = next_best_trajectory->parent;
@@ -869,7 +833,6 @@ void KAEP_rw::timerMain(const ros::TimerEvent& event) {
 
             changeState(STATE_MOVING);
             break;
-            
         }
         case STATE_MOVING: {
             ROS_INFO("[KAEP_rw]: waiting for command");
@@ -981,7 +944,7 @@ void KAEP_rw::visualize_trajectory(kino_rrt_star::Trajectory* trajectory, const 
 
 void KAEP_rw::visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns) {
     kino_rrt_star::Trajectory* currentTrajectory = trajectory;
-    
+
     while (currentTrajectory->parent) {
         visualization_msgs::Marker best_trajectory_marker;
         best_trajectory_marker.header.stamp = ros::Time::now();
@@ -1020,7 +983,7 @@ void KAEP_rw::visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory, c
 
 void KAEP_rw::visualize_frustum(kino_rrt_star::Node* position) {
     Eigen::Vector4d trajectory_point_visualize = position->point;
-    
+
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = frame_id;
     frustum.header.stamp = ros::Time::now();
@@ -1050,7 +1013,7 @@ void KAEP_rw::visualize_unknown_voxels(kino_rrt_star::Node* position) {
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
-    
+
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
         visualization_msgs::Marker unknown_voxel;

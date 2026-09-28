@@ -39,21 +39,12 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
 )
-add_executable(prune_node src/prune_node.cc src/prune.cc)
-
-catkin_package(
-  INCLUDE_DIRS include
-)
 add_executable(process_node src/process_pointcloud_node.cc src/process_pointcloud.cc)
 
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
-)
-
-target_link_libraries(prune_node
-  ${catkin_LIBRARIES}
 )
 
 target_link_libraries(process_node

@@ -37,9 +37,11 @@ bool isEdgeCollisionFree(const voxblox::EsdfServer& server, const Eigen::Vector3
         if (optimistic_edges) {
             const auto esdf = server.getEsdfMapPtr();
             double dist = 0.0;
-            if (esdf && esdf->getDistanceAtPosition(p, &dist) && dist < uav_radius) return false;
+            if (esdf && esdf->getDistanceAtPosition(p, &dist) && dist < uav_radius) {
+                return false;
+            }
         } else if (getMapDistance(server, p) < uav_radius) {
-            return false;   // unobserved (0.0) or too close to a mapped obstacle
+            return false;
         }
     }
     return true;
@@ -53,7 +55,11 @@ std::vector<rrt_star::Node*> collectTreeNodes(rrt_star& tree) {
     std::vector<rrt_star::Node*> nodes;
     const auto& all = tree.getNodes();
     nodes.reserve(all.size());
-    for (const auto& up : all) if (up->parent) nodes.push_back(up.get());   // skip root
+    for (const auto& up : all) {
+        if (up->parent) {
+            nodes.push_back(up.get());
+        }
+    }
     return nodes;
 }
 
@@ -64,10 +70,12 @@ bool inBoundingBox(const Eigen::Vector4d& p, float min_x, float max_x, float min
 }
 
 void logTreeNodes(rrt_star& tree, double lambda) {
-    for (const auto& up : tree.getNodes())
-        if (up->parent)
+    for (const auto& up : tree.getNodes()) {
+        if (up->parent) {
             ROS_INFO("[Node] gain=%.3f score_contribution=%.3f score=%.3f",
                      up->gain, up->gain * exp(-lambda * up->cost), up->score);
+        }
+    }
 }
 
 void visualize_tree(ros::Publisher& pub_markers, const std::string& frame_id,
@@ -81,7 +89,10 @@ void visualize_tree(ros::Publisher& pub_markers, const std::string& frame_id,
     edges.action = visualization_msgs::Marker::ADD;
     edges.pose.orientation.w = 1.0;
     edges.scale.x = 0.06;
-    edges.color.r = 1.0; edges.color.g = 0.3; edges.color.b = 0.7; edges.color.a = 1.0;
+    edges.color.r = 1.0;
+    edges.color.g = 0.3;
+    edges.color.b = 0.7;
+    edges.color.a = 1.0;
     edges.lifetime = ros::Duration(30.0);
 
     visualization_msgs::Marker pts;
@@ -92,16 +103,23 @@ void visualize_tree(ros::Publisher& pub_markers, const std::string& frame_id,
     pts.action = visualization_msgs::Marker::ADD;
     pts.pose.orientation.w = 1.0;
     pts.scale.x = pts.scale.y = pts.scale.z = 0.2;
-    pts.color.r = 0.4; pts.color.g = 0.7; pts.color.b = 0.2; pts.color.a = 1.0;
+    pts.color.r = 0.4;
+    pts.color.g = 0.7;
+    pts.color.b = 0.2;
+    pts.color.a = 1.0;
     pts.lifetime = ros::Duration(30.0);
 
     for (rrt_star::Node* node : nodes) {
         geometry_msgs::Point p;
-        p.x = node->point[0]; p.y = node->point[1]; p.z = node->point[2];
+        p.x = node->point[0];
+        p.y = node->point[1];
+        p.z = node->point[2];
         pts.points.push_back(p);
         if (node->parent) {
             geometry_msgs::Point pp;
-            pp.x = node->parent->point[0]; pp.y = node->parent->point[1]; pp.z = node->parent->point[2];
+            pp.x = node->parent->point[0];
+            pp.y = node->parent->point[1];
+            pp.z = node->parent->point[2];
             edges.points.push_back(pp);
             edges.points.push_back(p);
         }
@@ -109,9 +127,13 @@ void visualize_tree(ros::Publisher& pub_markers, const std::string& frame_id,
 
     if (!nodes.empty()) {
         rrt_star::Node* root = nodes[0];
-        while (root->parent) root = root->parent;
+        while (root->parent) {
+            root = root->parent;
+        }
         geometry_msgs::Point rp;
-        rp.x = root->point[0]; rp.y = root->point[1]; rp.z = root->point[2];
+        rp.x = root->point[0];
+        rp.y = root->point[1];
+        rp.z = root->point[2];
         pts.points.push_back(rp);
     }
     pub_markers.publish(edges);

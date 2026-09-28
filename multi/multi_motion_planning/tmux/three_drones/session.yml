@@ -60,18 +60,9 @@ windows:
   - motion_planning:
       layout: tiled
       panes:
-        #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multi_motion_planning RH_NBVP_fleet.launch
-        #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multi_motion_planning RH_NBVP_fleet.launch
-        #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multi_motion_planning RH_NBVP_fleet.launch
-        #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multi_motion_planning KRH_NBVP_fleet.launch
-        #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multi_motion_planning KRH_NBVP_fleet.launch
-        #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multi_motion_planning KRH_NBVP_fleet.launch
-        #- export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multi_motion_planning AEP_fleet.launch
-        #- export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multi_motion_planning AEP_fleet.launch
-        #- export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multi_motion_planning AEP_fleet.launch
-        - export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multi_motion_planning KAEP_fleet.launch
-        - export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multi_motion_planning KAEP_fleet.launch
-        - export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multi_motion_planning KAEP_fleet.launch
+        - export UAV_NAME=uav1; export UAV_ID=1; waitForControl; roslaunch multi_motion_planning planner_fleet.launch planner:=kaep
+        - export UAV_NAME=uav2; export UAV_ID=2; waitForControl; roslaunch multi_motion_planning planner_fleet.launch planner:=kaep
+        - export UAV_NAME=uav3; export UAV_ID=3; waitForControl; roslaunch multi_motion_planning planner_fleet.launch planner:=kaep
         - export UAV_NAME=uav3; waitForControl; roslaunch multi_motion_planning experiment_starter_fleet.launch
   - cached_nodes:
       layout: tiled

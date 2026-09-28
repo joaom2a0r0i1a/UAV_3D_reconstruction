@@ -1,6 +1,7 @@
 #include "cache_nodes/cached_fleet.h"
 
-Cached_fleet::Cached_fleet(ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
+Cached_fleet::Cached_fleet(ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
+    : nh_(nh), nh_private_(nh_private), evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     ss_best_node = nh_private_.advertiseService("best_node_in", &Cached_fleet::callbackBestNode, this);
 
     /* Parameter loading */
@@ -26,11 +27,11 @@ Cached_fleet::Cached_fleet(ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("uav_ids", uav_ids);
 
     sub_gain = nh_private_.subscribe("tree_node_in", 10, &Cached_fleet::callbackGain, this);
-    
+
     for (const auto& uav_id : uav_ids) {
         std::string topic = uav_id + "_state_in";
-        ros::Subscriber sub = nh_private_.subscribe<mrs_msgs::UavState>(topic, 10, 
-                            boost::bind(&Cached_fleet::callbackUavState, this, _1, uav_id));
+        ros::Subscriber sub = nh_private_.subscribe<mrs_msgs::UavState>(topic, 10,
+                                                                        boost::bind(&Cached_fleet::callbackUavState, this, _1, uav_id));
         sub_uav_states.push_back(sub);
     }
 
@@ -81,15 +82,16 @@ void Cached_fleet::timerReevaluate(const ros::TimerEvent&) {
     std::vector<RTreeValue> result_s;
 
     rtree.query(bgi::satisfies([this](RTreeValue const& v) {
-        for (const auto& uav_pos : uav_positions_) {
-            Point uav_point(uav_pos.second.x(), uav_pos.second.y(), uav_pos.second.z());
-            Point node_point(v.second.position.x, v.second.position.y, v.second.position.z);
-            if (bg::distance(uav_point, node_point) <= 2*max_distance) {
-                return true;
-            }
-        }
-        return false;
-    }), std::back_inserter(result_s));
+                    for (const auto& uav_pos : uav_positions_) {
+                        Point uav_point(uav_pos.second.x(), uav_pos.second.y(), uav_pos.second.z());
+                        Point node_point(v.second.position.x, v.second.position.y, v.second.position.z);
+                        if (bg::distance(uav_point, node_point) <= 2 * max_distance) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }),
+                std::back_inserter(result_s));
 
     size_t numNodesBefore = rtree.size();
 
@@ -115,7 +117,7 @@ void Cached_fleet::timerReevaluate(const ros::TimerEvent&) {
     }
 
     size_t numNodesAfter = rtree.size();
-    
+
     ROS_INFO("[Cached_fleet]: Nodes in the RTree Before: %lu", numNodesBefore);
     ROS_INFO("[Cached_fleet]: Search List Size: %lu", result_s.size());
     ROS_INFO("[Cached_fleet]: Nodes in the RTree After: %lu", numNodesAfter);
@@ -132,9 +134,10 @@ bool Cached_fleet::callbackBestNode(cache_nodes::BestNode::Request& req, cache_n
     std::vector<RTreeValue> result_n;
 
     rtree.query(bgi::satisfies([this](RTreeValue const& v) {
-        bool above_g_zero = v.second.gain > g_zero;
-        return(above_g_zero);
-    }), std::back_inserter(result_n));
+                    bool above_g_zero = v.second.gain > g_zero;
+                    return (above_g_zero);
+                }),
+                std::back_inserter(result_n));
 
     for (const auto& value : result_n) {
         if (value.second.gain > req.threshold) {

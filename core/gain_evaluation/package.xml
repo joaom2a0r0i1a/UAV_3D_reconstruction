@@ -10,8 +10,10 @@
   <depend>rospy</depend>
   <depend>roscpp</depend>
   <depend>mrs_msgs</depend>
-  <depend>mrs_lib</depend>
   <depend>std_srvs</depend>
   <depend>voxblox_ros</depend>
   <depend>rrt_construction</depend>
+  <depend>roslib</depend>
+  <depend>yaml-cpp</depend>
+  <exec_depend>environments</exec_depend>
 </package>

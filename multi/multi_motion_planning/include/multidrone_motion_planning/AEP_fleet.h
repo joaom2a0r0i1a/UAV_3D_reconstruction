@@ -8,30 +8,20 @@
 
 #include <mrs_msgs/ControlManagerDiagnostics.h>
 #include <mrs_msgs/UavState.h>
-#include <mrs_msgs/TrackerCommand.h>
-#include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/GetPathSrv.h>
-#include <mrs_msgs/TrajectoryReferenceSrv.h>
-#include <mrs_msgs/Vec1.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
 #include <mrs_lib/geometry/misc.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <cache_nodes/Node.h>
-#include <cache_nodes/Query.h>
 #include <cache_nodes/BestNode.h>
-#include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -42,14 +32,13 @@
 #include <rrt_construction/kd_tree.h>
 #include <gain_evaluation/gain_evaluator.h>
 
-typedef enum
-{
-  STATE_IDLE,
-  STATE_INITIALIZE,
-  STATE_WAITING_INITIALIZE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_INITIALIZE,
+    STATE_WAITING_INITIALIZE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
@@ -57,7 +46,7 @@ const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING"
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class AEP_fleet {
-public:
+  public:
     AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -76,14 +65,14 @@ public:
     double distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
-    
+
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
+
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
@@ -95,7 +84,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -196,7 +185,7 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -229,12 +218,10 @@ private:
     ros::ServiceServer ss_stop;
 
     // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
-    mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
     mrs_lib::ServiceClientHandler<cache_nodes::BestNode> sc_best_node;
 
     // Timers
     ros::Timer timer_main;
 };
 
-#endif // AEP_FLEET_H
+#endif  // AEP_FLEET_H

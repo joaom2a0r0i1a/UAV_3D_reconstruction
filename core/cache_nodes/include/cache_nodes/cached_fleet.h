@@ -38,10 +38,10 @@ typedef bg::model::point<float, 3, bg::cs::cartesian> Point;
 typedef std::pair<Point, cache_nodes::Node> RTreeValue;
 
 class Cached_fleet {
-public:
+  public:
     Cached_fleet(ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
-private:
+  private:
     void GetTransformation();
     void callbackUavState(const mrs_msgs::UavState::ConstPtr& msg, const std::string& uav_id);
     void timerReevaluate(const ros::TimerEvent&);
@@ -89,4 +89,4 @@ private:
     std::unordered_map<std::string, Eigen::Vector3d> uav_positions_;
 };
 
-#endif // MULTI_CACHED_H
+#endif  // CACHED_FLEET_H

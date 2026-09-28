@@ -2,18 +2,15 @@
 #define KINO_RRT_STAR_H
 
 #include <Eigen/Dense>
-#include <iostream>
 #include <random>
 #include <algorithm>
-#include <limits>
 #include <vector>
 #include <memory>
 
 #include <rrt_construction/libs/nanoflann.hpp>
 
 class kino_rrt_star {
-public:
-
+  public:
     struct Node {
         Eigen::Vector4d point;
         Eigen::Vector3d velocity;
@@ -22,9 +19,9 @@ public:
     };
 
     struct Trajectory {
-        std::vector<std::unique_ptr<Node>> TrajectoryPoints;   // owns the trajectory nodes
-        Trajectory* parent;                                    // non-owning observer of the parent trajectory
-        std::vector<Trajectory*> children;                     // non-owning observers of downstream branches
+        std::vector<std::unique_ptr<Node>> TrajectoryPoints;
+        Trajectory* parent;
+        std::vector<Trajectory*> children;
         double cost;
         double gain;
         double score;
@@ -36,16 +33,15 @@ public:
         Trajectory();
         Trajectory(std::unique_ptr<Node> Node);
 
-        // Method to add a node to the trajectory (takes ownership)
+        // Method to add a node to the trajectory
         void addNode(std::unique_ptr<Node> node) {
             TrajectoryPoints.push_back(std::move(node));
         }
 
-        // Deep copy of this trajectory (owns fresh node copies); parent/children are left empty.
+        // Deep Copy
         std::unique_ptr<Trajectory> clone() const;
 
         void clear() {
-            // Zero the raw structural links first, then drop the owned nodes.
             parent = nullptr;
             children.clear();
             TrajectoryPoints.clear();
@@ -60,13 +56,11 @@ public:
 
     struct KDTree_data {
         std::vector<Eigen::Vector3d> points;
-        std::vector<std::unique_ptr<Trajectory>> data;   // exclusive owner of all trajectory memory
+        std::vector<std::unique_ptr<Trajectory>> data;
 
         void clear();
 
-        // Takes exclusive ownership of newTrajectory and returns a non-owning observer.
-        // The raw parent <-> children links are aligned BEFORE ownership is transferred
-        // into the flat `data` vector, so they are valid the instant it lands in the tree.
+        // Add Trajectory to Tree
         inline Trajectory* addTrajectory(std::unique_ptr<Trajectory> newTrajectory, Trajectory* parentTrajectory) {
             if (parentTrajectory) {
                 newTrajectory->parent = parentTrajectory;
@@ -79,7 +73,7 @@ public:
 
         inline void addTrajectories(std::vector<std::unique_ptr<Trajectory>>& newTrajectories) {
             for (size_t i = 0; i < newTrajectories.size(); ++i) {
-                Trajectory* parentTrajectory = newTrajectories[i]->parent;   // links already set by the caller
+                Trajectory* parentTrajectory = newTrajectories[i]->parent;
                 if (parentTrajectory) {
                     parentTrajectory->children.push_back(newTrajectories[i].get());
                 }
@@ -93,21 +87,26 @@ public:
         }
 
         inline double kdtree_get_pt(const size_t idx, int dim) const {
-            if (dim == 0) return points[idx].x();
-            else if (dim == 1) return points[idx].y();
-            else return points[idx].z();
+            if (dim == 0) {
+                return points[idx].x();
+            } else if (dim == 1) {
+                return points[idx].y();
+            } else {
+                return points[idx].z();
+            }
         }
 
         template <class BBOX>
-        bool kdtree_get_bbox(BBOX& /*bb*/) const { return false; }
+        bool kdtree_get_bbox(BBOX& /*bb*/) const {
+            return false;
+        }
     };
 
     // Define the type for the KD-tree
     typedef nanoflann::KDTreeSingleIndexDynamicAdaptor<nanoflann::L2_Simple_Adaptor<double, KDTree_data>, KDTree_data, 3> Tree;
-    
+
     kino_rrt_star();
 
-    // Takes ownership of newTrajectory and returns a non-owning observer to it.
     Trajectory* addKDTreeTrajectory(std::unique_ptr<Trajectory> newTrajectory);
 
     void clearKDTree();
@@ -116,7 +115,7 @@ public:
 
     void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
 
-    void computeSamplingDimensionsRH_NBVP(double radius, Eigen::Vector4d& result);
+    void computeSamplingDimensionsYaw(double radius, Eigen::Vector4d& result);
 
     void computeAccelerationSampling(double a_max, Eigen::Vector3d& result);
 
@@ -128,18 +127,14 @@ public:
 
     void steer_trajectory_angular(Trajectory* fromTrajectory, double target_heading, double max_heading_velocity, double max_heading_acceleration, Trajectory* toChangeTrajectory);
 
-    // Fills fullTrajectory with owning deep copies of the branch (root -> trajectory).
-    // The clones keep their parent links amongst themselves so the branch is
-    // self-contained and outlives clearKDTree(). Callers store this in their owning
-    // best_branch cache.
+    // Copy Best Branch
     void backtrackTrajectory(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory, Trajectory*& nextBestTrajectory);
 
     void backtrackTrajectoryAEP(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory);
 
-private:
+  private:
     std::unique_ptr<Tree> kdtree_;
     KDTree_data tree_data_;
 };
 
-#endif // KINO_RRT_STAR_H
-
+#endif  // KINO_RRT_STAR_H

@@ -25,8 +25,7 @@ fi
 
 # #{ init_new_repo ()
 
-init_new_repo ()
-{
+init_new_repo() {
   local DRY_RUN=$1
 
   # Remove .git and initialize a new repository
@@ -37,8 +36,7 @@ init_new_repo ()
   echo History of the old repository will be deleted.
   read -p "Are you sure? (y/n) " -r
 
-  if [[ $REPLY =~ ^[Yy]$ ]]
-  then
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
 
     if [ "$DRY_RUN" -eq 0 ]; then
       rm -rf .git
@@ -57,8 +55,7 @@ init_new_repo ()
 
 # #{ replace_within_files ()
 
-replace_within_files ()
-{
+replace_within_files() {
   local ORIG_NAME=$1
   local NEW_NAME=$2
   local DRY_RUN=$3
@@ -76,17 +73,14 @@ replace_within_files ()
 
     # Ask for confirmation
     echo These files will be modified:
-    for file in "${within_files[@]}"
-    do
+    for file in "${within_files[@]}"; do
       echo " - $file"
     done
     read -p "Are you sure? (y/n) " -r
 
-    if [[ $REPLY =~ ^[Yy]$ ]]
-    then
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
 
-      for file in "${within_files[@]}"
-      do
+      for file in "${within_files[@]}"; do
         echo " - Replacing \"$1\" with \"$2\" in file \"$file\"."
         if [ "$DRY_RUN" -eq 0 ]; then
           sed -i "s/$ORIG_NAME/$NEW_NAME/g" "$file"
@@ -108,8 +102,7 @@ replace_within_files ()
 
 # #{ replace_within_filenames ()
 
-replace_within_filenames ()
-{
+replace_within_filenames() {
   local ORIG_NAME=$1
   local NEW_NAME=$2
   local DRY_RUN=$3
@@ -127,17 +120,14 @@ replace_within_filenames ()
 
     # Ask for confirmation
     echo These files will be modified:
-    for file in "${files[@]}"
-    do
+    for file in "${files[@]}"; do
       echo " - $file"
     done
     read -p "Are you sure? (y/n) " -r
 
-    if [[ $REPLY =~ ^[Yy]$ ]]
-    then
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
 
-      for file in "${files[@]}"
-      do
+      for file in "${files[@]}"; do
         new_file=${file//$ORIG_NAME/$NEW_NAME}
         echo " - Renaming file \"$file\" to \"$new_file\"."
         if [ "$DRY_RUN" -eq 0 ]; then
@@ -164,8 +154,8 @@ replace_within_filenames $ORIG_NAME $NEW_NAME $DRY_RUN
 
 if [ "$CAMEL_CASE" -eq 1 ]; then
 
-  ORIG_NAME_CC=`echo "$ORIG_NAME" | sed -r 's/(^|_)([a-z])/\U\2/g'`
-  NEW_NAME_CC=`echo "$NEW_NAME" | sed -r 's/(^|_)([a-z])/\U\2/g'`
+  ORIG_NAME_CC=$(echo "$ORIG_NAME" | sed -r 's/(^|_)([a-z])/\U\2/g')
+  NEW_NAME_CC=$(echo "$NEW_NAME" | sed -r 's/(^|_)([a-z])/\U\2/g')
 
   replace_within_files $ORIG_NAME_CC $NEW_NAME_CC $DRY_RUN
   replace_within_filenames $ORIG_NAME_CC $NEW_NAME_CC $DRY_RUN
@@ -175,4 +165,3 @@ fi
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry run mode on - nothing was changed."
 fi
-

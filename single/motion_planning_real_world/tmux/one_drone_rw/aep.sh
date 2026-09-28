@@ -14,13 +14,12 @@ fi
 
 source $HOME/.bashrc
 
-# which planner this session flies, and which gain variant is under test
+# Planner and gain variant
 PLANNER=aep
 GAIN="${GAIN:-marginal}"
 source "$(dirname "$(readlink -f "$0")")/env.sh"
 
-# clock first: the RTC has no backup cell, and stepping time after roscore is up
-# would corrupt bag/TF timestamps (see sync_time.sh)
+# Clock sync before roscore, see sync_time.sh
 "$(dirname "$(readlink -f "$0")")/sync_time.sh"
 
 # location for storing the tmux logs
@@ -47,15 +46,14 @@ pre_input="export PLANNER=$PLANNER GAIN=$GAIN; source ./env.sh"
 input=(
   'Rosbag' 'waitForMavros; ./record.sh $RECORD_PROFILE
 '
-  # tgt_system MUST equal the autopilot's SYSID_THISMAV or every setpoint is dropped.
-  # No chmod needed: the port is root:dialout and the user is in dialout.
+  # tgt_system must equal the autopilot SYSID_THISMAV
   'mavros' 'waitForRos; roslaunch mavros apm.launch fcu_url:=$FCU_URL tgt_system:=$FCU_SYSID
 '
   'realsense' 'waitForRos; roslaunch realsense2_camera rs_camera.launch depth_width:=640 depth_height:=480 depth_fps:=15 color_width:=640 color_height:=480 color_fps:=15 align_depth:=true enable_sync:=true filters:=decimation,spatial
 '
   'tf_connect' 'waitForRos; roslaunch motion_planning_real_world tf_realsense_connect_mavros.launch
 '
-  'motion_planner' 'waitForMavros; roslaunch motion_planning_real_world AEP_rw.launch marginal_gain:=$MARGINAL
+  'motion_planner' 'waitForMavros; roslaunch motion_planning_real_world planner_rw.launch planner:=aep marginal_gain:=$MARGINAL
 '
   'cached_nodes' 'waitForRos; roslaunch cache_nodes cache_rw.launch
 '
@@ -155,7 +153,7 @@ done
 
 sleep 3
 
-# start loggers (ts is moreutils, fall back to plain cat when it is missing)
+# start loggers (ts, else plain cat)
 if command -v ts > /dev/null 2>&1; then LOG_FILTER="ts | cat"; else LOG_FILTER="cat"; fi
 for ((i=0; i < ${#names[*]}; i++));
 do

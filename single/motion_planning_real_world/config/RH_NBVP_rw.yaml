@@ -6,115 +6,114 @@ body:
 timer_main:
   rate: 10.0 # [Hz]
 
-# NOTE: bounded_box is RELATIVE TO THE TAKEOFF POSE — the planner captures the start offset on ~start (re-capturable via ~offset) and shifts this box + the gain box by it.
+# Bounded box relative to the takeoff pose
 
-# Patio Lamp - IST Alameda patio, lamp + surrounding region. Drone starts facing
-# NORTH, so +y is forward/north and +x is right/east.
+# Patio Lamp
 #bounded_box:
-#  min_x: -2.5 # [m]  HARD LIMIT -4 inset by uav_radius 1.5: inBoundingBox tests the node CENTRE
-#  max_x: 9.0 # [m]
+#  min_x: -2.5 # [m]
+#  max_x: 9.0  # [m]
 #  min_y: -2.0 # [m]
-#  max_y: 11.5 # [m]  HARD LIMIT 13 (tree) inset by uav_radius 1.5, same reason
-#  min_z: 2.0 # [m]
-#  max_z: 9.0 # [m]
+#  max_y: 11.5 # [m]
+#  min_z: 2.0  # [m]
+#  max_z: 9.0  # [m]
 
-# Short Grove (active) (three trees, 22 m) - z ceiling carries a +1 m slope allowance, see Delta-h note
+# Short Grove
 bounded_box:
-  min_x: -25.0 # [m]  gain -22 + 3 m (2x uav_radius) of manoeuvring margin
-  max_x: 3.0 # [m]
-  min_y: -5.5 # [m]  centre-of-mass limit; body reaches -7.0, open ground beyond
-  max_y: 5.5 # [m]
-  min_z: 3.0 # [m]
-  max_z: 11.0 # [m]
+  min_x: -25.0 # [m]
+  max_x: 3.0   # [m]
+  min_y: -5.5  # [m]
+  max_y: 5.5   # [m]
+  min_z: 3.0   # [m]
+  max_z: 11.0  # [m]
 
-# Long Grove (four trees, 32 m) - battery-marginal at 0.15 m/s effective, see notes
+# Long Grove
 #bounded_box:
-#  min_x: -35.0 # [m]  gain -32 + 3 m (2x uav_radius) of manoeuvring margin
-#  max_x: 3.0 # [m]
-#  min_y: -4.0 # [m]
-#  max_y: 5.5 # [m]
-#  min_z: 3.0 # [m]
-#  max_z: 12.5 # [m]
+#  min_x: -35.0 # [m]
+#  max_x: 3.0   # [m]
+#  min_y: -4.0  # [m]
+#  max_y: 5.5   # [m]
+#  min_z: 3.0   # [m]
+#  max_z: 12.5  # [m]
 
-# Long Clearing (no trees, same dimensions as Long Grove - occlusion-free control)
+# Long Clearing
 #bounded_box:
-#  min_x: -35.0 # [m]  gain -32 + 3 m (2x uav_radius) of manoeuvring margin
-#  max_x: 3.0 # [m]
-#  min_y: -4.0 # [m]
-#  max_y: 5.5 # [m]
-#  min_z: 3.0 # [m]
-#  max_z: 12.5 # [m]
+#  min_x: -35.0 # [m]
+#  max_x: 3.0   # [m]
+#  min_y: -4.0  # [m]
+#  max_y: 5.5   # [m]
+#  min_z: 3.0   # [m]
+#  max_z: 12.5  # [m]
 
 # Basketball
 #bounded_box:
 #  min_x: -6.0 # [m]
-#  max_x: 6.0 # [m]
+#  max_x: 6.0  # [m]
 #  min_y: -6.0 # [m]
-#  max_y: 6.0 # [m]
-#  min_z: 2.0 # [m]
-#  max_z: 8.0 # [m]
+#  max_y: 6.0  # [m]
+#  min_z: 2.0  # [m]
+#  max_z: 8.0  # [m]
 
-# School sim-test (ABSOLUTE school box pre-compensated for spawn -22,0; used with session_realtest.yml)
+# School Sim Test
 #bounded_box:
-#  min_x: -3.0 # [m]
-#  max_x: 47.0 # [m]
+#  min_x: -3.0  # [m]
+#  max_x: 47.0  # [m]
 #  min_y: -20.0 # [m]
-#  max_y: 15.0 # [m]
-#  min_z: 1.0 # [m]
-#  max_z: 20.0 # [m]
+#  max_y: 15.0  # [m]
+#  min_z: 1.0   # [m]
+#  max_z: 20.0  # [m]
 
 # IST Lamp
 #bounded_box:
 #  min_x: -1.0 # [m]
 #  max_x: 11.0 # [m]
 #  min_y: -6.0 # [m]
-#  max_y: 6.0 # [m]
-#  min_z: 3.0 # [m]
-#  max_z: 9.0 # [m]
+#  max_y: 6.0  # [m]
+#  min_z: 3.0  # [m]
+#  max_z: 9.0  # [m]
 
 rrt:
   N_max: 200
   N_termination: 400
   N_yaw_samples: 10
-  radius: 2.0 # [m]
-  step_size: 2.0 # [m] bigger scenarios need longer legs; also cuts stop-start cycles
-  min_edge_length: 0.2     # [m]
-  fixed_step: false        # false: classic RRT, edge length = min(dist, step_size); true: EVERY edge = exactly step_size
-  tolerance: 0.5 # [m]
+  radius: 2.0          # [m]
+  step_size: 2.0       # [m]
+  min_edge_length: 0.2 # [m]
+  fixed_step: false    # every edge exactly step_size when true
+  tolerance: 0.5       # [m]
 
 evaluation:
-  marginal_gain: true      # true: marginal, false: absolute; launch arg marginal_gain wins
-  optimize_yaw: true       # false: keep each node's random sampled yaw (classic RH_NBVP); true: pick argmax yaw per node (like AEP)
-  compute: "gpu"           # "gpu" (batched) or "cpu" (sequential; flat-map, marginal=hash)
-  marginal_split: false    # for marginal+gpu: false = fused kernel, true = split kernel
-  objective: expdecay      # expdecay | rate_L
+  marginal_gain: true   # marginal | absolute gain
+  optimize_yaw: true    # best yaw per node | sampled yaw
+  compute: "gpu"        # "gpu" | "cpu"
+  marginal_split: false # split | fused GPU kernel
+  objective: expdecay   # expdecay | rate_L
 
 camera:
   frame_id: "camera_link"
-  h_fov: 1.38203 # [rad] measured, D455 colour at 640x480
+  h_fov: 1.38203    # [rad]
   width: 640
   height: 480
   min_distance: 0.3 # [m]
-  max_distance: 5 # [m]
+  max_distance: 5   # [m]
 
 path:
-  uav_radius: 1.5 # [m] must stay well under the voxblox ESDF clamp (esdf_max_distance_m, default 2.0): free space saturates at 2.0, so a radius at/near it makes every edge read as a collision
-  waypoint_reach_distance: 0.5 # [m] reached within this dist (+ yaw diff < 0.4 rad); RTK keeps the true error well inside this
-  waypoint_reach_velocity: 0.225 # [m/s] velocity gate; 0.15 was binding on 85%/74% of 2026-09-04 waypoints
-  collision_check_resolution: 0.1 # [m] edge/node sampling spacing (= voxel size so thin walls are not stepped over)
-  optimistic_iterations: 5 # edges may plan through UNKNOWN only for the first N replans (bootstrap); then unknown=blocked
-  recovery_enabled: true # master toggle for the in-planner backtrack
-  recovery_boxed_deadline: 4.0 # [s] if the tree is still tiny after this while planning -> backtrack (boxed in)
-  recovery_min_tree: 10 # tree node count below which it counts as "still empty" for the boxed-in check
-  recovery_timeout: 12.0 # [s] hard deadline: RH_NBVP() backtracks after this no matter what
-  lambda: 0.5 # (tunning factor)
+  uav_radius: 1.5                 # [m]
+  waypoint_reach_distance: 0.5    # [m]
+  waypoint_reach_velocity: 0.225  # [m/s] stop gate at the final waypoint
+  collision_check_resolution: 0.1 # [m]
+  optimistic_iterations: 5        # replans allowed through unknown space
+  recovery_enabled: true          # in-planner backtrack on | off
+  recovery_boxed_deadline: 4.0    # [s]
+  recovery_min_tree: 10           # tree size still counted as boxed in
+  recovery_timeout: 12.0          # [s]
+  lambda: 0.5                     # (tuning factor)
 
 rotation:
-  step_deg: 45.0 # [deg] recovery sweep step (8 steps); keep well under 180
-  settle: 1.0 # [s] wait per step; 45deg at ATC_SLEW_YAW 60deg/s needs 0.75
+  step_deg: 45.0 # [deg] keep well under 180
+  settle: 1.0    # [s] wait per step
 
 exploration:
-  initial: false # up, rotate, down once before the first plan; a yaw sweep alone keeps the same optical centre so it cannot carve near-field artifacts
-  climb: 1.5 # [m] relative climb
-  settle: 4.0 # [s] after the climb and the return; a 1.5 m vertical move measured ~4.0 s on 2026-09-04
-  return_to_start: true
+  initial: false        # up, rotate, down before the first plan
+  climb: 1.5            # [m] relative climb
+  settle: 4.0           # [s] after the climb and the return
+  return_to_start: true # back to the start pose after the sweep

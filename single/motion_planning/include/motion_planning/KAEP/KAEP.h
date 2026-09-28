@@ -8,52 +8,36 @@
 
 #include <mrs_msgs/ControlManagerDiagnostics.h>
 #include <mrs_msgs/UavState.h>
-#include <mrs_msgs/TrackerCommand.h>
-#include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
-//#include <mrs_msgs/ReferenceList.h>
-#include <mrs_msgs/GetPathSrv.h>
 #include <mrs_msgs/TrajectoryReferenceSrv.h>
-#include <mrs_msgs/Vec1.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
 #include <mrs_lib/geometry/misc.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox_ros/tsdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <cache_nodes/Node.h>
-#include <cache_nodes/Query.h>
 #include <cache_nodes/BestNode.h>
-#include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
 #include <Eigen/Core>
 #include <rrt_construction/kino_rrt_star_kd.h>
-#include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/kd_tree.h>
 #include <gain_evaluation/gain_evaluator.h>
 
-#include <fstream>
-#include <chrono>
-
-typedef enum
-{
-  STATE_IDLE,
-  STATE_INITIALIZE,
-  STATE_WAITING_INITIALIZE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_INITIALIZE,
+    STATE_WAITING_INITIALIZE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
@@ -61,7 +45,7 @@ const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING"
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class KAEP {
-public:
+  public:
     KAEP(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -80,13 +64,13 @@ public:
     double distance(const std::unique_ptr<mrs_msgs::Reference>& waypoint, const geometry_msgs::Pose& pose);
     void initialize(mrs_msgs::ReferenceStamped initial_reference);
     void rotate();
-    
+
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
+
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
@@ -98,7 +82,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -179,24 +163,26 @@ private:
     int max_accel_iterations;
     bool reset_velocity;
 
-    // Backtrack
-    bool backtrack = false;
+    // Recovery
+    bool recovery_enabled_ = true;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
 
     // Local Planner variables
-    // best_branch / previous_trajectory / previous_trajectory_parent_cache_ own their
-    // trajectories and survive clearKDTree(). The other pointers are non-owning observers.
     std::vector<std::unique_ptr<kino_rrt_star::Trajectory>> best_branch;
-    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory;
-    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent_cache_;
     kino_rrt_star::Trajectory* next_best_trajectory = nullptr;
     kino_rrt_star::Trajectory* previous_best_global_trajectory = nullptr;
-    Eigen::Vector4d previous_trajectory_point;
     Eigen::Vector4d trajectory_point;
     Eigen::Vector4d next_start;
 
     // Global Planner variables
     kino_rrt_star::Trajectory* best_global_trajectory = nullptr;
     std::vector<Eigen::Vector3d> GlobalFrontiers;
+
+    // Retreat Along Flown Path
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
 
     // UAV variables
     bool is_initialized = false;
@@ -210,7 +196,7 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -248,4 +234,4 @@ private:
     ros::Timer timer_main;
 };
 
-#endif // KAEP_H
+#endif  // KAEP_H

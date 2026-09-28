@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-# Pre-flight check: the active gain box, both planner boxes and the eval box must agree.
-# Switching environment means editing four places; this catches a half-done switch.
+# Pre-flight check that the gain, planner and eval boxes agree
 import os, sys, yaml, re
 
 CFG = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'config')
@@ -15,7 +14,7 @@ def box(path, key):
 
 
 def label(path, key):
-    # first line of the contiguous comment block directly above the active block
+    # Label above the active block
     block = []
     for line in open(path):
         if re.match(r'^%s:' % key, line):
@@ -34,18 +33,22 @@ def fmt(b):
 gain_f = os.path.join(CFG, 'GainConfig_rw.yaml')
 aep_f = os.path.join(CFG, 'AEP_rw.yaml')
 nbv_f = os.path.join(CFG, 'RH_NBVP_rw.yaml')
-# Default comes from eval_rw.sh, so this check can never disagree with what eval actually uses.
+
+
+# Default from eval_rw.sh
 def default_eval_config():
     sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'eval_rw.sh')
     m = re.search(r'EVAL_CONFIG="\$\{EVAL_CONFIG:-([^}]+)\}"', open(sh).read())
     return m.group(1) if m else 'PatioLamp.yaml'
 
 
-eval_name = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('EVAL_CONFIG') or default_eval_config()
+eval_name = sys.argv[1] if len(
+    sys.argv) > 1 else os.environ.get('EVAL_CONFIG') or default_eval_config()
 eval_f = os.path.join(CFG, eval_name)
 
-gain, aep, nbv = box(gain_f, 'gain_evaluation'), box(aep_f, 'bounded_box'), box(nbv_f, 'bounded_box')
-ev = box(eval_f, 'bounded_box') if os.path.exists(eval_f) else None
+gain, aep, nbv = box(gain_f, 'gain_evaluation'), box(aep_f,
+                                                     'bounded_box'), box(nbv_f, 'bounded_box')
+ev = box(eval_f, 'reconstruction_box') if os.path.exists(eval_f) else None
 
 print('  gain     %-34s %s' % (label(gain_f, 'gain_evaluation'), fmt(gain)))
 print('  AEP bbx  %-34s %s' % (label(aep_f, 'bounded_box'), fmt(aep)))
@@ -59,19 +62,19 @@ if ev is None:
     bad.append('eval box %s not found' % eval_name)
 elif ev != gain:
     bad.append('eval box != gain box (coverage would be scored over a different volume)')
-# Gain may extend past the planner box - the drone observes those voxels from inside it
-# (uav_radius insets, ground below the flight floor). Only flag gain further out than the
-# sensor can ever reach.
+# Gain box may extend past the planner box up to the sensor range
 RANGE = float(yaml.safe_load(open(gain_f))['camera_intrinsics']['max_distance'])
 if gain and aep:
     for i, ax in enumerate('xyz'):
         lo, hi = 2 * i, 2 * i + 1
         if gain[hi] > aep[hi] + RANGE:
-            bad.append('gain max_%s (%g) is more than %g m (sensor range) beyond planner max_%s (%g)'
-                       % (ax, gain[hi], RANGE, ax, aep[hi]))
+            bad.append(
+                'gain max_%s (%g) is more than %g m (sensor range) beyond planner max_%s (%g)' %
+                (ax, gain[hi], RANGE, ax, aep[hi]))
         if gain[lo] < aep[lo] - RANGE:
-            bad.append('gain min_%s (%g) is more than %g m (sensor range) below planner min_%s (%g)'
-                       % (ax, gain[lo], RANGE, ax, aep[lo]))
+            bad.append(
+                'gain min_%s (%g) is more than %g m (sensor range) below planner min_%s (%g)' %
+                (ax, gain[lo], RANGE, ax, aep[lo]))
 print()
 if bad:
     print('  MISMATCH:')

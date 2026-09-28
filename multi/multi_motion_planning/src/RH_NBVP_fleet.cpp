@@ -1,9 +1,7 @@
 #include "multidrone_motion_planning/RH_NBVP_fleet.h"
 
-RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
-
-    //ns = "uav1";
-
+RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
+    : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "RH_NBVP_fleet");
 
@@ -16,13 +14,11 @@ RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& n
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
 
-    // Bounded Box
-    param_loader.loadParam("bounded_box/min_x", min_x);
-    param_loader.loadParam("bounded_box/max_x", max_x);
-    param_loader.loadParam("bounded_box/min_y", min_y);
-    param_loader.loadParam("bounded_box/max_y", max_y);
-    param_loader.loadParam("bounded_box/min_z", min_z);
-    param_loader.loadParam("bounded_box/max_z", max_z);
+    // Bounded Box for Sampling
+    if (!loadEnvironmentRegion(nh_private_, "planning_box", min_x, max_x, min_y, max_y, min_z, max_z)) {
+        ros::shutdown();
+        return;
+    }
 
     // RRT Tree
     param_loader.loadParam("rrt/N_max", N_max);
@@ -59,7 +55,7 @@ RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& n
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     segment_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
     segment_evaluator.setEsdfMap(esdf_map_);
-            
+
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("RH_NBVP_fleet");
     transformer_->setDefaultFrame(frame_id);
@@ -74,7 +70,7 @@ RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& n
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
-    
+
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
     pub_reference = nh_private_.advertise<mrs_msgs::Reference>("reference_out", 1);
@@ -101,10 +97,6 @@ RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& n
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &RH_NBVP_fleet::callbackStart, this);
     ss_stop = nh_private_.advertiseService("stop_in", &RH_NBVP_fleet::callbackStop, this);
-
-    /* Service Clients */
-    sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
-    sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
 
     /* Timer */
     timer_main = nh_private_.createTimer(ros::Duration(1.0 / timer_main_rate), &RH_NBVP_fleet::timerMain, this);
@@ -188,30 +180,16 @@ void RH_NBVP_fleet::planStep() {
     clearMarkers();
 
     bool isFirstIteration = true;
-    int j = 1; // initialized at one because of the root node
+    int j = 1;
     collision_id_counter_ = 0;
     if (!prev_best_branch.empty()) {
         previous_root = std::make_unique<rrt_star::Node>(prev_best_branch[0]);
     }
     while (j < N_max || best_score_ == 0.0) {
-        /*// Backtrack
-        if (collision_id_counter_ > 1000 * j) {
-            if (previous_root) {
-                //next_best_node = previous_root.get();
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
-            } else {
-                ROS_INFO("[RH_NBVP_fleet]: Enough");
-                collision_id_counter_ = 0;
-                break;
-            }
-            return;
-        }*/
-
         for (size_t i = 1; i < prev_best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
-                continue; // Skip first iteration (root)
+                continue;
             }
 
             const Eigen::Vector4d& node_position = prev_best_branch[i];
@@ -252,7 +230,7 @@ void RH_NBVP_fleet::planStep() {
 
         Eigen::Vector4d rand_point_yaw;
         Eigen::Vector3d rand_point;
-        RRTStar.computeSamplingDimensionsRH_NBVP(bounded_radius, rand_point_yaw);
+        RRTStar.computeSamplingDimensionsYaw(bounded_radius, rand_point_yaw);
         rand_point = rand_point_yaw.head(3);
         rand_point += root_ptr->point.head(3);
 
@@ -316,7 +294,6 @@ void RH_NBVP_fleet::planStep() {
         }
 
         ++j;
-
     }
     if (best_node) {
         next_best_node = best_node;
@@ -324,13 +301,11 @@ void RH_NBVP_fleet::planStep() {
         visualize_path(best_node, ns);
         prev_best_branch = best_branch;
     }
-
 }
 
 double RH_NBVP_fleet::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
-
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
-                                 vec3_t(pose.position.x, pose.position.y, pose.position.z));
+    return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+                                   vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
 void RH_NBVP_fleet::initialize(mrs_msgs::ReferenceStamped initial_reference) {
@@ -356,7 +331,7 @@ void RH_NBVP_fleet::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.4*M_PI).sleep();
+        ros::Duration(0.4 * M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -385,7 +360,7 @@ void RH_NBVP_fleet::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.4*M_PI).sleep();
+        ros::Duration(0.4 * M_PI).sleep();
     }
 }
 
@@ -412,7 +387,6 @@ bool RH_NBVP_fleet::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Tri
     res.success = true;
     res.message = "starting";
     return true;
-
 }
 
 bool RH_NBVP_fleet::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -440,7 +414,6 @@ bool RH_NBVP_fleet::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trig
     res.success = true;
     res.message = ss.str();
     return true;
-
 }
 
 void RH_NBVP_fleet::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
@@ -468,8 +441,8 @@ void RH_NBVP_fleet::callbackEvade(const multiagent_collision_check::Segment::Con
     ROS_INFO_ONCE("[RH_NBVP_fleet]: getting CollisionCheck diagnostics");
 
     int i;
-    for(i = 0; i < agentsId_.size(); i++) {
-        if(agentsId_[i] == msg->uav_id) {
+    for (i = 0; i < agentsId_.size(); i++) {
+        if (agentsId_[i] == msg->uav_id) {
             break;
         }
     }
@@ -482,9 +455,9 @@ void RH_NBVP_fleet::callbackEvade(const multiagent_collision_check::Segment::Con
 
     // Update the segment list with the poses from msg
     segments_[i]->clear();
-    for(std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
+    for (std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
         segments_[i]->push_back(Eigen::Vector3d(it->x, it->y, it->z));
-    }    
+    }
 }
 
 void RH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
@@ -584,10 +557,10 @@ void RH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
                 segment.uav_path.push_back(prev_ref.position);
             }
 
-            segment.uav_path.push_back(initial_reference.reference.position);    
-                    
+            segment.uav_path.push_back(initial_reference.reference.position);
+
             ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
-                << " with path points=" << segment.uav_path.size());
+                                                                            << " with path points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
             best_branch.clear();
@@ -595,7 +568,6 @@ void RH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
 
             changeState(STATE_MOVING);
             break;
-            
         }
         case STATE_MOVING: {
             if (control_manager_diag.tracker_status.have_goal) {
@@ -732,7 +704,7 @@ void RH_NBVP_fleet::visualize_edge(rrt_star::Node* node, const std::string& ns) 
 
 void RH_NBVP_fleet::visualize_path(rrt_star::Node* node, const std::string& ns) {
     rrt_star::Node* current = node;
-    
+
     while (current->parent) {
         visualization_msgs::Marker p;
         p.header.stamp = ros::Time::now();
@@ -778,7 +750,7 @@ void RH_NBVP_fleet::visualize_path(rrt_star::Node* node, const std::string& ns) 
 
 void RH_NBVP_fleet::visualize_frustum(rrt_star::Node* position) {
     Eigen::Vector4d trajectory_point_visualize = position->point;
-    
+
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
     frustum.header.stamp = ros::Time::now();
@@ -808,7 +780,7 @@ void RH_NBVP_fleet::visualize_unknown_voxels(rrt_star::Node* position) {
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
-    
+
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
         visualization_msgs::Marker unknown_voxel;

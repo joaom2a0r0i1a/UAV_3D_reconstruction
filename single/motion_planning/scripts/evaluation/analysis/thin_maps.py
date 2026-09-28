@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
-# thin_maps.py — keep every Nth voxblox map per run, delete the rest (disk hygiene).
-# MUST run AFTER the volume eval has filled voxblox_data.csv: once the Volume column is
-# populated the .vxblx maps are redundant (the coverage curve lives in the CSV; the
-# multi-series render reads CSVs, and eval_voxblox_node tolerates missing maps).
-# Keeps every Nth map AND always the final map (so the end-state coverage is preserved even
-# when the last index is not a multiple of N). SAFETY: a run whose CSV is not yet
-# volume-evaluated (<=4 columns) is skipped, never thinned.
+# Keeps every Nth voxblox map and the last one, after the volume eval
 # Usage: thin_maps.py <dir> [keep_every=5]
-#   keep_every=5 with a 60 s map interval -> maps 5 min apart; pass another N for a different spacing.
-#   <dir> = a single run dir, OR a label dir containing timestamped run dirs.
 import os, sys, glob
 
 
@@ -21,7 +13,8 @@ def thin_run(run, keep):
         header = open(csv).readline()
     except OSError:
         return None
-    if header.count(",") < 5:            # not volume-evaluated yet -> maps still needed
+    # Skip runs not yet evaluated
+    if header.count(",") < 5:
         return ("skip", run, 0, 0)
     maps = sorted(glob.glob(os.path.join(mapdir, "*.vxblx")))
     if not maps:
@@ -30,7 +23,7 @@ def thin_run(run, keep):
     removed = 0
     for f in maps:
         idx = int(os.path.splitext(os.path.basename(f))[0])
-        if idx % keep != 0 and idx != last:   # keep every Nth AND always the final map
+        if idx % keep != 0 and idx != last:
             os.remove(f)
             removed += 1
     return ("thinned", run, len(maps) - removed, removed)
@@ -42,9 +35,10 @@ def main():
         sys.exit(2)
     root = sys.argv[1]
     keep = int(sys.argv[2]) if len(sys.argv) > 2 else 5
-    runs = ([root] if os.path.isdir(os.path.join(root, "voxblox_maps"))
-            else [d for d in sorted(glob.glob(os.path.join(root, "2*")))
-                  if os.path.isdir(os.path.join(d, "voxblox_maps"))])
+    runs = ([root] if os.path.isdir(os.path.join(root, "voxblox_maps")) else [
+        d for d in sorted(glob.glob(os.path.join(root, "2*")))
+        if os.path.isdir(os.path.join(d, "voxblox_maps"))
+    ])
     for r in runs:
         res = thin_run(r, keep)
         if not res:

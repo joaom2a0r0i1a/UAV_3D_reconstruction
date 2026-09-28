@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-# Warns when /mavros/local_position/pose goes quiet. A >5 s gap is what latches the TF
-# broadcaster's guard and takes voxblox down with it, so make gaps visible live.
+# Warns on gaps in the mavros local pose
 import rospy
 from geometry_msgs.msg import PoseStamped
+
 
 class PoseWatchdog(object):
     def __init__(self):
@@ -23,7 +23,8 @@ class PoseWatchdog(object):
             gap = now - self.last
             if gap > self.warn_gap:
                 self.n_gaps += 1
-                rospy.logwarn('[pose_watchdog]: GAP %.2f s (gap #%d) — >5 s latches the TF guard', gap, self.n_gaps)
+                rospy.logwarn('[pose_watchdog]: GAP %.2f s (gap #%d) — >5 s latches the TF guard',
+                              gap, self.n_gaps)
             if gap > self.max_gap:
                 self.max_gap = gap
         self.last = now
@@ -36,8 +37,9 @@ class PoseWatchdog(object):
             rospy.logwarn_throttle(2.0, '[pose_watchdog]: NO POSE for %.1f s', stale)
 
     def report(self, _):
-        rospy.loginfo('[pose_watchdog]: %d msgs, %d gaps > %.1f s, worst %.2f s',
-                      self.n_msgs, self.n_gaps, self.warn_gap, self.max_gap)
+        rospy.loginfo('[pose_watchdog]: %d msgs, %d gaps > %.1f s, worst %.2f s', self.n_msgs,
+                      self.n_gaps, self.warn_gap, self.max_gap)
+
 
 if __name__ == '__main__':
     rospy.init_node('pose_watchdog')

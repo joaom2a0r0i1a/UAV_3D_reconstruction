@@ -7,25 +7,17 @@
 #include <std_srvs/Trigger.h>
 
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/Vec1.h>
 
-#include <sensor_msgs/NavSatFix.h>
 #include <geometry_msgs/TwistStamped.h>
-#include <geographic_msgs/GeoPoseStamped.h>
 #include <mavros_msgs/PositionTarget.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
-#include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox_ros/tsdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -33,12 +25,11 @@
 #include <rrt_construction/kino_rrt_star_kd.h>
 #include <gain_evaluation/gain_evaluator.h>
 
-typedef enum
-{
-  STATE_IDLE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
@@ -46,7 +37,7 @@ const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class KRH_NBVP_rw {
-public:
+  public:
     KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -61,7 +52,7 @@ public:
     void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg);
     void callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
+
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
@@ -73,7 +64,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -164,7 +155,7 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -197,4 +188,4 @@ private:
     ros::Timer timer_main;
 };
 
-#endif // KRH_NBVP_RW_H
+#endif  // KRH_NBVP_RW_H

@@ -10,18 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options("-O3")
 
-# RRT/KD-tree geometry
-set(CATKIN_DEPENDENCIES
-  rospy
-  roscpp
-  mrs_msgs
-  mrs_lib
-  std_srvs
-  )
-
-find_package(catkin REQUIRED COMPONENTS
-  ${CATKIN_DEPENDENCIES}
-  )
+find_package(catkin REQUIRED)
 
 # Find Eigen3 package
 find_package(Eigen3 REQUIRED)
@@ -35,8 +24,7 @@ set(LIBRARIES
 
 # Define Catkin package
 catkin_package(
-  INCLUDE_DIRS include ${catkin_INCLUDE_DIRS}
-  CATKIN_DEPENDS ${CATKIN_DEPENDENCIES}
+  INCLUDE_DIRS include
   LIBRARIES ${LIBRARIES}
   DEPENDS Eigen
   )

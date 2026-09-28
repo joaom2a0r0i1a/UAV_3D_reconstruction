@@ -1,24 +1,19 @@
 #!/usr/bin/env python3
-# Table the 25/50/75/95% milestones from a multi_series eval by parsing eval_plotting_node's
-# own stdout ("...Timing corresponding to Known voxels = P% is time = T +/- S minutes.") — no
-# math of its own, so the table can never disagree with MultiSeriesOverview.png.
+# Milestone table from the eval_plotting_node output
 # Usage: milestones_from_log.py <captured_node_stdout> [<out_table.txt>]
 import re
 import sys
 from collections import OrderedDict
 
-MILESTONES = [25, 50, 75, 95]  # % known
-LINE_RE = re.compile(
-    r"^(?P<series>.+?): Timing corresponding to Known voxels = "
-    r"(?P<known>\d+)% is time = (?P<t>[-\d.]+) \+/- (?P<s>[-\d.]+) minutes\."
-)
+MILESTONES = [25, 50, 75, 95]
+LINE_RE = re.compile(r"^(?P<series>.+?): Timing corresponding to Known voxels = "
+                     r"(?P<known>\d+)% is time = (?P<t>[-\d.]+) \+/- (?P<s>[-\d.]+) minutes\.")
 
 
 def parse(path):
-    # strip ANSI, keep the last value seen per (series, known%) in case a log
-    # contains more than one eval run appended together.
+    # Last value per series and milestone
     ansi = re.compile(r"\x1b\[[0-9;]*m")
-    data = OrderedDict()  # series -> {known%: (t, s)}
+    data = OrderedDict()
     with open(path, errors="replace") as fh:
         for raw in fh:
             m = LINE_RE.match(ansi.sub("", raw).rstrip("\n"))
@@ -48,7 +43,7 @@ def render(data):
     for k in MILESTONES:
         row = f"   {k:>3}%  │ " + " │ ".join(f"{fmt_cell(data[s].get(k)):^13}" for s in series)
         lines.append(row)
-    # pairwise delta only when exactly two series (positive => second reaches it sooner)
+    # Pairwise delta for two series
     if len(series) == 2:
         a, b = series
         lines.append("")

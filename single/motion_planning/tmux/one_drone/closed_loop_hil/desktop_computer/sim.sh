@@ -1,17 +1,13 @@
 #!/bin/bash
-# Raw-tmux launcher for the DESKTOP HIL Path B session (no tmuxinator).
-# Same socket/session name as the normal sim (mrs / simulation), so your usual
-# kill works:  tmux -L mrs kill-session -t simulation
-# Sim + control + sensors only — voxblox/planner/cache run on the Orin.
+# Desktop HIL Path B session in raw tmux, sim, control and sensors only
 SDIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-[ -z "$DESKTOP_IP" ] && [ -f "$SDIR/../config.sh" ] && source "$SDIR/../config.sh"   # standalone: read IP from config.sh (campaign passes it via env)
+[ -z "$DESKTOP_IP" ] && [ -f "$SDIR/../config.sh" ] && source "$SDIR/../config.sh"
 : "${DESKTOP_IP:?DESKTOP_IP not set — copy config.sh.template to config.sh, or export DESKTOP_IP}"
-cd "$SDIR/../.."   # closed_loop_hil/desktop_computer/ -> tmux/one_drone/ (holds config/ + current_config.env)
+cd "$SDIR/../.."
 S=simulation ; L=mrs
 PRE="export ROS_MASTER_URI=http://${DESKTOP_IP}:11311; export ROS_IP=${DESKTOP_IP}; export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0; [ -f ./current_config.env ] && source ./current_config.env"
 T="tmux -L $L"
-# $1 = "window" or "window.pane"; $2 = command (single-quote it in the caller so $VARs/$(...) stay literal
-# and get expanded by the pane's own shell after PRE runs)
+# Run a command in a window, args window[.pane] command
 send() { $T send-keys -t "$S:$1" "$PRE; $2" Enter; }
 
 $T kill-session -t $S 2>/dev/null

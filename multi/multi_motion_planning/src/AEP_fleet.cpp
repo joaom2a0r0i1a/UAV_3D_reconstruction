@@ -1,9 +1,7 @@
 #include "multidrone_motion_planning/AEP_fleet.h"
 
-AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
-
-    //ns = "uav1";
-
+AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
+    : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "AEP_fleet");
 
@@ -16,13 +14,11 @@ AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     param_loader.loadParam("body/frame_id", body_frame_id);
     param_loader.loadParam("camera/frame_id", camera_frame_id);
 
-    // Bounded Box
-    param_loader.loadParam("bounded_box/min_x", min_x);
-    param_loader.loadParam("bounded_box/max_x", max_x);
-    param_loader.loadParam("bounded_box/min_y", min_y);
-    param_loader.loadParam("bounded_box/max_y", max_y);
-    param_loader.loadParam("bounded_box/min_z", min_z);
-    param_loader.loadParam("bounded_box/max_z", max_z);
+    // Bounded Box for Sampling
+    if (!loadEnvironmentRegion(nh_private_, "planning_box", min_x, max_x, min_y, max_y, min_z, max_z)) {
+        ros::shutdown();
+        return;
+    }
 
     // RRT Tree
     param_loader.loadParam("local_planning/N_max", N_max);
@@ -64,7 +60,7 @@ AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     segment_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
     segment_evaluator.setEsdfMap(esdf_map_);
-            
+
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("AEP_fleet");
     transformer_->setDefaultFrame(frame_id);
@@ -80,7 +76,7 @@ AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
-    
+
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 500);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 3);
@@ -110,8 +106,6 @@ AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
     ss_stop = nh_private_.advertiseService("stop_in", &AEP_fleet::callbackStop, this);
 
     /* Service Clients */
-    sc_trajectory_generation = mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv>(nh_private_, "trajectory_generation_out");
-    sc_trajectory_reference = mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv>(nh_private_, "trajectory_reference_out");
     sc_best_node = mrs_lib::ServiceClientHandler<cache_nodes::BestNode>(nh_private_, "best_node_out");
 
     /* Timer */
@@ -224,7 +218,7 @@ void AEP_fleet::localPlanner() {
 
     visualize_node(root_ptr->point, ns);
     bool isFirstIteration = true;
-    int j = 1; // initialized at one because of the root node
+    int j = 1;
     collision_id_counter_ = 0;
     if (!best_branch.empty()) {
         previous_root = std::make_unique<rrt_star::Node>(*best_branch[0]);
@@ -248,7 +242,7 @@ void AEP_fleet::localPlanner() {
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
-                continue; // Skip first iteration (root)
+                continue;
             }
 
             const Eigen::Vector4d& node_position = best_branch[i]->point;
@@ -355,7 +349,6 @@ void AEP_fleet::localPlanner() {
         }
 
         ++j;
-
     }
 
     if (best_node) {
@@ -487,7 +480,7 @@ bool AEP_fleet::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontier
         node->gain = result.first;
         node->point[3] = result.second;
 
-        trajectory_point_global.head<3>() = nearest_goal; 
+        trajectory_point_global.head<3>() = nearest_goal;
         trajectory_point_global[3] = 0.0;
         std::pair<double, double> result_original = segment_evaluator.computeGainRaycasting(trajectory_point_global, true);
         ROS_INFO("[AEP_fleet]: Goal Best Gain: %f", result_original.first);
@@ -564,9 +557,8 @@ void AEP_fleet::cacheNode(rrt_star::Node* Node) {
 }
 
 double AEP_fleet::distance(const mrs_msgs::Reference& waypoint, const geometry_msgs::Pose& pose) {
-
-  return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
-                                 vec3_t(pose.position.x, pose.position.y, pose.position.z));
+    return mrs_lib::geometry::dist(vec3_t(waypoint.position.x, waypoint.position.y, waypoint.position.z),
+                                   vec3_t(pose.position.x, pose.position.y, pose.position.z));
 }
 
 void AEP_fleet::initialize(mrs_msgs::ReferenceStamped initial_reference) {
@@ -592,7 +584,7 @@ void AEP_fleet::initialize(mrs_msgs::ReferenceStamped initial_reference) {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.4*M_PI).sleep();
+        ros::Duration(0.4 * M_PI).sleep();
     }
 
     ros::Duration(0.5).sleep();
@@ -621,7 +613,7 @@ void AEP_fleet::rotate() {
         initial_reference.reference.heading = pose[3] + M_PI * i;
         pub_initial_reference.publish(initial_reference);
         // Max yaw rate is 0.5 rad/s so we wait 0.4*M_PI seconds between points
-        ros::Duration(0.4*M_PI).sleep();
+        ros::Duration(0.4 * M_PI).sleep();
     }
 }
 
@@ -648,7 +640,6 @@ bool AEP_fleet::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger
     res.success = true;
     res.message = "starting";
     return true;
-
 }
 
 bool AEP_fleet::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -676,7 +667,6 @@ bool AEP_fleet::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger:
     res.success = true;
     res.message = ss.str();
     return true;
-
 }
 
 void AEP_fleet::callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg) {
@@ -704,8 +694,8 @@ void AEP_fleet::callbackEvade(const multiagent_collision_check::Segment::ConstPt
     ROS_INFO_ONCE("[AEP_fleet]: getting CollisionCheck diagnostics");
 
     int i;
-    for(i = 0; i < agentsId_.size(); i++) {
-        if(agentsId_[i] == msg->uav_id) {
+    for (i = 0; i < agentsId_.size(); i++) {
+        if (agentsId_[i] == msg->uav_id) {
             break;
         }
     }
@@ -718,9 +708,9 @@ void AEP_fleet::callbackEvade(const multiagent_collision_check::Segment::ConstPt
 
     // Update the segment list with the poses from msg
     segments_[i]->clear();
-    for(std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
+    for (std::vector<geometry_msgs::Point>::const_iterator it = msg->uav_path.begin(); it != msg->uav_path.end(); ++it) {
         segments_[i]->push_back(Eigen::Vector3d(it->x, it->y, it->z));
-    }    
+    }
 }
 
 void AEP_fleet::timerMain(const ros::TimerEvent& event) {
@@ -752,7 +742,7 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
         ROS_INFO("[AEP_fleet]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
         set_variables = true;
     }
-    
+
     switch (state_) {
         case STATE_IDLE: {
             if (control_manager_diag.tracker_status.have_goal) {
@@ -806,7 +796,7 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
                 ref.position.x = wp_node->point[0];
                 ref.position.y = wp_node->point[1];
                 ref.position.z = wp_node->point[2];
-                ref.heading    = wp_node->point[3];
+                ref.heading = wp_node->point[3];
 
                 waypoints_.push_back(ref);
                 wp_node = wp_node->parent;
@@ -820,22 +810,21 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
                 segment.uav_path.push_back(wp.position);
             }
             ROS_INFO_STREAM("Publishing to pub_evade with segment: uav_id=" << segment.uav_id
-                << " with path points=" << segment.uav_path.size());
+                                                                            << " with path points=" << segment.uav_path.size());
             pub_evade.publish(segment);
 
             mrs_msgs::ReferenceStamped initial_reference;
             initial_reference.header.frame_id = ns + "/" + frame_id;
             initial_reference.header.stamp = ros::Time::now();
-            
+
             initial_reference.reference = waypoints_[0];
             pub_reference.publish(initial_reference.reference);
-            pub_initial_reference.publish(initial_reference);     
+            pub_initial_reference.publish(initial_reference);
 
             ros::Duration(1).sleep();
 
             changeState(STATE_MOVING);
             break;
-            
         }
         case STATE_MOVING: {
             if (control_manager_diag.tracker_status.have_goal) {
@@ -844,16 +833,17 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
                 geometry_msgs::Pose current_pose = uav_state_here->pose;
                 double current_yaw = mrs_lib::getYaw(current_pose);
 
-                const mrs_msgs::Reference& wp = waypoints_[waypoint_index_];
+                const int wp_index = std::min(waypoint_index_, static_cast<int>(waypoints_.size()) - 1);
+                const mrs_msgs::Reference& wp = waypoints_[wp_index];
 
                 double dist = distance(wp, current_pose);
                 double yaw_difference = fabs(atan2(sin(wp.heading - current_yaw), cos(wp.heading - current_yaw)));
                 ROS_INFO("[AEP_fleet]: WP %d/%zu: dist=%.2f, yaw=%.2f",
-                        waypoint_index_+1,
-                        waypoints_.size(),
-                        dist, yaw_difference);
+                         wp_index + 1,
+                         waypoints_.size(),
+                         dist, yaw_difference);
 
-                if (dist < 0.8 && yaw_difference < 0.4) {
+                if (waypoint_index_ == wp_index && dist < 0.8 && yaw_difference < 0.4) {
                     waypoint_index_++;
 
                     if (waypoint_index_ >= waypoints_.size()) {
@@ -999,7 +989,7 @@ void AEP_fleet::visualize_edge(rrt_star::Node* node, const std::string& ns) {
 
 void AEP_fleet::visualize_path(rrt_star::Node* node, const std::string& ns) {
     rrt_star::Node* current = node;
-    
+
     while (current->parent) {
         visualization_msgs::Marker p;
         p.header.stamp = ros::Time::now();
@@ -1045,7 +1035,7 @@ void AEP_fleet::visualize_path(rrt_star::Node* node, const std::string& ns) {
 
 void AEP_fleet::visualize_frustum(rrt_star::Node* position) {
     Eigen::Vector4d trajectory_point_visualize = position->point;
-    
+
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = ns + "/" + frame_id;
     frustum.header.stamp = ros::Time::now();
@@ -1075,7 +1065,7 @@ void AEP_fleet::visualize_unknown_voxels(rrt_star::Node* position) {
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
-    
+
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
         visualization_msgs::Marker unknown_voxel;

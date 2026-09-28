@@ -7,31 +7,22 @@
 #include <std_srvs/Trigger.h>
 
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/Vec1.h>
 
-#include <sensor_msgs/NavSatFix.h>
 #include <geometry_msgs/TwistStamped.h>
-#include <geographic_msgs/GeoPoseStamped.h>
 #include <mavros_msgs/PositionTarget.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
 #include <mrs_lib/geometry/misc.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox_ros/tsdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <cache_nodes/Node.h>
-#include <cache_nodes/Query.h>
 #include <cache_nodes/BestNode.h>
-#include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -41,15 +32,11 @@
 #include <rrt_construction/kd_tree.h>
 #include <gain_evaluation/gain_evaluator.h>
 
-#include <fstream>
-#include <chrono>
-
-typedef enum
-{
-  STATE_IDLE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
@@ -57,7 +44,7 @@ const std::string _state_names_[] = {"IDLE", "PLANNING", "MOVING", "REACHED"};
 using vec3_t = mrs_lib::geometry::vec_t<3>;
 
 class KAEP_rw {
-public:
+  public:
     KAEP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -73,14 +60,14 @@ public:
     void getBestGlobalTrajectory(const std::vector<kino_rrt_star::Trajectory*>& global_goals, kino_rrt_star::Trajectory*& best_global_trajectory);
 
     void cacheNode(kino_rrt_star::Trajectory* trajectory);
-    
+
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg);
     void callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
+
     void changeState(const State_t new_state);
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
@@ -92,7 +79,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -132,7 +119,7 @@ private:
     float min_z;
     float max_z;
     double bounded_radius;
-    
+
     // UAV parameters
     double max_velocity;
     double max_accel;
@@ -199,7 +186,7 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -207,7 +194,7 @@ private:
     int best_trajectory_id_counter_;
     int collision_id_counter_;
     int iteration_;
-    
+
     bool go_terminate = false;
 
     // Instances
@@ -239,4 +226,4 @@ private:
     ros::Timer timer_main;
 };
 
-#endif // KAEP_RW_H
+#endif  // KAEP_RW_H

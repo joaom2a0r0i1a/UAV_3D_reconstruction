@@ -10,7 +10,7 @@ set(CMAKE_BUILD_PARALLEL_LEVEL 8)
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# -lineinfo: Nsight source-line attribution for profiling (negligible overhead, no behavior change).
+# Line info for Nsight profiling
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lineinfo")
 
 # C++
@@ -23,7 +23,6 @@ set(CATKIN_DEPENDENCIES
   rospy
   roscpp
   mrs_msgs
-  mrs_lib
   std_srvs
   voxblox_ros
   rrt_construction
@@ -35,6 +34,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 # Find Eigen3 package
 find_package(Eigen3 REQUIRED)
+find_package(yaml-cpp REQUIRED)
 set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
 set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
@@ -56,6 +56,7 @@ include_directories(
   include
   ${EIGEN3_INCLUDE_DIR}
   ${catkin_INCLUDE_DIRS}
+  ${YAML_CPP_INCLUDE_DIR}
   )
 
 # Gain evaluation library (CPU + GPU/CUDA)
@@ -64,7 +65,7 @@ add_library(gain_evaluation
   src/gpu_raycaster.cu
   )
 add_dependencies(gain_evaluation ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-target_link_libraries(gain_evaluation ${catkin_LIBRARIES})
+target_link_libraries(gain_evaluation ${catkin_LIBRARIES} ${YAML_CPP_LIBRARIES})
 
 # GPU tester (links the gain_evaluation library)
 if(CATKIN_ENABLE_TESTING)
@@ -72,7 +73,7 @@ if(CATKIN_ENABLE_TESTING)
   target_link_libraries(gpu_tester gain_evaluation ${catkin_LIBRARIES})
 endif()
 
-# Offline scenario exporter for the supplementary video. Read only on its inputs.
+# Offline scenario exporter for the video
 add_executable(video_export src/video_export.cpp)
 target_link_libraries(video_export gain_evaluation ${catkin_LIBRARIES})
 

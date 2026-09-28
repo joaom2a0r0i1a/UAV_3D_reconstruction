@@ -8,7 +8,7 @@ these real-world deltas:
 - **mavros instead of MRS**: pose in from `geometry_msgs/PoseStamped`
   (`/mavros/local_position/pose`), commands out as `mavros_msgs/PositionTarget`
   (`/mavros/setpoint_raw/local`). No mrs_lib/mrs_msgs in the AEP/RH_NBVP code paths
-  (Kino variants are older and still mrs-based).
+  (`KAEP_rw` and `KRH_NBVP_rw` are older and still use mrs_lib).
 - **Start offset, automatic**: configs define the bounded box and the gain box RELATIVE TO THE
   TAKEOFF POSE. On `~start` the planner snapshots the current pose, shifts both boxes by it
   (`GainEvaluator::setWorldOffset`), and publishes the offset LATCHED on `offset_out` (the
@@ -20,7 +20,7 @@ these real-world deltas:
 ## How to fly
 
 1. Pre-flight: `scripts/evaluate/offload_runs.sh --check` (refuses below 15 GB free).
-2. `tmux/one_drone_rw/{aep,rh_nbvp}.sh` — brings up mavros (`apm.launch`), realsense,
+2. `tmux/one_drone_rw/{aep,kaep,rh_nbvp,krh_nbvp}.sh` — brings up mavros (`apm.launch`), realsense,
    TF connect, voxblox, pointcloud processing, the planner, (AEP) the cached frontier server
    via `cache_nodes cache_rw.launch`, the experiment recorder
    (`evaluate_map_rw.launch` — waits for mission start, does NOT start anything), the
@@ -41,25 +41,10 @@ these real-world deltas:
    path/velocity, `RESULTS.txt`.
 
 Environment switch = edit the `bounded_box` in `config/{AEP,RH_NBVP}_rw.yaml` **and** the
-`gain_evaluation` box in `config/GainConfig_rw.yaml` (both takeoff-relative).
-
-## Testing in the MRS simulator (no mavros)
-
-Raw mavros setpoints do NOT work inside the MRS sim: either there is no FCU behind mavros at
-all (MRS multirotor sim), or `mrs_uav_px4_api` owns the FCU and its own setpoint stream wins.
-Use the bridge instead (`scripts/mrs_sim_bridge.py`): it converts MRS `uav_state` → the
-planner's PoseStamped input, and the planner's PositionTarget → `control_manager/reference`.
-
-```bash
-# 1. normal MRS sim up (motion_planning tmux session), drone flying
-roslaunch motion_planning_real_world RealPlannerSimTest.launch planner:=aep   # or nbv
-roslaunch cache_nodes cache.launch     # AEP only (sim variant of cached)
-rosservice call /uav1/planner_node/start
-```
-
-The test launch overrides the frames to the MRS convention (`uavX/world_origin`, `uavX/fcu`,
-prefixed camera frame) since the real planner's tf2 lookups don't auto-prefix. Boxes stay the
-real (takeoff-relative) ones — widen them in the yamls for bigger sim sweeps.
+`gain_evaluation` box in `config/GainConfig_rw.yaml` (both takeoff-relative), then pick the site
+yaml the evaluation measures (`config/<Site>.yaml`, its `reconstruction_box`) with
+`EVAL_CONFIG=<Site>.yaml eval_rw.sh ...`. `scripts/evaluate/check_boxes.py` checks that the three
+boxes agree before a flight.
 
 ## Field link (Alfa AWUS036ACM, PC <-> Jetson)
 
@@ -76,13 +61,17 @@ Recommended topology: **Jetson as 5 GHz AP** (no external infra needed):
 
 ## Package layout
 
-- `src/{AEP_rw,RH_NBVP_rw}` — the ported planners; `src/planner_helpers_rw.cpp` — mrs-free
-  helpers (sim `planner_helpers` minus the benchmark section).
-- `src/{KAEP_rw,KRH_NBVP_rw}` — older mrs-based kinodynamic variants (not yet ported).
-- `config/` — planner yamls + `GainConfig_rw.yaml` (real gain box; real launches load this
-  instead of the sim GainConfig).
-- `launch/` — per-planner launches, `sim_test/RealPlannerSimTest.launch`, voxblox/pointcloud
-  processing, `tf_realsense_connect_mavros.launch`.
-- `scripts/` — `mrs_sim_bridge.py`, `start_gate.py`, `rviz_bbx.py`;
+- `src/{AEP,RH_NBVP}/` — the ported planners; `src/planner_helpers_rw.cpp` — mrs-free helpers
+  (sim `planner_helpers` minus the benchmark section); `src/mavros_tf_broadcaster.cpp` — mavros
+  pose to TF, glitched poses dropped.
+- `src/{KAEP,KRH_NBVP}/` — older mrs-based kinodynamic variants (not yet ported).
+- `config/` — planner yamls, `GainConfig_rw.yaml` (real gain box; the real launches load this
+  instead of the sim GainConfig) and one yaml per field site (`Basketball`, `Lamp`,
+  `LongClearing`, `LongGrove`, `PatioLamp`, `ShortGrove`) holding its `reconstruction_box`.
+- `launch/` — `planner_rw.launch` (`planner:=aep|rhnbvp|kaep|krhnbvp`), `start_gate.launch`,
+  `processed_voxblox.launch`, `depth_to_pointcloud_rw.launch`,
+  `tf_realsense_connect_mavros.launch`, `evaluate/{evaluate_map_rw,evaluate_plot_rw}.launch`.
+- `scripts/` — `start_gate.py`, `pose_watchdog.py`, `rviz_bbx.py`;
   `scripts/evaluate/` — `eval_data_node_rw.py` (stage-1 recorder),
-  `eval_rw.sh` (stage-2 orchestrator, PC), `offload_runs.sh` (Jetson→PC).
+  `eval_rw.sh` (stage-2 orchestrator, PC), `offload_runs.sh` (Jetson→PC), `check_boxes.py`
+  (pre-flight box check).

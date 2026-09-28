@@ -1,13 +1,11 @@
 <launch>
-  <!-- Stage 2 evaluation, volume only, reusing the sim eval nodes. Needs MPLBACKEND=Agg. -->
-
-  <!-- Data source -->
+  <!-- Data Source, stage 2 volume evaluation, needs MPLBACKEND=Agg -->
   <arg name="target_directory" default="$(find motion_planning)/data/real_world" />
   <arg name="gt_file_path" default=""/>
   <arg name="experiment_config" default="ShortGrove.yaml"/>
   <arg name="method" default="single"/>
 
-  <!-- what to evaluate (volume-only defaults) -->
+  <!-- Evaluation Steps -->
   <arg name="multi_series" default="false"/>
   <arg name="series" default="false"/>
   <arg name="evaluate" default="false"/>
@@ -16,15 +14,16 @@
   <arg name="create_meshes" default="false"/>
   <arg name="create_plots" default="true"/>
   <arg name="show_plots" default="false"/>
-  <arg name="clear_voxblox_maps" default="false"/>
-  <!-- automatic irreversible(!) map removal to free disk space -->
 
-  <!-- Eval args -->
+  <!-- Map removal to free disk space, irreversible -->
+  <arg name="clear_voxblox_maps" default="false"/>
+
+  <!-- Evaluation Parameters -->
   <arg name="truncation_distance" default="0.0"/>
   <arg name="mesh_every_n_steps" default="1"/>
   <arg name="series_labels" default=""/>
 
-  <!-- plotting is the main node, voxblox encapsulates c++ voxblox code -->
+  <!-- Plotting Node -->
   <node name="eval_plotting_node" pkg="motion_planning" type="eval_plotting_node.py" output="screen" required="true">
     <param name="target_directory" value="$(arg target_directory)" />
     <param name="method" value="$(arg method)" />
@@ -40,6 +39,7 @@
     <param name="series_labels" value="$(arg series_labels)" />
   </node>
 
+  <!-- Voxblox Evaluation Node -->
   <node name="eval_voxblox_node" pkg="motion_planning" type="eval_voxblox_node" output="screen">
     <param name="ground_truth_path" value="$(arg gt_file_path)" />
     <param name="create_meshes" value="$(arg create_meshes)" />

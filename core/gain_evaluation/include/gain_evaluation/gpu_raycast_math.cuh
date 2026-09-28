@@ -1,63 +1,60 @@
-#ifndef RRT_CONSTRUCTION_GPU_RAYCAST_MATH_CUH_
-#define RRT_CONSTRUCTION_GPU_RAYCAST_MATH_CUH_
+#ifndef GPU_RAYCAST_MATH_CUH
+#define GPU_RAYCAST_MATH_CUH
 
-// gpu_raycast_math.cuh -- header-only device raycast library. DETERMINISM: reproduces the original inline arithmetic (operand order, intrinsics, epsilons) verbatim.
+// Device raycast library, header only
 
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <math.h>
 #include <stdint.h>
 
-
-/* TUNABLES */
+/*                  TUNABLES                 */
 
 // Occupancy grid cell states.
 #define V_FREE     0
 #define V_OCCUPIED 1
 #define V_UNKNOWN  2
 
-// Azimuth bins are set at runtime from voxel_size/r_max (see set_angular_resolution); this only caps
-// the shared histogram for the finest voxel (~0.05 m).
+// Histogram Bin Cap
 #define THETA_BINS_MAX 640
 
 #define MAX_THREADS_PER_BLOCK 512
 
+/*                   TYPES                   */
 
-/* TYPES (structs first; functions never define types inline) */
-
-// Dynamic per-launch parameters; identical layout on host and device.
+// Per-launch parameters
 struct KernelParams {
-    float voxel_size;
-    float gain_range;     // r_max
-    float fov_y_rad;      // horizontal FOV
-    float fov_p_rad;      // vertical FOV
-    float camera_pitch;   // pitch offset
+    float voxel_size;      // Voxel edge length (m)
+    float gain_range;      // Maximum ray range r_max (m)
+    float fov_y_rad;       // Horizontal field of view (rad)
+    float fov_p_rad;       // Vertical field of view (rad)
+    float camera_pitch;    // Camera pitch offset (rad)
 
-    float dtheta;         // azimuth step (yaw)
-    float dphi;           // polar step (pitch)
+    float dtheta;          // Azimuth step, yaw (rad)
+    float dphi;            // Polar step, pitch (rad)
 
-    float phi_start;
-    float phi_end;
+    float phi_start;       // First polar angle of the sampled band (rad)
+    float phi_end;         // Last polar angle of the sampled band (rad)
 
-    int theta_bins;       // azimuth bins over the full circle = round(2*pi / dtheta)
-    int rows_in_fov;      // vertical (phi) sample rows  = angular_bins(fov_p, dphi)
-    int sectors_in_fov;   // best-yaw window width (theta) = angular_bins(fov_y, dtheta)
+    int   theta_bins;      // Azimuth bins over the full circle, round(2*pi / dtheta)
+    int   rows_in_fov;     // Vertical sample rows, angular_bins(fov_p, dphi)
+    int   sectors_in_fov;  // Best-yaw window width, angular_bins(fov_y, dtheta)
 };
 
 namespace gpuray {
 
-// Full geometry of a parent depth image: pixel dimensions + pinhole intrinsics.
+// Parent camera geometry
 struct ParentCameraConfig {
     int   p_width, p_height;
     float fx, fy, cx, cy;
 };
 
-// World->camera rotation as its three rows (R0 = R[0..2], R1 = R[3..5], ...).
+// World to camera rotation rows
 struct RotationRows {
     float3 r0, r1, r2;
 };
 
-// 3D voxel-grid DDA (Amanatides & Woo) traversal state.
+// 3D voxel DDA state
 struct Dda3 {
     int   ix, iy, iz;
     int   stepX, stepY, stepZ;
@@ -66,7 +63,7 @@ struct Dda3 {
     float t;
 };
 
-// 2D pixel-grid DDA traversal state.
+// 2D pixel DDA state
 struct Dda2 {
     int   x, y;
     int   x_end, y_end;
@@ -75,72 +72,72 @@ struct Dda2 {
     float tMaxX, tMaxY;
 };
 
-}  // namespace gpuray
+}
 
-// ----- Application-level views (bundle arguments to keep functions <= 5 args) -
+/*             APPLICATION VIEWS             */
 
-// Read-only view of the occupancy grid.
+// Occupancy grid view
 struct MapContext {
     const uint8_t* map;
-    int3   dim;
-    float3 origin;
+    int3           dim;
+    float3         origin;
 };
 
-// A single parent camera frame (one ancestor of a chain; the single-node kernel reconstructs one of these per ancestor).
+// One parent camera frame
 struct ParentFrame {
-    float3                  pos;
-    const float*            depth;   // p_width * p_height planar depths
-    gpuray::RotationRows       R;       // world->camera rotation
-    gpuray::ParentCameraConfig cam;
+    float3                     pos;    // Parent camera position
+    const float*               depth;  // [p_width*p_height] planar depths
+    gpuray::RotationRows       R;      // World to camera rotation
+    gpuray::ParentCameraConfig cam;    // Depth image geometry
 };
 
-// Full ancestor chain of a candidate (count=1 = single-parent, N = multi-ancestor); depth_idx (opt) pools depth buffers, else contiguous.
+// Ancestor chain of a candidate
 struct AncestorSet {
-    const float3*           positions;   // [num]
-    const float*            yaws;        // [num] (parity only; unused in math)
-    const float*            depth;       // [num*per] (contiguous) or pool base (pooled)
-    const float3*           R_rows;      // [num * 3] (R0,R1,R2 per ancestor)
-    int                     num;
-    gpuray::ParentCameraConfig cam;         // shared geometry across ancestors
-    const int*              depth_idx;   // null -> contiguous; else pool index per ancestor
+    const float3*              positions;  // [num] ancestor positions
+    const float*               yaws;       // [num] ancestor yaws (parity only, unused in math)
+    const float*               depth;      // [num*per] contiguous depths, or the pool base when pooled
+    const float3*              R_rows;     // [num*3] rotation rows R0,R1,R2 per ancestor
+    int                        num;        // Number of ancestors
+    gpuray::ParentCameraConfig cam;        // Depth image geometry shared by all ancestors
+    const int*                 depth_idx;  // Pool slot per ancestor, or null for contiguous depths
 };
 
 // Per-candidate output buffers.
 struct GainResults {
-    float* gain;        // [num_candidates]
-    float* yaw;         // [num_candidates]
-    float* depth_all;   // scratch: one planar depth per cast ray
-    float* depth;       // final view depth buffer (p_width * p_height per candidate)
-    const float* fixed_yaw;  // [num_candidates] fixed yaw per candidate, or null -> optimize yaw
+    float*       gain;       // [num_candidates] gain per candidate
+    float*       yaw;        // [num_candidates] chosen yaw per candidate
+    float*       depth_all;  // Scratch, one planar depth per cast ray
+    float*       depth;      // [p_width*p_height] final depth buffer per candidate
+    const float* fixed_yaw;  // [num_candidates] fixed yaw per candidate, or null to optimize yaw
 };
 
-// Device CSR view of a wavefront's ancestor chains; per = p_width*p_height; sliced per block by ancestors_for().
+// Batched ancestor chains
 struct AncestorBatchDev {
-    const int*    offsets;   // [num_candidates+1]
-    const float3* pos;       // [total]
-    const float*  yaw;       // [total]
-    const float*  depth;     // [total*per] (contiguous) or [num_nodes*per] pool (pooled)
-    const float3* R;         // [total*3]
-    int           per;
-    gpuray::ParentCameraConfig cam;
-    const int*    depth_idx; // null -> contiguous depth; else pool index per ancestor slot
+    const int*                 offsets;    // [num_candidates+1] prefix sum of ancestor counts
+    const float3*              pos;        // [total] ancestor positions
+    const float*               yaw;        // [total] ancestor yaws
+    const float*               depth;      // [total*per] contiguous depths, or the depth pool when pooled
+    const float3*              R;          // [total*3] rotation rows per ancestor
+    int                        per;        // Pixels per depth buffer, p_width*p_height
+    gpuray::ParentCameraConfig cam;        // Depth image geometry
+    const int*                 depth_idx;  // Pool slot per ancestor, or null for contiguous depths
 };
 
-// Host-side bookkeeping for a batched launch: device allocations + launch dims (used only by the extern "C" launchers).
+// Device buffers of a batched launch
 struct BatchDeviceMem {
-    float3* d_cand;
-    int*    d_off;
-    float3* d_pos;
-    float*  d_yaw;
-    float3* d_R;
-    int*    d_depth_idx;   // GLOBAL ancestor pool slots [total]
-    float*  d_gain;
-    float*  d_yaw_out;
-    float*  d_fixed_yaw;   // per-candidate fixed yaw (null when optimizing yaw)
-    int*    d_out_slot;    // per-candidate GLOBAL pool write-slot
-    int     rays;          // rays per candidate
-    int     nc;
-    size_t  per;           // p_width*p_height
+    float3* d_cand;       // Candidate positions [nc]
+    int*    d_off;        // Ancestor offsets [nc+1]
+    float3* d_pos;        // Ancestor positions [total]
+    float*  d_yaw;        // Ancestor yaws [total]
+    float3* d_R;          // Ancestor rotation rows [total*3]
+    int*    d_depth_idx;  // Depth pool slot per ancestor [total]
+    float*  d_gain;       // Output gain per candidate [nc]
+    float*  d_yaw_out;    // Output yaw per candidate [nc]
+    float*  d_fixed_yaw;  // Fixed yaw per candidate, null when optimizing yaw
+    int*    d_out_slot;   // Depth pool write slot per candidate
+    int     rays;         // Rays per candidate
+    int     nc;           // Number of candidates
+    size_t  per;          // Pixels per depth buffer, p_width*p_height
 };
 
 // A candidate ray (world frame).
@@ -149,96 +146,92 @@ struct Ray {
     float3 dir;
 };
 
-// A ray plus the polar-angle sine used to weight its volumetric gain.
+// Ray with gain weight
 struct MarchRay {
     float3 origin;
     float3 dir;
     float  sin_phi;
 };
 
-// A camera pose for depth-buffer synthesis (pitch comes from KernelParams).
+// Pose for depth synthesis
 struct CameraPose {
     float3 pos;
     float  yaw;
 };
 
-// Read-only set of observed-free spans (voxel units) consumed by a marcher.
+// Observed free spans (voxels)
 struct SkipSet {
     const float2* intervals;
     int           count;
 };
 
-// Output set of observed-free spans (metres) filled by the projection pass.
+// Observed free spans (metres)
 struct SkipBuffer {
     float2* intervals;
     int*    count;
     int     capacity;
-    float*  status;    // -1 if any ancestor surface really occludes the ray
+    float*  status;     // -1 if any ancestor surface occludes the ray
 };
 
-// An axis-aligned pixel rectangle for line clipping.
+// Pixel clip rectangle
 struct Rect2 {
     float min_x, max_x, min_y, max_y;
 };
 
-// A candidate ray projected into one parent depth image.
+// Ray projected into parent image
 struct RayProjection {
-    bool      valid;                          // false if the ray misses the frustum
-    float3    O, D;                           // ray in the parent camera frame
-    float     w_start, w_end;                 // inverse depth at the clipped endpoints
-    float     t_visible_start, t_visible_end; // metres at clip entry / exit
-    gpuray::Dda2 dda;                            // pixel walk over the clipped segment
+    bool         valid;                           // False if the ray misses the frustum
+    float3       O, D;                            // Ray in the parent camera frame
+    float        w_start, w_end;                  // Inverse depth at the clipped endpoints
+    float        t_visible_start, t_visible_end;  // Metres at clip entry and exit
+    gpuray::Dda2 dda;                             // Pixel walk over the clipped segment
 };
 
-
-/* PRIMITIVES (namespace gpuray: pure, single-purpose helpers) */
+/*                 PRIMITIVES                */
 
 namespace gpuray {
 
+/*                 CONSTANTS                 */
 
-/* Named numerical constants (replace scattered magic numbers) */
-
-// Direction component below which an axis is treated as parallel (no crossing).
+// Parallel axis threshold
 __device__ __constant__ const float kDirEpsilon     = 1e-9f;
-// "Infinite" parametric step for a parallel axis in a DDA.
+// Infinite DDA step
 __device__ __constant__ const float kTDeltaInfinity = 1e30f;
-// Radial divisor in the volumetric gain integral (dr^3 / 6).
+// Gain integral divisor
 __device__ __constant__ const float kGainCubicDiv   = 6.0f;
-// Hard cap on DDA iterations -- a runaway backstop that never trips in practice.
+// DDA iteration cap
 __device__ __constant__ const int   kMaxDdaSteps    = 8192;
 
+/*                  GEOMETRY                 */
 
-/* Geometry */
-
-// Unit ray direction for spherical angles (theta = azimuth, phi = polar).
+// Unit ray direction from spherical angles
 __device__ inline float3 spherical_ray_dir(float theta, float phi) {
     float sin_phi = sinf(phi);
     return make_float3(cosf(theta) * sin_phi, sinf(theta) * sin_phi, cosf(phi));
 }
 
-// Convert a world-space point to fractional voxel coordinates.
+// World point to voxel coordinates
 __device__ inline float3 world_to_voxel(float3 p, float3 origin, float voxel_size) {
     return make_float3((p.x - origin.x) / voxel_size,
                        (p.y - origin.y) / voxel_size,
                        (p.z - origin.z) / voxel_size);
 }
 
-// Apply a row-major rotation (R * v) using the three stored rows.
+// Rotate a vector by stored rows
 __device__ inline float3 apply_rotation_rows(const RotationRows& R, float3 v) {
     return make_float3(R.r0.x * v.x + R.r0.y * v.y + R.r0.z * v.z,
                        R.r1.x * v.x + R.r1.y * v.y + R.r1.z * v.z,
                        R.r2.x * v.x + R.r2.y * v.y + R.r2.z * v.z);
 }
 
-// Pinhole projection of a camera-frame point to pixel coordinates (p_cam.z != 0).
+// Pinhole projection to pixels
 __device__ inline float2 project_pinhole(float3 p_cam, const ParentCameraConfig& k) {
     float inv_z = 1.0f / p_cam.z;
     return make_float2(k.fx * p_cam.x * inv_z + k.cx,
                        k.fy * p_cam.y * inv_z + k.cy);
 }
 
-
-/* Voxel grid indexing */
+/*               VOXEL INDEXING              */
 
 __device__ inline bool in_bounds(int ix, int iy, int iz, int3 dim) {
     return ix >= 0 && ix < dim.x &&
@@ -246,23 +239,21 @@ __device__ inline bool in_bounds(int ix, int iy, int iz, int3 dim) {
            iz >= 0 && iz < dim.z;
 }
 
-// Row-major flat index into the volumetric map (z outermost, x innermost).
+// Flat map index
 __device__ inline int voxel_flat_index(int ix, int iy, int iz, int3 dim) {
     return iz * (dim.x * dim.y) + iy * dim.x + ix;
 }
 
+/*               GAIN INTEGRAL               */
 
-/* Volumetric information-gain integral (radial term only) */
-
-// Unweighted volume element for an unknown segment (dr at radius r): 2 r^2 dr + dr^3/6; callers apply angular weighting.
+// Volume element of an unknown segment
 __device__ inline float gain_volume_increment(float r, float dr) {
     return 2.0f * r * r * dr + (dr * dr * dr) / kGainCubicDiv;
 }
 
+/*                   3D DDA                  */
 
-/* 3D DDA (Amanatides & Woo) */
-
-// Initialise traversal from a fractional voxel start position `g` along `dir`.
+// Start a 3D DDA traversal
 __device__ inline Dda3 dda3_init(float3 g, float3 dir) {
     Dda3 d;
     d.ix = floor(g.x);
@@ -285,7 +276,7 @@ __device__ inline Dda3 dda3_init(float3 g, float3 dir) {
     return d;
 }
 
-// Re-seat the traversal at fractional position g and parametric distance t after a jump (step dirs and tDelta unchanged).
+// Restart a 3D DDA after a jump
 __device__ inline void dda3_reseat(Dda3& d, float3 g, float t) {
     d.ix = floor(g.x);
     d.iy = floor(g.y);
@@ -296,26 +287,31 @@ __device__ inline void dda3_reseat(Dda3& d, float3 g, float t) {
     d.t = t;
 }
 
-// Parametric distance at which the current voxel cell is exited.
+// Exit distance of current voxel
 __device__ inline float dda3_t_exit(const Dda3& d) {
     return fminf(d.tMaxX, fminf(d.tMaxY, d.tMaxZ));
 }
 
-// Advance one voxel along the dominant axis, updating the parametric position.
+// Step to the next voxel
 __device__ inline void dda3_step(Dda3& d) {
     if (d.tMaxX < d.tMaxY && d.tMaxX < d.tMaxZ) {
-        d.ix += d.stepX; d.t = d.tMaxX; d.tMaxX += d.tDeltaX;
+        d.ix += d.stepX;
+        d.t = d.tMaxX;
+        d.tMaxX += d.tDeltaX;
     } else if (d.tMaxY < d.tMaxZ) {
-        d.iy += d.stepY; d.t = d.tMaxY; d.tMaxY += d.tDeltaY;
+        d.iy += d.stepY;
+        d.t = d.tMaxY;
+        d.tMaxY += d.tDeltaY;
     } else {
-        d.iz += d.stepZ; d.t = d.tMaxZ; d.tMaxZ += d.tDeltaZ;
+        d.iz += d.stepZ;
+        d.t = d.tMaxZ;
+        d.tMaxZ += d.tDeltaZ;
     }
 }
 
+/*                   2D DDA                  */
 
-/* 2D DDA over a pixel grid (parent depth image) */
-
-// Woo DDA over segment start->end, clamped to the pixel range.
+// Start a 2D pixel DDA
 __device__ inline Dda2 dda2_init(float2 start, float2 end, int p_width, int p_height) {
     Dda2 d;
     d.x = floor(start.x);
@@ -343,10 +339,9 @@ __device__ inline Dda2 dda2_init(float2 start, float2 end, int p_width, int p_he
     return d;
 }
 
+/*                 YAW WINDOW                */
 
-/* Yaw sliding-window optimisation */
-
-// Slide an FOV-wide window over the per-sector gain histogram; return the best window-start index (total gain to *out_gain).
+// Best yaw window over the sector histogram
 __device__ inline int best_yaw_start_index(const float* s_yaw_gains, int theta_bins,
                                            int sectors_in_fov, float* out_gain) {
     float max_gain = 0.0f;
@@ -365,46 +360,46 @@ __device__ inline int best_yaw_start_index(const float* s_yaw_gains, int theta_b
     return best_start_idx;
 }
 
-// FOV-centre yaw of a window starting at `best_start_idx`, normalised to (-pi, pi].
+// Centre yaw of a window
 __device__ inline float yaw_window_center_angle(int best_start_idx, float dtheta, float fov_y_rad) {
     float center_angle = (-CUDART_PI_F + best_start_idx * dtheta) + (fov_y_rad * 0.5f);
     if (center_angle > CUDART_PI_F) center_angle -= (2.0f * CUDART_PI_F);
     return center_angle;
 }
 
-// Start bin of the FOV window centred on `yaw` (rad) -- integer inverse of yaw_window_center_angle.
+// Window start bin for a yaw
 __device__ inline int window_start_bin_at_yaw(float yaw, float dtheta, float fov_y_rad, int theta_bins) {
     int start = (int)floorf((yaw - 0.5f * fov_y_rad + CUDART_PI_F) / dtheta + 0.5f);
-    start %= theta_bins; if (start < 0) start += theta_bins;   // positive modulo (wraps at +-pi)
+    start %= theta_bins;
+    if (start < 0) start += theta_bins;
     return start;
 }
 
-// Sum the FOV window centred on `yaw` from the per-sector histogram (fixed-yaw analog of best window).
+// Window gain at a fixed yaw
 __device__ inline float window_gain_at_yaw(const float* s_yaw_gains, int theta_bins, int sectors_in_fov,
-                                            float dtheta, float fov_y_rad, float yaw) {
+                                           float dtheta, float fov_y_rad, float yaw) {
     int start = window_start_bin_at_yaw(yaw, dtheta, fov_y_rad, theta_bins);
     float g = 0.0f;
     for (int k = 0; k < sectors_in_fov; ++k) g += s_yaw_gains[(start + k) % theta_bins];
     return g;
 }
 
+/*               SKIP INTERVALS              */
 
-/* Skip-interval set operations (multi-ancestor occlusion) */
-
-// Insert [lo,hi] into a sorted non-overlapping interval set, coalescing overlaps; bounded by max_intervals.
+// Insert an interval into a sorted set
 __device__ inline void insert_and_merge_interval(float2* intervals, int* count,
                                                  int max_intervals, float lo, float hi) {
     if (hi <= lo) return;
     int i = 0;
-    while (i < *count && intervals[i].y < lo) i++;        // strictly-before, keep
+    while (i < *count && intervals[i].y < lo) i++;
     int j = i;
-    while (j < *count && intervals[j].x <= hi) {          // overlaps/touches -> absorb
+    while (j < *count && intervals[j].x <= hi) {
         lo = fminf(lo, intervals[j].x);
         hi = fmaxf(hi, intervals[j].y);
         j++;
     }
     int tail = *count - j;
-    if (i + 1 + tail > max_intervals) {                   // clamp: drop overflow tail
+    if (i + 1 + tail > max_intervals) {
         tail = max_intervals - (i + 1);
         if (tail < 0) tail = 0;
     }
@@ -413,21 +408,19 @@ __device__ inline void insert_and_merge_interval(float2* intervals, int* count,
     *count = i + 1 + tail;
 }
 
-}  // namespace gpuray
+}
 
+/*                  ROUTINES                 */
 
-/* ROUTINES (built from the primitives above) */
+/*               SHARED HELPERS              */
 
-
-/* Small shared helpers */
-
-// Map cell value at (ix,iy,iz); out-of-bounds reads as V_FREE (outside == free).
+// Map cell value, free outside
 __device__ inline uint8_t voxel_value(const MapContext& m, int ix, int iy, int iz) {
     if (!gpuray::in_bounds(ix, iy, iz, m.dim)) return V_FREE;
     return m.map[gpuray::voxel_flat_index(ix, iy, iz, m.dim)];
 }
 
-// Angular-weighted information gain for an unknown span [t_enter, t_exit] (voxels).
+// Weighted gain of an unknown span
 __device__ inline float ray_segment_gain(float t_enter, float t_exit, float sin_phi,
                                          const KernelParams& p) {
     float dr = (t_exit - t_enter) * p.voxel_size;
@@ -435,7 +428,7 @@ __device__ inline float ray_segment_gain(float t_enter, float t_exit, float sin_
     return gpuray::gain_volume_increment(r, dr) * p.dtheta * sin_phi * sinf(p.dphi * 0.5f);
 }
 
-// Map a normalised segment factor [0,1] back to metres along the candidate ray.
+// Segment factor to metres
 __device__ inline float segment_factor_to_metres(const RayProjection& rp, float factor) {
     if (fabsf(rp.D.z) > 1e-3f) {
         float w = rp.w_start + factor * (rp.w_end - rp.w_start);
@@ -444,7 +437,7 @@ __device__ inline float segment_factor_to_metres(const RayProjection& rp, float 
     return rp.t_visible_start + factor * (rp.t_visible_end - rp.t_visible_start);
 }
 
-// True if the parent surface at pixel (x,y) is a real hit vs the sensor max range (planar depth vs range scaled by pixel slant).
+// Is the parent pixel a real hit
 __device__ inline bool parent_surface_is_real(const gpuray::ParentCameraConfig& cam,
                                               int x, int y, float parent_z, float range) {
     float px_u = (x + 0.5f - cam.cx) / cam.fx;
@@ -453,7 +446,7 @@ __device__ inline bool parent_surface_is_real(const gpuray::ParentCameraConfig& 
     return parent_z < range * cos_theta;
 }
 
-// Build the ParentFrame for ancestor `i` of a chain.
+// Parent frame of ancestor i
 __device__ inline ParentFrame ancestor_frame(const AncestorSet& a, int i) {
     ParentFrame p;
     p.pos   = a.positions[i];
@@ -464,7 +457,7 @@ __device__ inline ParentFrame ancestor_frame(const AncestorSet& a, int i) {
     return p;
 }
 
-// Slice one candidate's AncestorSet from the batched CSR view (pooled or contiguous depth).
+// Ancestor set of one candidate
 __device__ inline AncestorSet ancestors_for(const AncestorBatchDev& ab, int candidate) {
     int base = ab.offsets[candidate];
     AncestorSet s;
@@ -483,7 +476,7 @@ __device__ inline AncestorSet ancestors_for(const AncestorBatchDev& ab, int cand
     return s;
 }
 
-// Liang-Barsky clip of segment a->b to box; false if fully outside, else updates factors *s0,*s1.
+// Liang-Barsky segment clip
 __device__ inline bool clip_line_2d(float2 a, float2 b, Rect2 box, float* s0, float* s1) {
     float dx = b.x - a.x;
     float dy = b.y - a.y;
@@ -491,14 +484,14 @@ __device__ inline bool clip_line_2d(float2 a, float2 b, Rect2 box, float* s0, fl
     float q[4] = {a.x - box.min_x, box.max_x - a.x, a.y - box.min_y, box.max_y - a.y};
 
     for (int i = 0; i < 4; ++i) {
-        if (p[i] == 0.0f) {            // parallel to this border
+        if (p[i] == 0.0f) {
             if (q[i] < 0.0f) return false;
         } else {
             float r = q[i] / p[i];
-            if (p[i] < 0.0f) {         // entering
+            if (p[i] < 0.0f) {
                 if (r > *s1) return false;
                 if (r > *s0) *s0 = r;
-            } else {                   // exiting
+            } else {
                 if (r < *s0) return false;
                 if (r < *s1) *s1 = r;
             }
@@ -507,10 +500,9 @@ __device__ inline bool clip_line_2d(float2 a, float2 b, Rect2 box, float* s0, fl
     return true;
 }
 
+/*             PARENT PROJECTION             */
 
-/* Parent-frustum projection */
-
-// Clip a candidate ray against one parent depth image; rp.valid is false when the ray misses the frustum.
+// Project a ray into a parent image
 __device__ inline RayProjection project_ray_into_parent(const ParentFrame& parent,
                                                         Ray ray, float max_dist) {
     RayProjection rp;
@@ -519,14 +511,14 @@ __device__ inline RayProjection project_ray_into_parent(const ParentFrame& paren
     const float z_near = 0.1f;
     const float z_far  = max_dist;
 
-    // 1. Ray into the parent camera frame: O = R*(start - parent), D = R*dir.
+    // 1) Ray into Camera Frame
     float3 diff = make_float3(ray.origin.x - parent.pos.x,
                               ray.origin.y - parent.pos.y,
                               ray.origin.z - parent.pos.z);
     rp.O = gpuray::apply_rotation_rows(parent.R, diff);
     rp.D = gpuray::apply_rotation_rows(parent.R, ray.dir);
 
-    // 2. Z-slab clip against the depth range.
+    // 2) Depth Range Clip
     float t0 = 0.0f;
     float t1 = max_dist;
     if (fabsf(rp.D.z) < 1e-3f) {
@@ -543,20 +535,20 @@ __device__ inline RayProjection project_ray_into_parent(const ParentFrame& paren
     float3 P_start = make_float3(rp.O.x + t0 * rp.D.x, rp.O.y + t0 * rp.D.y, rp.O.z + t0 * rp.D.z);
     float3 P_end   = make_float3(rp.O.x + t1 * rp.D.x, rp.O.y + t1 * rp.D.y, rp.O.z + t1 * rp.D.z);
 
-    // 3. Project clipped endpoints to pixels.
+    // 3) Project Endpoints
     float inv_z0 = 1.0f / P_start.z;
     float inv_z1 = 1.0f / P_end.z;
     float2 px0 = gpuray::project_pinhole(P_start, parent.cam);
     float2 px1 = gpuray::project_pinhole(P_end, parent.cam);
 
-    // 4. Screen clip (Liang-Barsky).
+    // 4) Screen Clip
     float s_min = 0.0f;
     float s_max = 1.0f;
     float eps = 1e-4f;
     Rect2 box = {eps, (float)parent.cam.p_width - eps, eps, (float)parent.cam.p_height - eps};
     if (!clip_line_2d(px0, px1, box, &s_min, &s_max)) return rp;
 
-    // 5. Exact frustum interval: interpolate 1/z, recover metres.
+    // 5) Frustum Interval
     rp.w_start = inv_z0 + s_min * (inv_z1 - inv_z0);
     rp.w_end   = inv_z0 + s_max * (inv_z1 - inv_z0);
     if (fabsf(rp.D.z) > 1e-3f) {
@@ -567,7 +559,7 @@ __device__ inline RayProjection project_ray_into_parent(const ParentFrame& paren
         rp.t_visible_end   = t0 + s_max * (t1 - t0);
     }
 
-    // 6. Clip the pixel endpoints, then set up the Woo DDA over them.
+    // 6) Pixel DDA Setup
     float2 start = make_float2(px0.x + s_min * (px1.x - px0.x), px0.y + s_min * (px1.y - px0.y));
     float2 end   = make_float2(px0.x + s_max * (px1.x - px0.x), px0.y + s_max * (px1.y - px0.y));
     rp.dda = gpuray::dda2_init(start, end, parent.cam.p_width, parent.cam.p_height);
@@ -575,7 +567,7 @@ __device__ inline RayProjection project_ray_into_parent(const ParentFrame& paren
     return rp;
 }
 
-// Walk one parent's projected ray, emitting each observed-free span (metres) and latching *status on real occlusion.
+// Observed free spans from one parent
 __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, const RayProjection& rp,
                                                  const KernelParams& params, SkipBuffer skips) {
     gpuray::Dda2 d = rp.dda;
@@ -595,7 +587,7 @@ __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, cons
             float parent_z = parent.depth[d.y * parent.cam.p_width + d.x];
             if (parent_z >= 0.0f) {
                 in_known_space = (z_exit <= parent_z + margin);
-                // On a state flip, refine the sub-pixel crossing factor.
+                // Refine Crossing
                 if (!is_first_step && (is_building != in_known_space)) {
                     float dw = rp.w_end - rp.w_start;
                     if (fabsf(dw) > 1e-6f) {
@@ -616,7 +608,7 @@ __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, cons
         }
 
         if (is_building && !in_known_space) {
-            // Left known space -> close and emit the interval.
+            // Close Interval
             if (*skips.count < skips.capacity) {
                 float a = segment_factor_to_metres(rp, segment_start_t);
                 float b = segment_factor_to_metres(rp, t_exact);
@@ -631,11 +623,18 @@ __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, cons
         }
 
         if (d.x == d.x_end && d.y == d.y_end) break;
-        if (d.tMaxX < d.tMaxY) { d.x += d.stepX; current_t = d.tMaxX; d.tMaxX += d.tDeltaX; }
-        else                   { d.y += d.stepY; current_t = d.tMaxY; d.tMaxY += d.tDeltaY; }
+        if (d.tMaxX < d.tMaxY) {
+            d.x += d.stepX;
+            current_t = d.tMaxX;
+            d.tMaxX += d.tDeltaX;
+        } else {
+            d.y += d.stepY;
+            current_t = d.tMaxY;
+            d.tMaxY += d.tDeltaY;
+        }
     }
 
-    // Close a still-open interval at the frustum exit.
+    // Close at Frustum Exit
     if (is_building && *skips.count < skips.capacity) {
         float a = segment_factor_to_metres(rp, segment_start_t);
         float b = segment_factor_to_metres(rp, 1.0f);
@@ -645,7 +644,7 @@ __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, cons
     }
 }
 
-// Skip set: merge the observed-free spans of every ancestor (count=1 = single-parent, N = full chain).
+// Skip set over all ancestors
 __device__ inline void compute_multi_segment_skip_distance(const AncestorSet& ancestors, Ray ray,
                                                            const KernelParams& params, SkipBuffer skips) {
     *skips.count = 0;
@@ -657,10 +656,9 @@ __device__ inline void compute_multi_segment_skip_distance(const AncestorSet& an
     }
 }
 
+/*                RAY MARCHING               */
 
-/* Ray marching: integrate volumetric gain along one candidate ray */
-
-// Occupancy-only march: distance (metres) to the first occupied voxel, or the sensor range if none hit.
+// Distance to first occupied voxel
 __device__ inline float march_first_hit(const MapContext& m, float3 origin, float3 dir,
                                         const KernelParams& p) {
     gpuray::Dda3 d = gpuray::dda3_init(gpuray::world_to_voxel(origin, m.origin, p.voxel_size), dir);
@@ -676,7 +674,7 @@ __device__ inline float march_first_hit(const MapContext& m, float3 origin, floa
     return final_depth;
 }
 
-// Plain gain march (AEP): integrate UNKNOWN voxels until OCCUPIED or max range; writes first-hit depth to *out_depth.
+// Absolute gain along one ray
 __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ray,
                                          const KernelParams& p, float* out_depth) {
     gpuray::Dda3 d = gpuray::dda3_init(gpuray::world_to_voxel(ray.origin, m.origin, p.voxel_size), ray.dir);
@@ -685,9 +683,12 @@ __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ra
     *out_depth = p.gain_range;
     for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
         uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
-        if (val == V_OCCUPIED) { *out_depth = d.t * p.voxel_size; break; }
+        if (val == V_OCCUPIED) {
+            *out_depth = d.t * p.voxel_size;
+            break;
+        }
         if (val == V_UNKNOWN) {
-            float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);   // cap last voxel at range (match CPU + traverse march)
+            float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);
             if (t_exit > d.t) ray_gain += ray_segment_gain(d.t, t_exit, ray.sin_phi, p);
         }
         gpuray::dda3_step(d);
@@ -695,7 +696,7 @@ __device__ inline float march_gain_basic(const MapContext& m, const MarchRay& ra
     return ray_gain;
 }
 
-// Single-node marginal march: traverse every voxel (never reseats the DDA), omit gain inside observed-free spans, stop on OCCUPIED inside a span.
+// Marginal gain along one ray
 __device__ inline float march_marginal_gain_traverse(const MapContext& m, const MarchRay& ray,
                                                      SkipSet skips, const KernelParams& p,
                                                      float* out_final_depth) {
@@ -706,20 +707,23 @@ __device__ inline float march_marginal_gain_traverse(const MapContext& m, const 
     float ray_gain = 0.0f;
 
     for (int s = 0; s < gpuray::kMaxDdaSteps && d.t < max_t; ++s) {
-        // Drop skip intervals the ray has already passed.
+        // Drop Passed Intervals
         while (current_skip_idx < skips.count && d.t >= skips.intervals[current_skip_idx].y) current_skip_idx++;
 
         uint8_t val = voxel_value(m, d.ix, d.iy, d.iz);
-        if (val == V_OCCUPIED) { final_depth = d.t * p.voxel_size; break; }
+        if (val == V_OCCUPIED) {
+            final_depth = d.t * p.voxel_size;
+            break;
+        }
         if (val == V_UNKNOWN) {
-            // Inside an observed-free span: traverse the voxel but count no gain.
+            // Inside Observed Span
             bool inside = (current_skip_idx < skips.count &&
                            d.t >= skips.intervals[current_skip_idx].x &&
                            d.t <  skips.intervals[current_skip_idx].y);
             if (!inside) {
-                float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);                       // FIX 1: cap at range
+                float t_exit = fminf(gpuray::dda3_t_exit(d), max_t);
                 if (current_skip_idx < skips.count && t_exit > skips.intervals[current_skip_idx].x) {
-                    t_exit = fminf(t_exit, skips.intervals[current_skip_idx].x);        // FIX 2: no bleed into skip span
+                    t_exit = fminf(t_exit, skips.intervals[current_skip_idx].x);
                 }
                 if (t_exit > d.t) ray_gain += ray_segment_gain(d.t, t_exit, ray.sin_phi, p);
             }
@@ -730,10 +734,9 @@ __device__ inline float march_marginal_gain_traverse(const MapContext& m, const 
     return ray_gain;
 }
 
+/*              DEPTH SYNTHESIS              */
 
-/* Depth-buffer synthesis (shared by every marginal kernel) */
-
-// Block-strided fill: cast one ray per pixel at the pose, store planar first-hit depth into this candidate's depth_out slice.
+// Depth buffer of one pose
 __device__ inline void generate_depth_buffer(const MapContext& m, const gpuray::ParentCameraConfig& cam,
                                              CameraPose pose, const KernelParams& p, float* depth_out) {
     float cos_y = cosf(pose.yaw),         sin_y = sinf(pose.yaw);
@@ -750,7 +753,7 @@ __device__ inline void generate_depth_buffer(const MapContext& m, const gpuray::
 
         float dir_x = (z_cam * cos_p - y_cam * sin_p) * cos_y + x_cam * sin_y;
         float dir_y = (z_cam * cos_p - y_cam * sin_p) * sin_y - x_cam * cos_y;
-        float dir_z = - z_cam * sin_p - y_cam * cos_p;
+        float dir_z = -z_cam * sin_p - y_cam * cos_p;
         float inv_norm = 1.0f / sqrtf(dir_x * dir_x + dir_y * dir_y + dir_z * dir_z);
         float3 dir = make_float3(dir_x * inv_norm, dir_y * inv_norm, dir_z * inv_norm);
 
@@ -760,4 +763,4 @@ __device__ inline void generate_depth_buffer(const MapContext& m, const gpuray::
     }
 }
 
-#endif  // RRT_CONSTRUCTION_AEP_DEVICE_MATH_CUH_
+#endif  // GPU_RAYCAST_MATH_CUH

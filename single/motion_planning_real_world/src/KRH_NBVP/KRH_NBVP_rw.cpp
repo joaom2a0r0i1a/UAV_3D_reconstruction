@@ -1,9 +1,7 @@
 #include "motion_planning_real_world/KRH_NBVP/KRH_NBVP_rw.h"
 
-KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private) : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
-
-    //ns = "uav1";
-
+KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private)
+    : nh_(nh), nh_private_(nh_private), segment_evaluator(nh_private_), voxblox_server_(nh_, nh_private_) {
     /* Parameter loading */
     mrs_lib::ParamLoader param_loader(nh_private_, "KRH_NBVP_rw");
 
@@ -68,7 +66,7 @@ KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
     esdf_map_ = voxblox_server_.getEsdfMapPtr();
     segment_evaluator.setTsdfLayer(tsdf_map_->getTsdfLayerPtr());
     segment_evaluator.setEsdfMap(esdf_map_);
-            
+
     // Setup Tf Transformer
     transformer_ = std::make_unique<mrs_lib::Transformer>("KRH_NBVP_rw");
     transformer_->setDefaultFrame(frame_id);
@@ -82,7 +80,7 @@ KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
 
     // Get Sampling Radius
     bounded_radius = sqrt(pow(min_x - max_x, 2.0) + pow(min_y - max_y, 2.0) + pow(min_z - max_z, 2.0));
-    
+
     /* Publishers */
     pub_markers = nh_private_.advertise<visualization_msgs::Marker>("visualization_marker_out", 50);
     pub_start = nh_private_.advertise<std_msgs::Bool>("simulation_ready", 1);
@@ -103,7 +101,7 @@ KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
 
     sub_local_pose_diag = mrs_lib::SubscribeHandler<geometry_msgs::PoseStamped>(shopts, "local_pose_in", &KRH_NBVP_rw::callbackLocalPose, this);
     sub_local_velocity_diag = mrs_lib::SubscribeHandler<geometry_msgs::TwistStamped>(shopts, "local_velocity_in", &KRH_NBVP_rw::callbackLocalVelocity, this);
-    
+
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KRH_NBVP_rw::callbackStart, this);
     ss_stop = nh_private_.advertiseService("stop_in", &KRH_NBVP_rw::callbackStop, this);
@@ -179,35 +177,20 @@ void KRH_NBVP_rw::planStep() {
     KinoRRTStar.clearKDTree();
     kino_rrt_star::Trajectory* root_ptr = KinoRRTStar.addKDTreeTrajectory(std::move(Root));
     clearMarkers();
-    visualize_node(root_ptr->TrajectoryPoints.back()->point, 2*node_size, ns);
+    visualize_node(root_ptr->TrajectoryPoints.back()->point, 2 * node_size, ns);
 
     bool isFirstIteration = true;
-    int j = 1; // initialized at one because of the root node
+    int j = 1;
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
     if (best_branch.size() > 0) {
         previous_trajectory = best_branch[0]->clone();
     }
     while (j < N_max || best_score_ <= 0.0) {
-        // Backtrack
-        /*if (collision_id_counter_ > 1000 * j) {
-            if (previous_trajectory) {
-                next_best_trajectory = previous_trajectory;
-                //rotate();
-                reset_velocity = true;
-                return;
-                //changeState(STATE_WAITING_INITIALIZE);
-            } else {
-                ROS_INFO("[KRH_NBVP_rw]: Enough");
-                collision_id_counter_ = 0;
-                break;
-            }
-            return;
-        }*/
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
-                continue; // Skip first iteration (root)
+                continue;
             }
 
             const Eigen::Vector4d& node_position = best_branch[i]->TrajectoryPoints.back()->point;
@@ -245,12 +228,12 @@ void KRH_NBVP_rw::planStep() {
         if (j >= N_max && best_score_ > 0.0) {
             break;
         }
-    
+
         best_branch.clear();
 
         Eigen::Vector4d rand_point_yaw;
         Eigen::Vector3d rand_point;
-        KinoRRTStar.computeSamplingDimensionsRH_NBVP(bounded_radius, rand_point_yaw);
+        KinoRRTStar.computeSamplingDimensionsYaw(bounded_radius, rand_point_yaw);
         rand_point = rand_point_yaw.head(3);
         rand_point += root_ptr->TrajectoryPoints.back()->point.head(3);
 
@@ -266,14 +249,12 @@ void KRH_NBVP_rw::planStep() {
 
             std::unique_ptr<kino_rrt_star::Trajectory> new_trajectory;
             new_trajectory = std::make_unique<kino_rrt_star::Trajectory>();
-            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel,  max_heading_velocity, max_heading_accel, step_size, new_trajectory);
+            KinoRRTStar.steer_trajectory(nearest_trajectory, max_velocity, reset_velocity, rand_point_yaw[3], accel, max_heading_velocity, max_heading_accel, step_size, new_trajectory);
             new_trajectory->TrajectoryPoints.back()->point[3] = rand_point_yaw[3];
 
             bool OutOfBounds = false;
 
-           if (new_trajectory->TrajectoryPoints.back()->point[0] > initial_offset[0] + max_x || new_trajectory->TrajectoryPoints.back()->point[0] < initial_offset[0] + min_x 
-                || new_trajectory->TrajectoryPoints.back()->point[1] < initial_offset[1] + min_y || new_trajectory->TrajectoryPoints.back()->point[1] > initial_offset[1] + max_y 
-                || new_trajectory->TrajectoryPoints.back()->point[2] < initial_offset[2] + min_z || new_trajectory->TrajectoryPoints.back()->point[2] > initial_offset[2] + max_z) {
+            if (new_trajectory->TrajectoryPoints.back()->point[0] > initial_offset[0] + max_x || new_trajectory->TrajectoryPoints.back()->point[0] < initial_offset[0] + min_x || new_trajectory->TrajectoryPoints.back()->point[1] < initial_offset[1] + min_y || new_trajectory->TrajectoryPoints.back()->point[1] > initial_offset[1] + max_y || new_trajectory->TrajectoryPoints.back()->point[2] < initial_offset[2] + min_z || new_trajectory->TrajectoryPoints.back()->point[2] > initial_offset[2] + max_z) {
                 OutOfBounds = true;
                 break;
             }
@@ -290,7 +271,7 @@ void KRH_NBVP_rw::planStep() {
                 /*if (collision_id_counter_ > 1000 * j) {
                     break;
                 }*/
-               // Avoid Memory Leak
+                // Avoid Memory Leak
                 new_trajectory.reset();
                 continue;
             }
@@ -314,7 +295,6 @@ void KRH_NBVP_rw::planStep() {
 
             kino_rrt_star::Trajectory* added = KinoRRTStar.addKDTreeTrajectory(std::move(new_trajectory));
             visualize_trajectory(added, ns);
-
         }
 
         if (accel_iteration == 0) {
@@ -338,14 +318,13 @@ void KRH_NBVP_rw::planStep() {
     ROS_INFO("[KRH_NBVP_rw]: Final Best Score: %f", best_score_);
     ROS_INFO("[KRH_NBVP_rw]: Node Iterations: %d", j);
     ROS_INFO("[KRH_NBVP_rw]: Full Node Iterations: %d", expanded_num_nodes);
-    
+
     if (best_trajectory) {
         reset_velocity = false;
         next_best_trajectory = best_trajectory;
         KinoRRTStar.backtrackTrajectory(best_trajectory, best_branch, next_best_trajectory);
         visualize_best_trajectory(best_trajectory, ns);
     }
-
 }
 
 bool KRH_NBVP_rw::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -371,7 +350,6 @@ bool KRH_NBVP_rw::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigg
     res.success = true;
     res.message = "starting";
     return true;
-
 }
 
 bool KRH_NBVP_rw::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -399,7 +377,6 @@ bool KRH_NBVP_rw::callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigge
     res.success = true;
     res.message = ss.str();
     return true;
-
 }
 
 bool KRH_NBVP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
@@ -422,21 +399,20 @@ bool KRH_NBVP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trig
     initial_offset[0] = pose[0];
     initial_offset[1] = pose[1];
     initial_offset[2] = pose[2];
-    
+
     geometry_msgs::Point offset_msg;
     offset_msg.x = initial_offset[0];
     offset_msg.y = initial_offset[1];
     offset_msg.z = initial_offset[2];
-    
+
     pub_offset.publish(offset_msg);
-    
+
     std::stringstream ss;
     ss << "Getting initial position offset: [" << initial_offset[0] << ", " << initial_offset[1] << ", " << initial_offset[2] << "]";
 
     res.success = true;
     res.message = ss.str();
     return true;
-
 }
 
 void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) {
@@ -445,7 +421,7 @@ void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr m
     }
     ROS_INFO_ONCE("[KRH_NBVP_rw]: getting LocalPose diagnostics");
     uav_local_pose = msg->pose;
-    
+
     const geometry_msgs::Quaternion& q = uav_local_pose.orientation;
 
     // Check for NaNs or zero-length quaternion
@@ -453,13 +429,13 @@ void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr m
         ROS_ERROR("[KRH_NBVP_rw]: Invalid quaternion received (contains NaNs)");
         return;
     }
-    
-    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);    
+
+    double norm = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     if (norm < 0.1 || norm > 1.1) {
-      ROS_WARN_THROTTLE(5, "[KRH_NBVP_rw] Invalid quaternion detected. Norm: %.3f. Skipping this pose.", norm);
-      return;
+        ROS_WARN_THROTTLE(5, "[KRH_NBVP_rw] Invalid quaternion detected. Norm: %.3f. Skipping this pose.", norm);
+        return;
     }
-    
+
     double yaw = 0.0;
     try {
         yaw = mrs_lib::getYaw(uav_local_pose);
@@ -467,7 +443,7 @@ void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr m
         ROS_ERROR_THROTTLE(1.0, "[KRH_NBVP_rw]: Exception during getYaw(): %s — skipping this pose.", e.what());
         return;
     }
-    
+
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
 }
 
@@ -484,7 +460,7 @@ void KRH_NBVP_rw::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
     }
-    
+
     ready_to_plan_ = true;
 
     std_msgs::Bool starter;
@@ -523,7 +499,7 @@ void KRH_NBVP_rw::timerMain(const ros::TimerEvent& event) {
             setpoint_reference.header.frame_id = frame_id;
             setpoint_reference.header.stamp = ros::Time::now();
             setpoint_reference.coordinate_frame = 1;
-            setpoint_reference.type_mask = 2496; // 2048;
+            setpoint_reference.type_mask = 2496;
 
             if (next_best_trajectory->parent) {
                 setpoint_reference.position.x = next_best_trajectory->parent->TrajectoryPoints.back()->point[0];
@@ -558,13 +534,12 @@ void KRH_NBVP_rw::timerMain(const ros::TimerEvent& event) {
                 if (i >= next_best_trajectory->TrajectoryPoints.size() - 2) {
                     break;
                 }
-                
+
                 ros::Duration(0.1).sleep();
             }
 
             changeState(STATE_MOVING);
             break;
-            
         }
         case STATE_MOVING: {
             ROS_INFO("[KRH_NBVP_rw]: waiting for command");
@@ -675,7 +650,7 @@ void KRH_NBVP_rw::visualize_trajectory(kino_rrt_star::Trajectory* trajectory, co
 
 void KRH_NBVP_rw::visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns) {
     kino_rrt_star::Trajectory* currentTrajectory = trajectory;
-    
+
     while (currentTrajectory->parent) {
         visualization_msgs::Marker best_trajectory_marker;
         best_trajectory_marker.header.stamp = ros::Time::now();
@@ -714,7 +689,7 @@ void KRH_NBVP_rw::visualize_best_trajectory(kino_rrt_star::Trajectory* trajector
 
 void KRH_NBVP_rw::visualize_frustum(kino_rrt_star::Node* position) {
     Eigen::Vector4d trajectory_point_visualize = position->point;
-    
+
     visualization_msgs::Marker frustum;
     frustum.header.frame_id = frame_id;
     frustum.header.stamp = ros::Time::now();
@@ -744,7 +719,7 @@ void KRH_NBVP_rw::visualize_unknown_voxels(kino_rrt_star::Node* position) {
 
     voxblox::Pointcloud voxel_points;
     segment_evaluator.visualizeGain(trajectory_point_visualize, voxel_points);
-    
+
     visualization_msgs::MarkerArray voxels_marker;
     for (size_t i = 0; i < voxel_points.size(); ++i) {
         visualization_msgs::Marker unknown_voxel;

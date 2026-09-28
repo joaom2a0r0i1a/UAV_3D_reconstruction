@@ -1,12 +1,6 @@
 #!/bin/bash
-# Pull the wall clock from the PC before a flight session starts.
-#
-# The Jetson RTC has no backup cell, so after every power cycle the clock reads
-# 1970 and every run directory is stamped 19700101_*, which eval_rw.sh's 2*_*
-# glob never matches.  This runs ONCE, before roscore, on purpose: stepping the
-# clock while nodes are up would corrupt bag and TF timestamps.
-#
-# Never fatal -- no PC in range just means the clock stays as it is.
+# Clock sync from the PC before roscore, never fatal
+# The Jetson RTC has no backup cell
 set -u
 PC="${PC_HOST:-lt-l4@192.168.50.2}"
 

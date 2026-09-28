@@ -4,7 +4,7 @@
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "AEP");
-    
+
     google::InitGoogleLogging(argv[0]);
     google::ParseCommandLineFlags(&argc, &argv, false);
     google::InstallFailureSignalHandler();

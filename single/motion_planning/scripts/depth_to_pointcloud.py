@@ -12,25 +12,25 @@ class GazeboSensorModel:
     def __init__(self):
         rospy.init_node('gazebo_sensor_model', anonymous=True)
 
-        # === Parameters ===
+        # Parameters
         self.bridge = CvBridge()
         self.model = rospy.get_param('~model_type', 'ground_truth')
-        self.max_range = rospy.get_param('~maximum_distance', 0.0)  # 0 = no limit
-        self.min_range = rospy.get_param('~minimum_distance', 0.0)  # 0 = no limit
+        self.max_range = rospy.get_param('~maximum_distance', 0.0)
+        self.min_range = rospy.get_param('~minimum_distance', 0.0)
         self.flatten_distance = rospy.get_param('~flatten_distance', 0.0)
         self.publish_inf_depth = rospy.get_param('~publish_inf_depth', False)
 
-        # invalid_is_far: true (sim) flattens invalid pixels to far clearing rays; false (real) makes them NaN so they can't carve through surfaces.
+        # Invalid pixels far (sim) or NaN (real)
         self.invalid_is_far = rospy.get_param('~invalid_is_far', True)
 
-        # downsample_step: N keeps every Nth row/col before projection (replaces the real chain's external pcl_filter downsampling).
+        # Keep every Nth row and column
         self.downsample_step = rospy.get_param('~downsample_step', 0)
         out_topic   = rospy.get_param('~pointcloud_out', '~pointcloud')
         self.frame_id = rospy.get_param('~frame_id', 'camera')
 
         # Model dependent params
         if self.model == 'gaussian_depth_noise':
-            # coefficients for polynomial, f(z) = k0 + k1z + k2z^2 + k3z^3
+            # Polynomial coefficients
             self.coefficients = np.array([0.0]*8)
             for i in range(4):
                 self.coefficients[i] = rospy.get_param('~k_mu_%i' % i, 0.0)
@@ -52,13 +52,13 @@ class GazeboSensorModel:
             self.pub_inf_depth = rospy.Publisher('~depth_inf', Image, queue_size=1)
 
         self.color_img = None
-        self.camera_params = None  # [width, height, focal_length]
+        self.camera_params = None
 
         rospy.loginfo("Gazebo sensor model initialized and running...")
 
-    # === Callbacks ===
+    # Callbacks
     def info_callback(self, msg):
-        # Derive approximate focal length from intrinsics
+        # Focal length from intrinsics
         fx = msg.K[0]
         self.camera_params = [msg.width, msg.height, fx]
 
@@ -83,11 +83,11 @@ class GazeboSensorModel:
             depth = depth[::self.downsample_step, ::self.downsample_step]
             color_img = color_img[::self.downsample_step, ::self.downsample_step]
 
-        # Replace zeros or NaNs with infinity (no hit)
+        # Zeros and NaNs to infinity
         invalid = np.isnan(depth) | (depth <= 0.0)
         if self.min_range > 0:
             invalid = invalid | (depth < self.min_range)
-        depth = np.array(depth, dtype=np.float32)  # writable copy (slices/passthrough may be read-only)
+        depth = np.array(depth, dtype=np.float32)
         depth[invalid] = np.inf
 
         if self.flatten_distance > 0:
@@ -103,7 +103,7 @@ class GazeboSensorModel:
             z = self.process_gaussian_depth_noise(z)
 
         if not self.invalid_is_far:
-            # Real sensors: drop invalid pixels (mask flattened per-point) and publish only valid points as a flat height=1 all-finite cloud.
+            # Real sensors publish valid points only
             invalid_per_point = invalid.flatten()
             valid_per_point = np.logical_not(invalid_per_point)
             x_valid = x[valid_per_point]
@@ -141,26 +141,27 @@ class GazeboSensorModel:
 
         self.pub_pc.publish(msg_out)
 
-    # === Core computation ===
+    # Core Computation
     def depth_to_3d(self, depth):
         width, height, f = self.camera_params
 
-        # Work in the (possibly downsampled) grid; scaling the focal length by the same factor keeps the projection identical to full-res (exact for step=1).
+        # Focal length scaled with the grid
         rows, cols = depth.shape
         fs = f * cols / float(width)
         cx = cols / 2.0
         cy = rows / 2.0
 
         u, v = np.meshgrid(np.arange(cols), np.arange(rows))
-        z = depth.flatten()  # X forward
+        # X forward, Y left, Z up
+        z = depth.flatten()
         x = z
-        y = -(u.flatten() - cx) * z / fs  # Y left
-        z_coord = -(v.flatten() - cy) * z / fs  # Z up
+        y = -(u.flatten() - cx) * z / fs
+        z_coord = -(v.flatten() - cy) * z / fs
 
         return x, y, z_coord
 
     def publish_flat(self, stamp, x, y, z, rgb):
-        """Publish an unorganized (height=1) cloud of only-valid points; all finite -> is_dense true."""
+        """Publish only the valid points as a flat cloud"""
         msg_out = PointCloud2()
         msg_out.header.stamp = stamp
         msg_out.header.frame_id = self.frame_id
@@ -181,7 +182,7 @@ class GazeboSensorModel:
 
     @staticmethod
     def rgb_to_float(img):
-        """Convert RGB uint8 image to packed float format for PointCloud2."""
+        """RGB image to packed float"""
         r = np.ravel(img[:, :, 0]).astype(np.uint32)
         g = np.ravel(img[:, :, 1]).astype(np.uint32)
         b = np.ravel(img[:, :, 2]).astype(np.uint32)
@@ -189,8 +190,7 @@ class GazeboSensorModel:
         return np.array(unpack('%df' % len(rgb), pack('%dI' % len(rgb), *rgb)))
 
     def process_gaussian_depth_noise(self, z_in):
-        # Add a depth dependent guassian error term to the perceived depth. Mean and stddev can be specified as up to
-        # deg3 polynomials.
+        # Depth dependent Gaussian noise
         mu = np.ones(np.shape(z_in)) * self.coefficients[0]
         sigma = np.ones(np.shape(z_in)) * self.coefficients[4]
         for i in range(1, 4):

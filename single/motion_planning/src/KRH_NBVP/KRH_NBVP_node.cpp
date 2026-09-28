@@ -4,7 +4,7 @@
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "KRH_NBVP");
-    
+
     google::InitGoogleLogging(argv[0]);
     google::ParseCommandLineFlags(&argc, &argv, false);
     google::InstallFailureSignalHandler();
@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     ros::NodeHandle nh;
     ros::NodeHandle nh_private("~");
     KRH_NBVP planner(nh, nh_private);
-    
+
     ros::spin();
     return 0;
 }

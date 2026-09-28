@@ -8,26 +8,16 @@
 
 #include <mrs_msgs/ControlManagerDiagnostics.h>
 #include <mrs_msgs/UavState.h>
-#include <mrs_msgs/TrackerCommand.h>
-#include <mrs_msgs/DynamicsConstraints.h>
-#include <mrs_msgs/MpcPredictionFullState.h>
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/GetPathSrv.h>
-#include <mrs_msgs/TrajectoryReferenceSrv.h>
-#include <mrs_msgs/Vec1.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox_ros/tsdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -36,26 +26,23 @@
 #include <gain_evaluation/gain_evaluator.h>
 #include "motion_planning/planner_helpers.h"
 
-#include <map>
 #include <chrono>
 #include <algorithm>
 #include <cmath>
 
-typedef enum
-{
-  STATE_IDLE,
-  STATE_INITIALIZE,
-  STATE_WAITING_INITIALIZE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_INITIALIZE,
+    STATE_WAITING_INITIALIZE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
 
-
 class RH_NBVP {
-public:
+  public:
     RH_NBVP(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -65,7 +52,7 @@ public:
 
     void planStep();
 
-    // Fixed-yaw gain evaluation (duplicated from AEP; RH_NBVP keeps each node's random yaw).
+    // Gain Evaluation
     void evaluateGains(const std::vector<rrt_star::Node*>& nodes);
     void benchmarkGains(const std::vector<rrt_star::Node*>& nodes, const char* phase = "nbvp");
     std::vector<rrt_star::Node*> collectTreeNodes();
@@ -83,7 +70,7 @@ public:
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
-    
+
     void changeState(const State_t new_state);
 
     void visualize_tree(const std::vector<rrt_star::Node*>& nodes, const std::string& ns);
@@ -95,7 +82,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -142,34 +129,35 @@ private:
     double radius;
     double step_size;
     double min_edge_length_;
-    bool fixed_step;   // false = classic RRT (edge <= step_size); true = every edge exactly step_size
+    bool fixed_step;
     double tolerance;
     int num_yaw_samples;
 
-    // Gain-evaluation options
+    // Gain Evaluation Options
     bool marginal_gain;
-    bool optimize_yaw;          // false = keep each node's random sampled yaw; true = pick argmax yaw per node (like AEP)
-    std::string eval_compute;   // "gpu" or "cpu"
+    bool optimize_yaw;
+    std::string eval_compute;
     bool marginal_split;
     std::string objective_;
+
+    // Benchmark
     bool benchmark_mode;
-    std::string bench_suite_ = "timing";   // which suite(s): batch_check | accuracy | timing (comma-sep)
-
-    // Benchmark accumulators (reset each RH_NBVP cycle)
+    std::string bench_suite_ = "timing";
     planner_helpers::BenchAccum bench_;
-    float  last_marg_kernel_ms_, last_abs_kernel_ms_;
+    float last_marg_kernel_ms_, last_abs_kernel_ms_;
 
-    // GPU map cache (for gpu / flat-map fixed-yaw eval)
+    // GPU Map Cache
     std::vector<uint8_t> flat_map_;
     Eigen::Vector3d map_origin_;
     Eigen::Vector3i map_dim_;
 
-    int  replan_count_;
-    double     timing_after_s_;
-    bool       nbv_started_;
-    bool       timing_window_;
-    int        capture_count_;
-    int        capture_max_;
+    // Timing Capture
+    int replan_count_;
+    double timing_after_s_;
+    bool nbv_started_;
+    bool timing_window_;
+    int capture_count_;
+    int capture_max_;
 
     // Timer Parameters
     double timer_main_rate;
@@ -184,28 +172,34 @@ private:
 
     // Planner Parameters
     double uav_radius;
-    double collision_check_resolution_;   // [m] edge-sampling spacing for isEdgeCollisionFree (default 0.2)
-    // --- optimistic-edges gate + IN-PLANNER backtrack (bounds the tree-build loop so planStep() can't spin) ---
-    bool   optimistic_edges_ = true;      // set each replan: unknown=traversable only for the first replans
-    int    optimistic_iterations_;        // # of initial replans allowed to plan through unknown space
-    bool   recovery_enabled_ = true;      // master toggle for the in-planner backtrack (OFF for benchmark idle runs)
-    double recovery_boxed_deadline_;      // [s] if the tree is still tiny after this, backtrack (boxed in)
-    int    recovery_min_tree_;            // "tree still empty" node count for the boxed-in check
-    double recovery_timeout_;             // [s] hard deadline: backtrack after this no matter what
+    double collision_check_resolution_;
     double lambda;
+
+    // Optimistic Edges
+    bool optimistic_edges_ = true;
+    int optimistic_iterations_;
+
+    // Recovery
+    bool recovery_enabled_ = true;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
 
     // Tree variables
     std::vector<Eigen::Vector4d> path;
     std::vector<Eigen::Vector4d> prev_best_branch;
     std::vector<Eigen::Vector4d> best_branch;
     rrt_star::Node* next_best_node = nullptr;
-    std::unique_ptr<rrt_star::Node> previous_node;  // owning copy, survives clearKDTree()
-    std::vector<Eigen::Vector4d> executed_path_;    // flown poses (forward moves); boxed-in backtrack retreats along it
-    bool retreating_ = false;                       // set only by a backtrack, cleared each STATE_PLANNING cycle
-    std::unique_ptr<rrt_star::Node> retreat_node_;  // holds the current retreat pose
+    std::unique_ptr<rrt_star::Node> previous_node;
     Eigen::Vector4d trajectory_point;
     Eigen::Vector4d next_start;
 
+    // Retreat Along Flown Path
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
+    std::unique_ptr<rrt_star::Node> retreat_node_;
+
+    // Execution Horizon
     int execution_horizon_;
     std::vector<Eigen::Vector4d> exec_waypoints_;
     size_t exec_index_ = 0;
@@ -220,7 +214,7 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -250,12 +244,8 @@ private:
     ros::ServiceServer ss_start;
     ros::ServiceServer ss_stop;
 
-    // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
-    mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
-
     // Timers
     ros::Timer timer_main;
 };
 
-#endif // RH_NBVP_H
+#endif  // RH_NBVP_H

@@ -70,7 +70,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   )
   
- # mrs-free helpers shared by the real AEP + RH_NBVP planners
+ # Shared helpers without MRS
 add_library(planner_helpers_rw
   src/planner_helpers_rw.cpp
   )
@@ -110,13 +110,13 @@ target_link_libraries(KRH_NBVP_rw_lib ${catkin_LIBRARIES})
 target_link_libraries(AEP_rw_lib ${catkin_LIBRARIES} planner_helpers_rw)
 target_link_libraries(KAEP_rw_lib ${catkin_LIBRARIES})
 
- # Add executable for RH_NBVP_rw_node.cpp
+ # Add executables
 add_executable(RH_NBVP_rw src/RH_NBVP/RH_NBVP_rw_node.cpp)
 add_executable(KRH_NBVP_rw src/KRH_NBVP/KRH_NBVP_rw_node.cpp)
 add_executable(AEP_rw src/AEP/AEP_rw_node.cpp)
 add_executable(KAEP_rw src/KAEP/KAEP_rw_node.cpp)
 
-# tf broadcast
+# TF broadcaster
 add_executable(mavros_tf_broadcaster src/mavros_tf_broadcaster.cpp)
 target_link_libraries(mavros_tf_broadcaster ${catkin_LIBRARIES})
 

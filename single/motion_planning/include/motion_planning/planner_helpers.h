@@ -1,8 +1,7 @@
-#ifndef MOTION_PLANNING_PLANNER_HELPERS_H
-#define MOTION_PLANNING_PLANNER_HELPERS_H
+#ifndef PLANNER_HELPERS_H
+#define PLANNER_HELPERS_H
 
-// Stateless helpers shared by AEP and RH-NBVP (Plan 3, step 2). Free functions that take the
-// needed state explicitly, so both planners' methods are thin wrappers over one implementation.
+// Helpers shared by AEP and RH_NBVP
 
 #include <vector>
 #include <memory>
@@ -19,14 +18,13 @@
 
 namespace planner_helpers {
 
-// ESDF clearance at a world position (0.0 if no ESDF or the point is unmapped).
+// ESDF clearance at a position
 double getMapDistance(const voxblox::EsdfServer& server, const Eigen::Vector3d& position);
 
 // True iff every node on the path clears uav_radius.
 bool isPathCollisionFree(const voxblox::EsdfServer& server, const std::vector<rrt_star::Node*>& path, double uav_radius);
 
-// Sample the straight segment from->to at `resolution` spacing; require clearance >= uav_radius at each.
-// optimistic_edges: treat unobserved space as free (bootstrap away from spawn) vs. blocking it.
+// Edge clearance check
 bool isEdgeCollisionFree(const voxblox::EsdfServer& server, const Eigen::Vector3d& from, const Eigen::Vector3d& to,
                          double uav_radius, double resolution, bool optimistic_edges);
 
@@ -42,7 +40,7 @@ bool inBoundingBox(const Eigen::Vector4d& p, float min_x, float max_x, float min
 // Log each non-root node's gain / score-contribution / score.
 void logTreeNodes(rrt_star& tree, double lambda);
 
-// --- RViz marker helpers. Publisher / frame / marker-namespace passed explicitly; id counters mutated in place. ---
+/*                RVIZ MARKERS               */
 void visualize_tree(ros::Publisher& pub_markers, const std::string& frame_id, const std::string& ns,
                     const std::vector<rrt_star::Node*>& nodes);
 void visualize_path(ros::Publisher& pub_markers, const std::string& frame_id, const std::string& ns,
@@ -50,36 +48,36 @@ void visualize_path(ros::Publisher& pub_markers, const std::string& frame_id, co
 void clear_all_voxels(ros::Publisher& pub_voxels);
 void clearMarkers(ros::Publisher& pub_markers, int& node_id_counter, int& edge_id_counter, int& path_id_counter);
 
-// Gain benchmark suites: batch_check, accuracy, timing. HIL runs timing.
+/*               GAIN BENCHMARK              */
 
-// Per-cycle timing accumulators (abs + G_all only); reset with `acc = {}` each planning cycle.
+// Per-cycle timing accumulators
 struct BenchAccum {
     double ms_gall_gpu = 0, ms_abs_gpu = 0, ms_abs_cpu = 0, ms_gall_cpu = 0;
     double kernel_gall_gpu = 0, kernel_abs_gpu = 0;
-    int    nodes = 0;
+    int nodes = 0;
 };
 
-// Batched-pool marginal gain vs the layered reference; logs [bench_batch_check].
+// Batch check suite
 void benchmarkBatchCheck(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
-                             bool optimize_yaw, bool marginal_split, const char* phase);
+                         bool optimize_yaw, bool marginal_split, const char* phase);
 
-// Per-node CPU-vs-GPU gain values (abs / 1-parent / all) -> RH_NBVP_ACCURACY_CSV for R².
+// Accuracy suite
 void benchmarkAccuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
-                         const std::vector<uint8_t>& flat_map, bool optimize_yaw, int replan_count, const char* phase);
+                       const std::vector<uint8_t>& flat_map, bool optimize_yaw, int replan_count, const char* phase);
 
-// Timing of abs + G_all (CPU and GPU) on one tree; logs [timing_marg]/[timing_abs]/[timing_cpu]/[X1cpu].
+// Timing suite
 void benchmarkTiming(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
-                       const std::vector<uint8_t>& flat_map, BenchAccum& acc,
-                       bool optimize_yaw, bool marginal_split, int replan_count, const char* phase);
+                     const std::vector<uint8_t>& flat_map, BenchAccum& acc,
+                     bool optimize_yaw, bool marginal_split, int replan_count, const char* phase);
 
-// Run whichever suite(s) the comma-separated string names ("batch_check"/"accuracy"/"timing").
+// Run the named suites
 void runBenchSuite(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                    const std::vector<uint8_t>& flat_map, BenchAccum& acc, const std::string& suite,
                    bool optimize_yaw, bool marginal_split, int replan_count, const char* phase);
 
-// End-of-cycle console summary of the accumulated timings.
+// Timing summary
 void logBenchSummary(const BenchAccum& acc);
 
-}  // namespace planner_helpers
+}
 
-#endif  // MOTION_PLANNING_PLANNER_HELPERS_H
+#endif  // PLANNER_HELPERS_H

@@ -1,91 +1,86 @@
-#ifndef RRT_CONSTRUCTION_GPU_RAYCAST_LAUNCH_H
-#define RRT_CONSTRUCTION_GPU_RAYCAST_LAUNCH_H
+#ifndef GPU_RAYCAST_LAUNCH_H
+#define GPU_RAYCAST_LAUNCH_H
 
 #include <stdint.h>
 #include <stddef.h>
 
-// Angular sample count = floor(span/step + snap-tolerance); one shared CPU+GPU definition.
+// Angular sample count, shared by CPU and GPU
 static inline int angular_bins(float span, float step) {
     int n = (int)(span / step + 1e-3f);
     return n > 0 ? n : 1;
 }
 
+/*           GPU LAUNCHER ARGUMENTS          */
 
-/* GPU LAUNCHER ABI (impl in gpu_raycaster.cu; args bundled into POD structs, passed by value across extern "C") */
-
-// World-space point (host mirror of CUDA float3).
+// World Point
 typedef struct {
     float x, y, z;
 } GpuVec3;
 
-// Occupancy grid cached on the GPU: device buffer + dimensions + world origin.
+// Occupancy grid cached on the GPU
 typedef struct {
-    uint8_t* d_map;     // device occupancy grid
-    int dx, dy, dz;     // grid dimensions (voxels)
-    float ox, oy, oz;   // world position of voxel (0,0,0)
+    uint8_t* d_map;       // Device occupancy grid
+    int      dx, dy, dz;  // Grid dimensions (voxels)
+    float    ox, oy, oz;  // World position of voxel (0,0,0)
 } GpuMap;
 
-// Sensor + evaluation tunables shared by every launcher.
+// Sensor and evaluation parameters shared by every launcher
 typedef struct {
-    float voxel_size;   // voxel edge length (m)
-    float gain_range;   // maximum ray range (m)
-    float fov_y;        // horizontal field of view (rad)
-    float fov_p;        // vertical field of view (rad)
-    float pitch;        // camera pitch (rad)
+    float voxel_size;  // Voxel edge length (m)
+    float gain_range;  // Maximum ray range (m)
+    float fov_y;       // Horizontal field of view (rad)
+    float fov_p;       // Vertical field of view (rad)
+    float pitch;       // Camera pitch (rad)
 } GpuSensor;
 
-// Batch of candidate positions as separate x/y/z host arrays.
+// Candidate Positions
 typedef struct {
     float* x;
     float* y;
     float* z;
-    int count;
+    int    count;
 } GpuCandidates;
 
-// Host output buffers for one or many candidates (depths may be null).
+// Output Buffers
 typedef struct {
     float* gain;
     float* yaw;
     float* depths;
 } GpuResult;
 
-// Full ancestor chain for multi-frustum marginal gain; single-parent passes count=1.
+// Ancestor chain of one candidate (count = 1 for single parent)
 typedef struct {
-    int count;
-    float* pos;     // 3*count  (x,y,z per ancestor)
-    float* yaw;     // count
-    float* R;       // 9*count  (row-major rows per ancestor)
-    float* depth;   // count*p_width*p_height, or null
+    int    count;  // Number of ancestors
+    float* pos;    // [3*count] x,y,z per ancestor
+    float* yaw;    // [count] yaw per ancestor
+    float* R;      // [9*count] row-major rotation per ancestor
+    float* depth;  // [count*p_width*p_height] depth buffers, or null
 } GpuAncestors;
 
-// CSR wavefront: candidate c owns ancestors [offsets[c], offsets[c+1]); depth lives in the persistent pool (d_pool), indexed by each ancestor's GLOBAL depth_idx.
+// Ancestor chains of a batch: candidate c owns ancestors [offsets[c], offsets[c+1]),
+// whose depth buffers live in the persistent depth pool
 typedef struct {
-    int          num_candidates;
-    const int*   offsets;   // [num_candidates+1] prefix sum of per-candidate ancestor counts
-    int          total;     // total ancestors across the batch
-    const float* pos;       // [3*total]  (x,y,z per ancestor)
-    const float* yaw;       // [total]
-    const float* R;         // [9*total]  (row-major rows per ancestor)
-    const int*   depth_idx; // [total] GLOBAL pool slot per ancestor
+    int          num_candidates;  // Number of candidates
+    const int*   offsets;         // [num_candidates+1] prefix sum of per-candidate ancestor counts
+    int          total;           // Total ancestors across the batch
+    const float* pos;             // [3*total] x,y,z per ancestor
+    const float* yaw;             // [total] yaw per ancestor
+    const float* R;               // [9*total] row-major rotation per ancestor
+    const int*   depth_idx;       // [total] depth pool slot per ancestor
 } GpuAncestorBatch;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
-/* EXPECTED-INFORMATION-GAIN LAUNCHERS */
+/*               ABSOLUTE GAIN               */
 void launch_absolute_gain_batch(GpuMap map, GpuCandidates cands, GpuResult out, GpuSensor cfg, float* kernel_ms);
 
-
-/* SINGLE-NODE MARGINAL-GAIN LAUNCHER (one kernel over an ancestor set: count=1 = single-parent, N = multi-ancestor) */
+/*           MARGINAL GAIN - SINGLE          */
 void launch_marginal_gain(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
-                                 GpuResult out, GpuSensor cfg);
+                          GpuResult out, GpuSensor cfg);
 
-
-/* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both GPU-resident-pool: ancestor depth is
-   read in place from d_pool via anc.depth_idx, each candidate writes its render to d_pool[out_slot[c]];
-   kernel_ms=device ms; fixed_yaws=RH_NBVP per-candidate or null=AEP) */
+/*          MARGINAL GAIN - BATCHED          */
 void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
                                       GpuSensor cfg, float* kernel_ms,
@@ -97,21 +92,18 @@ void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                       const float* fixed_yaws,
                                       float* d_pool, const int* out_slot);
 
-
-/* FIXED-YAW VARIANTS (RH_NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
+/*                 FIXED YAW                 */
 void launch_absolute_gain_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
-                                    GpuSensor cfg, const float* fixed_yaws, float* kernel_ms);
+                                      GpuSensor cfg, const float* fixed_yaws, float* kernel_ms);
 void launch_marginal_gain_fixed(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
-                                       GpuResult out, GpuSensor cfg, float fixed_yaw);
+                                GpuResult out, GpuSensor cfg, float fixed_yaw);
 
-
-/* PERSISTENT DEPTH-POOL DEVICE MEMORY (host owns *d_pool + *capacity; grow preserves contents, new region = -1). */
+/*                 DEPTH POOL                */
 void wrapper_depth_pool_ensure(float** d_pool, int* capacity, int need, int per);
 void wrapper_depth_pool_free(float* d_pool);
 void wrapper_depth_slot_to_host(const float* d_pool, int slot, int per, float* host_out);
 
-
-/* THIN DEVICE-MEMORY WRAPPERS (host owns the cached map buffer) */
+/*               DEVICE MEMORY               */
 void wrapper_cuda_malloc(uint8_t** dev_ptr, size_t size);
 void wrapper_cuda_free(void* dev_ptr);
 void wrapper_cuda_memcpy(void* dev_ptr, const void* host_ptr, size_t size);
@@ -120,4 +112,4 @@ void wrapper_cuda_memcpy(void* dev_ptr, const void* host_ptr, size_t size);
 }
 #endif
 
-#endif  // RRT_CONSTRUCTION_GPU_RAYCAST_LAUNCH_H
+#endif  // GPU_RAYCAST_LAUNCH_H

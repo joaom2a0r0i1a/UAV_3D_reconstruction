@@ -12,7 +12,7 @@ int main(int argc, char** argv) {
     ros::NodeHandle nh;
     ros::NodeHandle nh_private("~");
     RH_NBVP planner(nh, nh_private);
-    
+
     ros::spin();
     return 0;
 }

@@ -41,14 +41,14 @@ typedef bg::model::box<Point> Box;
 typedef std::pair<Point, cache_nodes::Node> RTreeValue;
 
 class Cached {
-public:
+  public:
     Cached(ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
-private:
+  private:
     void GetTransformation();
     void callbackUavState(const mrs_msgs::UavState::ConstPtr& msg);
-    void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr& msg);   // real-world pose source (mavros)
-    void callbackOffset(const geometry_msgs::Point::ConstPtr& msg);            // real-world start offset -> shift gain box
+    void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr& msg);
+    void callbackOffset(const geometry_msgs::Point::ConstPtr& msg);
     void timerReevaluate(const ros::TimerEvent&);
     void callbackGain(const cache_nodes::Node::ConstPtr& msg);
     bool callbackBestNode(cache_nodes::BestNode::Request& req, cache_nodes::BestNode::Response& res);
@@ -69,18 +69,22 @@ private:
 
     // Transformer
     std::unique_ptr<mrs_lib::Transformer> transformer_;
-
     geometry_msgs::TransformStamped T_C_B_message;
     voxblox::Transformation T_C_B;
 
     ros::ServiceServer ss_best_node;
     ros::Subscriber sub_gain;
+
+    // Simulation Variable
     ros::Subscriber sub_uav_state;
-    ros::Subscriber sub_local_pose;   // real-world alternative to uav_state (whichever publishes wins)
-    ros::Subscriber sub_offset;       // planner's latched start offset (real world)
+
+    // Real-World Variables
+    ros::Subscriber sub_local_pose;
+    ros::Subscriber sub_offset;
+
     ros::Timer reevaluate_timer;
 
-    bool use_ns_prefix_ = true;       // false for real world: frames are bare (map/base_link), no uavX/ prefix
+    bool use_ns_prefix_ = true;
 
     ros::CallbackQueue fast_queue_;
     std::unique_ptr<ros::AsyncSpinner> fast_spinner_;
@@ -102,4 +106,4 @@ private:
     double x, y, z;
 };
 
-#endif // CACHED_H
+#endif  // CACHED_H

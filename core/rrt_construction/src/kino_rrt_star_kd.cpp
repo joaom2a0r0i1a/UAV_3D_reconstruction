@@ -3,11 +3,16 @@
 // Constructors
 kino_rrt_star::kino_rrt_star() {}
 
-kino_rrt_star::Node::Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v, const Eigen::Vector3d& a) : point(p), velocity(v), acceleration(a) {}
+kino_rrt_star::Node::Node(const Eigen::Vector4d& p, const Eigen::Vector3d& v, const Eigen::Vector3d& a)
+    : point(p), velocity(v), acceleration(a) {}
 
-kino_rrt_star::Trajectory::Trajectory() : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {}
+kino_rrt_star::Trajectory::Trajectory()
+    : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {}
 
-kino_rrt_star::Trajectory::Trajectory(std::unique_ptr<Node> Node) : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {TrajectoryPoints.push_back(std::move(Node));}
+kino_rrt_star::Trajectory::Trajectory(std::unique_ptr<Node> Node)
+    : parent(nullptr), cost(0.0), gain(0.0), score(0.0), cost1(0.0), cost2(0.0) {
+    TrajectoryPoints.push_back(std::move(Node));
+}
 
 std::unique_ptr<kino_rrt_star::Trajectory> kino_rrt_star::Trajectory::clone() const {
     auto copy = std::make_unique<Trajectory>();
@@ -25,18 +30,11 @@ std::unique_ptr<kino_rrt_star::Trajectory> kino_rrt_star::Trajectory::clone() co
 
 // Add and clear Nodes
 void kino_rrt_star::KDTree_data::clear() {
-    // Clear the raw coordinate mirror FIRST, then release trajectory ownership. Every
-    // structural link (Trajectory* parent and std::vector<Trajectory*> children) is
-    // non-owning, so destroying `data` frees all trajectory memory instantly with zero
-    // risk of cyclic retention or double-free.
     points.clear();
     data.clear();
 }
 
 kino_rrt_star::Trajectory* kino_rrt_star::addKDTreeTrajectory(std::unique_ptr<Trajectory> Trajectory) {
-    // The planners set Trajectory->parent before insertion (steer_trajectory*), so
-    // forward that parent to addTrajectory to keep the parent <-> children raw links
-    // aligned as ownership is transferred into the flat `data` vector.
     kino_rrt_star::Trajectory* parentTrajectory = Trajectory->parent;
     kino_rrt_star::Trajectory* observer = tree_data_.addTrajectory(std::move(Trajectory), parentTrajectory);
     kdtree_->addPoints(tree_data_.points.size() - 1, tree_data_.points.size() - 1);
@@ -74,19 +72,19 @@ void kino_rrt_star::computeSamplingDimensions(double radius, Eigen::Vector3d& re
     result = Eigen::Vector3d(rand_x, rand_y, rand_z);
 }
 
-void kino_rrt_star::computeSamplingDimensionsRH_NBVP(double radius, Eigen::Vector4d& result) {
+void kino_rrt_star::computeSamplingDimensionsYaw(double radius, Eigen::Vector4d& result) {
     bool solutionFound = false;
     double rand_x, rand_y, rand_z, rand_yaw;
     while (!solutionFound) {
-        rand_x = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
-        rand_y = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
-        rand_z = 2.0 * radius * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+        rand_x = 2.0 * radius * (((double)rand()) / ((double)RAND_MAX) - 0.5);
+        rand_y = 2.0 * radius * (((double)rand()) / ((double)RAND_MAX) - 0.5);
+        rand_z = 2.0 * radius * (((double)rand()) / ((double)RAND_MAX) - 0.5);
         if (Eigen::Vector3d(rand_x, rand_y, rand_z).norm() > radius) {
             continue;
         }
         solutionFound = true;
     }
-    rand_yaw = 2.0 * M_PI * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+    rand_yaw = 2.0 * M_PI * (((double)rand()) / ((double)RAND_MAX) - 0.5);
     result = Eigen::Vector4d(rand_x, rand_y, rand_z, rand_yaw);
 }
 
@@ -94,14 +92,14 @@ void kino_rrt_star::computeAccelerationSampling(double a_max, Eigen::Vector3d& r
     bool solutionFound = false;
     double a_x, a_y, a_z;
     while (!solutionFound) {
-        a_x = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
-        a_y = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+        a_x = 2.0 * a_max * (((double)rand()) / ((double)RAND_MAX) - 0.5);
+        a_y = 2.0 * a_max * (((double)rand()) / ((double)RAND_MAX) - 0.5);
         if (Eigen::Vector2d(a_x, a_y).norm() > a_max) {
             continue;
         }
         solutionFound = true;
     }
-    a_z = 2.0 * a_max * (((double) rand()) / ((double) RAND_MAX) - 0.5);
+    a_z = 2.0 * a_max * (((double)rand()) / ((double)RAND_MAX) - 0.5);
     result = Eigen::Vector3d(a_x, a_y, a_z);
 }
 
@@ -133,9 +131,9 @@ void kino_rrt_star::steer_trajectory(Trajectory* fromTrajectory, double max_velo
     double current_heading_velocity = 0.0;
     double accel_heading;
 
-    double heading_difference = fmod((target_heading - current_heading + M_PI), (2*M_PI)) - M_PI;
+    double heading_difference = fmod((target_heading - current_heading + M_PI), (2 * M_PI)) - M_PI;
     if (heading_difference < -M_PI) {
-        heading_difference = heading_difference + 2*M_PI;
+        heading_difference = heading_difference + 2 * M_PI;
     }
 
     if (heading_difference > 0) {
@@ -153,11 +151,11 @@ void kino_rrt_star::steer_trajectory(Trajectory* fromTrajectory, double max_velo
     double max_time = 2.0;
 
     bool in_heading_tolerance = false;
-    bool heading_tolerance = max_heading_velocity*dt;
+    bool heading_tolerance = max_heading_velocity * dt;
 
     newTrajectory->parent = fromTrajectory;
     while (time < max_time) {
-    //while (distance < stepSize) {
+        //while (distance < stepSize) {
         if (current_velocity.head(2).norm() > max_velocity) {
             current_velocity.head(2) = current_velocity.head(2).normalized() * max_velocity;
             accel[0] = 0;
@@ -172,7 +170,7 @@ void kino_rrt_star::steer_trajectory(Trajectory* fromTrajectory, double max_velo
             accel[2] = 0;
         }
 
-        Eigen::Vector3d new_position = currentNode->point.head<3>() + current_velocity*dt + 0.5*accel*dt*dt;
+        Eigen::Vector3d new_position = currentNode->point.head<3>() + current_velocity * dt + 0.5 * accel * dt * dt;
 
         if (current_heading_velocity > max_heading_velocity) {
             current_heading_velocity = max_heading_velocity;
@@ -183,15 +181,15 @@ void kino_rrt_star::steer_trajectory(Trajectory* fromTrajectory, double max_velo
         }
 
         double new_heading;
-        if(heading_difference > 0) {
+        if (heading_difference > 0) {
             if (target_heading - current_heading > heading_tolerance) {
-                new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
+                new_heading = current_heading + current_heading_velocity * dt + 0.5 * accel_heading * dt * dt;
             } else {
                 new_heading = current_heading;
             }
         } else {
             if (target_heading - current_heading < -heading_tolerance) {
-                new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
+                new_heading = current_heading + current_heading_velocity * dt + 0.5 * accel_heading * dt * dt;
             } else {
                 new_heading = current_heading;
             }
@@ -241,7 +239,7 @@ void kino_rrt_star::steer_trajectory_linear(Trajectory* fromTrajectory, double m
 
     newTrajectory->parent = fromTrajectory;
     while (time < max_time) {
-    //while (distance < stepSize) {
+        //while (distance < stepSize) {
         if (current_velocity.head(2).norm() > max_velocity) {
             current_velocity.head(2) = current_velocity.head(2).normalized() * max_velocity;
             accel[0] = 0;
@@ -256,7 +254,7 @@ void kino_rrt_star::steer_trajectory_linear(Trajectory* fromTrajectory, double m
             accel[2] = 0;
         }
 
-        Eigen::Vector3d new_position = currentNode->point.head<3>() + current_velocity*dt + 0.5*accel*dt*dt;
+        Eigen::Vector3d new_position = currentNode->point.head<3>() + current_velocity * dt + 0.5 * accel * dt * dt;
         double dx = new_position.x() - currentNode->point.x();
         double dy = new_position.y() - currentNode->point.y();
         double heading = std::atan2(dy, dx);
@@ -288,9 +286,9 @@ void kino_rrt_star::steer_trajectory_angular(Trajectory* fromTrajectory, double 
     double current_heading_velocity = 0.0;
     double accel_heading;
 
-    double heading_difference = fmod((target_heading - current_heading + M_PI), (2*M_PI)) - M_PI;
+    double heading_difference = fmod((target_heading - current_heading + M_PI), (2 * M_PI)) - M_PI;
     if (heading_difference < -M_PI) {
-        heading_difference = heading_difference + 2*M_PI;
+        heading_difference = heading_difference + 2 * M_PI;
     }
 
     if (heading_difference > 0) {
@@ -304,7 +302,7 @@ void kino_rrt_star::steer_trajectory_angular(Trajectory* fromTrajectory, double 
     //toChangeTrajectory->cost2 = abs(heading_difference);
 
     bool in_heading_tolerance = false;
-    bool heading_tolerance = max_heading_velocity*dt;
+    bool heading_tolerance = max_heading_velocity * dt;
     size_t trajectory_size = toChangeTrajectory->TrajectoryPoints.size();
     for (int i = 0; i < trajectory_size; i++) {
         if (current_heading_velocity > max_heading_velocity) {
@@ -316,15 +314,15 @@ void kino_rrt_star::steer_trajectory_angular(Trajectory* fromTrajectory, double 
         }
 
         double new_heading;
-        if(heading_difference > 0) {
+        if (heading_difference > 0) {
             if (target_heading - current_heading > heading_tolerance) {
-                new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
+                new_heading = current_heading + current_heading_velocity * dt + 0.5 * accel_heading * dt * dt;
             } else {
                 new_heading = current_heading;
             }
         } else {
             if (target_heading - current_heading < -heading_tolerance) {
-                new_heading = current_heading + current_heading_velocity*dt + 0.5*accel_heading*dt*dt;
+                new_heading = current_heading + current_heading_velocity * dt + 0.5 * accel_heading * dt * dt;
             } else {
                 new_heading = current_heading;
             }
@@ -337,8 +335,7 @@ void kino_rrt_star::steer_trajectory_angular(Trajectory* fromTrajectory, double 
 }
 
 void kino_rrt_star::backtrackTrajectory(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory, Trajectory*& nextBestTrajectory) {
-    // Collect the branch (trajectory -> root) as observers, tracking the lowest
-    // cost2 interior trajectory for nextBestTrajectory.
+    // Collect Branch
     std::vector<Trajectory*> chain;
     Trajectory* bestInterior = nullptr;
     for (Trajectory* currentTrajectory = trajectory; currentTrajectory; currentTrajectory = currentTrajectory->parent) {
@@ -350,11 +347,9 @@ void kino_rrt_star::backtrackTrajectory(Trajectory* trajectory, std::vector<std:
             }
         }
     }
-    std::reverse(chain.begin(), chain.end());   // root first
+    std::reverse(chain.begin(), chain.end());
 
-    // Emit owning deep copies, relinking parents amongst the clones so the branch
-    // is self-contained and survives clearKDTree(). nextBestTrajectory points at
-    // the clone matching the chosen interior trajectory.
+    // Copy Branch
     fullTrajectory.clear();
     Trajectory* prev_clone = nullptr;
     for (Trajectory* original : chain) {
@@ -369,15 +364,14 @@ void kino_rrt_star::backtrackTrajectory(Trajectory* trajectory, std::vector<std:
 }
 
 void kino_rrt_star::backtrackTrajectoryAEP(Trajectory* trajectory, std::vector<std::unique_ptr<Trajectory>>& fullTrajectory) {
-    // Collect the branch (trajectory -> root) as observers first.
+    // Collect Branch
     std::vector<Trajectory*> chain;
     for (Trajectory* currentTrajectory = trajectory; currentTrajectory; currentTrajectory = currentTrajectory->parent) {
         chain.push_back(currentTrajectory);
     }
-    std::reverse(chain.begin(), chain.end());   // root first
+    std::reverse(chain.begin(), chain.end());
 
-    // Emit owning deep copies, relinking parents amongst the clones so the branch
-    // is self-contained and survives clearKDTree().
+    // Copy Branch
     fullTrajectory.clear();
     Trajectory* prev_clone = nullptr;
     for (Trajectory* original : chain) {

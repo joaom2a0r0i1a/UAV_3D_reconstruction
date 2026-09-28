@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
-#ifndef _MULTIAGENT_COLLISON_CHECKER_H_
-#define _MULTIAGENT_COLLISON_CHECKER_H_
+
+#ifndef MULTIAGENT_COLLISION_CHECKER_H
+#define MULTIAGENT_COLLISION_CHECKER_H
 
 #include <vector>
-#include <Eigen/Dense> 
+#include <Eigen/Dense>
 
 namespace multiagent {
 
@@ -31,6 +31,6 @@ bool isInCollision(const Eigen::Vector4d& state, const double safety_radius,
 
 double closestDistanceBetweenLines(const Eigen::Vector3d& start1, const Eigen::Vector3d& end1,
                                    const Eigen::Vector3d& start2, const Eigen::Vector3d& end2);
-}
+}  //namespace multiagent
 
-#endif // _MULTIAGENT_COLLISON_CHECKER_H_
+#endif  // MULTIAGENT_COLLISION_CHECKER_H

@@ -8,31 +8,19 @@
 
 #include <mrs_msgs/ControlManagerDiagnostics.h>
 #include <mrs_msgs/UavState.h>
-#include <mrs_msgs/TrackerCommand.h>
-#include <mrs_msgs/DynamicsConstraints.h>
 #include <mrs_msgs/Reference.h>
-#include <mrs_msgs/GetPathSrv.h>
-#include <mrs_msgs/TrajectoryReferenceSrv.h>
-#include <mrs_msgs/Vec1.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/service_client_handler.h>
-#include <mrs_lib/scope_timer.h>
 #include <mrs_lib/transformer.h>
 #include <mrs_lib/msg_extractor.h>
-#include <mrs_lib/geometry/misc.h>
 
 #include <voxblox/core/tsdf_map.h>
-#include <voxblox_ros/ros_params.h>
 #include <voxblox_ros/esdf_server.h>
-#include <voxblox_ros/tsdf_server.h>
-#include <voxblox/utils/planning_utils.h>
 
 #include <cache_nodes/Node.h>
-#include <cache_nodes/Query.h>
 #include <cache_nodes/BestNode.h>
-#include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -44,27 +32,23 @@
 
 #include <fstream>
 #include <string>
-#include <ctime>
 #include <sstream>
 #include <chrono>
-#include <map>
 #include <unordered_map>
 
-typedef enum
-{
-  STATE_IDLE,
-  STATE_INITIALIZE,
-  STATE_WAITING_INITIALIZE,
-  STATE_PLANNING,
-  STATE_MOVING,
-  STATE_STOPPED,
+typedef enum {
+    STATE_IDLE,
+    STATE_INITIALIZE,
+    STATE_WAITING_INITIALIZE,
+    STATE_PLANNING,
+    STATE_MOVING,
+    STATE_STOPPED,
 } State_t;
 
 const std::string _state_names_[] = {"IDLE", "INITIALIZE", "WAITING", "PLANNING", "MOVING", "REACHED"};
 
-
 class AEP {
-public:
+  public:
     AEP(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
 
     double getMapDistance(const Eigen::Vector3d& position) const;
@@ -111,7 +95,7 @@ public:
     void clear_all_voxels();
     void clearMarkers();
 
-private:
+  private:
     // Node Handles
     ros::NodeHandle nh_;
     ros::NodeHandle nh_private_;
@@ -165,19 +149,19 @@ private:
     // RRT* Parameters
     int N_min_nodes;
     bool goto_global_planning;
-    std::string global_selection;   // goal pick: "cost" (nearest), "gain" (most info), or "score" (gain vs distance)
+    std::string global_selection;
 
-    // Gain-evaluation options (shared by local + global planner)
-    bool marginal_gain;             // true: marginal gain (path sum in global); false: absolute gain
-    std::string eval_compute;       // "gpu" (batched) or "cpu" (sequential)
-    bool marginal_split;            // marginal+gpu: false = fused kernel, true = split kernel
+    // Gain Evaluation Options
+    bool marginal_gain;
+    std::string eval_compute;
+    bool marginal_split;
     std::string objective_;
-    bool benchmark_mode;            // master on/off for the benchmark (gates whether any suite runs)
-    std::string bench_suite_ = "timing";   // which suite(s): batch_check | accuracy | timing (comma-sep)
 
-    // Benchmark accumulators (reset each AEP cycle; cover local + global)
+    // Benchmark
+    bool benchmark_mode;
+    std::string bench_suite_ = "timing";
     planner_helpers::BenchAccum bench_;
-    double bench_kernel_ms_ = 0.0;               // device (CUDA-event) ms of the last marginal-batched evaluateGains
+    double bench_kernel_ms_ = 0.0;
 
     // Timer Parameters
     double timer_main_rate;
@@ -189,23 +173,25 @@ private:
     int resolution_y;
     double min_distance;
     double max_distance;
-    double camera_pitch_deg; 
-    double camera_pitch;   // downward camera pitch [rad], loaded from camera/pitch [deg]
-
+    double camera_pitch_deg;
+    double camera_pitch;
 
     // Planner Parameters
     double uav_radius;
-    double collision_check_resolution_;   // [m] edge-sampling spacing for isEdgeCollisionFree (default 0.2)
-    double waypoint_reach_distance_;      // [m] advance to next waypoint within this dist; smaller in clutter cuts corner-cutting
-    // --- optimistic-edges gate + IN-PLANNER backtrack (bounds the tree-build loop so planStep() can't spin) ---
-    bool   optimistic_edges_ = true;      // set each replan: unknown=traversable only for the first replans
-    int    optimistic_iterations_;        // # of initial replans allowed to plan through unknown space
-    bool   recovery_enabled_ = true;      // master toggle for the in-planner backtrack (OFF for benchmark idle runs)
-    double recovery_boxed_deadline_;      // [s] if the tree is still tiny after this, backtrack (boxed in)
-    int    recovery_min_tree_;            // "tree still empty" node count for the boxed-in check
-    double recovery_timeout_;             // [s] hard deadline: backtrack after this no matter what
+    double collision_check_resolution_;
+    double waypoint_reach_distance_;
     double lambda;
     double global_lambda;
+
+    // Optimistic Edges
+    bool optimistic_edges_ = true;
+    int optimistic_iterations_;
+
+    // Recovery
+    bool recovery_enabled_ = true;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
 
     // GPU Optimization - Flatten Map
     Eigen::Vector3d map_origin_;
@@ -220,15 +206,16 @@ private:
     std::vector<mrs_msgs::Reference> waypoints_;
     int waypoint_index_ = 0;
 
-    // Local Planner variables. best_branch owns its nodes (outlives clearKDTree()); next_best_node is non-owning.
+    // Local Planner variables
     std::vector<std::unique_ptr<rrt_star::Node>> best_branch;
     rrt_star::Node* next_best_node = nullptr;
-
-    std::vector<Eigen::Vector4d> executed_path_;      // flown poses (forward moves); boxed-in backtrack retreats along it
-    bool retreating_ = false;                         // set only by a backtrack, cleared each STATE_PLANNING cycle
-    std::unique_ptr<rrt_star::Node> retreat_node_;    // holds the current retreat pose (Node has no default ctor)
     Eigen::Vector4d trajectory_point;
     Eigen::Vector4d next_start;
+
+    // Retreat Along Flown Path
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
+    std::unique_ptr<rrt_star::Node> retreat_node_;
 
     // Global Planner variables
     rrt_star::Node* best_global_node = nullptr;
@@ -241,7 +228,7 @@ private:
 
     // State variables
     std::atomic<State_t> state_;
-    std::atomic<bool> ready_to_plan_  = false;
+    std::atomic<bool> ready_to_plan_ = false;
 
     // Visualization variables
     int node_id_counter_;
@@ -275,12 +262,10 @@ private:
     ros::ServiceServer ss_stop;
 
     // Service clients
-    mrs_lib::ServiceClientHandler<mrs_msgs::GetPathSrv> sc_trajectory_generation;
-    mrs_lib::ServiceClientHandler<mrs_msgs::TrajectoryReferenceSrv> sc_trajectory_reference;
     mrs_lib::ServiceClientHandler<cache_nodes::BestNode> sc_best_node;
 
     // Timers
     ros::Timer timer_main;
 };
 
-#endif // AEP_H
+#endif  // AEP_H

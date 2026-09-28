@@ -1,76 +1,70 @@
-# Real-world gain-evaluation config (replaces the sim GainConfig.yaml in the real launches, so
-# real flights stop silently inheriting the sim's active environment box).
-# NOTE: this box is RELATIVE TO THE TAKEOFF POSE — the planner shifts it by the captured start offset via GainEvaluator::setWorldOffset.
+# Real World Gain Config, box relative to the takeoff pose
 
-# School sim-test (ABSOLUTE school gain box pre-compensated for spawn -22,0; used with session_realtest.yml)
+# School Sim Test
 #gain_evaluation:
-#  min_x: 5.0 # [m]
-#  max_x: 39.0 # [m]
+#  min_x: 5.0   # [m]
+#  max_x: 39.0  # [m]
 #  min_y: -12.0 # [m]
-#  max_y: 7.0 # [m]
-#  min_z: 0.0 # [m]
-#  max_z: 14.5 # [m]
+#  max_y: 7.0   # [m]
+#  min_z: 0.0   # [m]
+#  max_z: 14.5  # [m]
 
-# Patio Lamp - measured region: 10 m across (4 left, 6 right), 13 m north, 6 m up.
-# Not inset by uav_radius: this bounds VOXELS, not the drone.
+# Patio Lamp
 #gain_evaluation:
 #  min_x: -4.0 # [m]
-#  max_x: 6.0 # [m]
-#  min_y: 0.0 # [m]
+#  max_x: 6.0  # [m]
+#  min_y: 0.0  # [m]
 #  max_y: 13.0 # [m]
-#  min_z: 0.0 # [m]
-#  max_z: 6.0 # [m]
+#  min_z: 0.0  # [m]
+#  max_z: 6.0  # [m]
 
-# Short Grove (active) (three trees, 22 m along x, 5 m wide, canopy ~7 m + 1 m slope allowance)
+# Short Grove
 gain_evaluation:
   min_x: -22.0 # [m]
-  max_x: 0.0 # [m]
-  min_y: -2.5 # [m]
-  max_y: 2.5 # [m]
-  min_z: 0.0 # [m]
-  max_z: 8.0 # [m]
+  max_x: 0.0   # [m]
+  min_y: -2.5  # [m]
+  max_y: 2.5   # [m]
+  min_z: 0.0   # [m]
+  max_z: 8.0   # [m]
 
-# Long Grove (four trees, 32 m along x, canopy ~8 m + 1.5 m slope allowance)
+# Long Grove
 #gain_evaluation:
 #  min_x: -32.0 # [m]
-#  max_x: 0.0 # [m]
-#  min_y: -2.5 # [m]
-#  max_y: 2.5 # [m]
-#  min_z: 0.0 # [m]
-#  max_z: 9.5 # [m]
+#  max_x: 0.0   # [m]
+#  min_y: -2.5  # [m]
+#  max_y: 2.5   # [m]
+#  min_z: 0.0   # [m]
+#  max_z: 9.5   # [m]
 
-# Long Clearing (no trees, same dimensions as Long Grove - occlusion-free control)
+# Long Clearing
 #gain_evaluation:
 #  min_x: -32.0 # [m]
-#  max_x: 0.0 # [m]
-#  min_y: -2.5 # [m]
-#  max_y: 2.5 # [m]
-#  min_z: 0.0 # [m]
-#  max_z: 9.5 # [m]
+#  max_x: 0.0   # [m]
+#  min_y: -2.5  # [m]
+#  max_y: 2.5   # [m]
+#  min_z: 0.0   # [m]
+#  max_z: 9.5   # [m]
 
 # Basketball
 #gain_evaluation:
 #  min_x: -4.0 # [m]
-#  max_x: 4.0 # [m]
+#  max_x: 4.0  # [m]
 #  min_y: -4.0 # [m]
-#  max_y: 4.0 # [m]
-#  min_z: 0.0 # [m]
-#  max_z: 5.0 # [m]
+#  max_y: 4.0  # [m]
+#  min_z: 0.0  # [m]
+#  max_z: 5.0  # [m]
 
 # IST Lamp
-#  min_x: 2.0 # [m]
-#  max_x: 7.0 # [m]
+#  min_x: 2.0  # [m]
+#  max_x: 7.0  # [m]
 #  min_y: -2.0 # [m]
-#  max_y: 2.0 # [m]
-#  min_z: 0.0 # [m]
-#  max_z: 6.0 # [m]
+#  max_y: 2.0  # [m]
+#  min_z: 0.0  # [m]
+#  max_z: 6.0  # [m]
 
 camera_intrinsics:
-  h_fov: 1.38203 # [rad] measured on the D455 colour stream at 640x480, fx 386.92
-  v_fov: 1.11157 # [rad] measured, fy 386.42
+  h_fov: 1.38203  # [rad]
+  v_fov: 1.11157  # [rad]
   max_distance: 5 # [m]
   yaw_samples: 15
-  pitch: 10.0 # [deg]
-
-accurate_frontiers: false
-checking_distance: 2.0
+  pitch: 10.0     # [deg]

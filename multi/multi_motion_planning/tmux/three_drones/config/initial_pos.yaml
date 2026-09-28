@@ -1,6 +1,6 @@
 uav1:
   id: 1
-  x: -22 
+  x: -22
   y: 0
   z: 0.5
   heading: 0
@@ -22,46 +22,46 @@ uav3:
 ####################################################################################
 ################################### MAZE ###########################################
 ####################################################################################
-# 1st layout -> Joint Start 1
+# 1st layout, joint start 1
 #uav1:
 #  id: 1
-#  x: 8.5 
+#  x: 8.5
 #  y: 7.5
 #  z: 0.5
 #  heading: 3.14159
 
 #uav2:
 #  id: 2
-#  x: 0.0 
+#  x: 0.0
 #  y: 7.5
 #  z: 0.5
 #  heading: 3.14159
 
 #uav3:
 #  id: 3
-#  x: -8.5 
+#  x: -8.5
 #  y: 7.5
 #  z: 0.5
 #  heading: -1.57079
 
-# 2nd layout -> Separated Start 1
+# 2nd layout, separated start 1
 #uav1:
 #  id: 1
-#  x: 8.5 
+#  x: 8.5
 #  y: 7.5
 #  z: 0.5
 #  heading: 3.14159
 
 #uav2:
 #  id: 2
-#  x: 8.5 
+#  x: 8.5
 #  y: 4.0
 #  z: 0.5
 #  heading: 1.57079
 
 #uav3:
 #  id: 3
-#  x: -8.5 
+#  x: -8.5
 #  y: -7.5
 #  z: 0.5
 #  heading: 0.0
@@ -69,7 +69,7 @@ uav3:
 ####################################################################################
 ############################ POLICE STATION ########################################
 ####################################################################################
-# 1st layout -> Joint Start 1
+# 1st layout, joint start 1
 #uav1:
 #  id: 1
 #  x: -12
@@ -91,10 +91,10 @@ uav3:
 #  z: 0.5
 #  heading: 0
 
-# 2st layout -> Joint Start 2
+# 2nd layout, joint start 2
 #uav1:
 #  id: 1
-#  x: 12 
+#  x: 12
 #  y: 0
 #  z: 0.5
 #  heading: 3.14159
@@ -113,10 +113,10 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 3rd layout -> Joint Start 3
+# 3rd layout, joint start 3
 #uav1:
 #  id: 1
-#  x: 0 
+#  x: 0
 #  y: -13.5
 #  z: 0.5
 #  heading: 1.57079
@@ -135,10 +135,10 @@ uav3:
 #  z: 0.5
 #  heading: 1.57079
 
-# 4th layout -> Joint Start 4
+# 4th layout, joint start 4
 #uav1:
 #  id: 1
-#  x: 0 
+#  x: 0
 #  y: 13.5
 #  z: 0.5
 #  heading: -1.57079
@@ -157,10 +157,10 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 5th layout -> Separated Start 1
+# 5th layout, separated start 1
 #uav1:
 #  id: 1
-#  x: -12 
+#  x: -12
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -179,10 +179,10 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 6th layout -> Separated Start 2
+# 6th layout, separated start 2
 #uav1:
 #  id: 1
-#  x: -12 
+#  x: -12
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -201,10 +201,10 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 7th layout -> Separated Start 3
+# 7th layout, separated start 3
 #uav1:
 #  id: 1
-#  x: -12 
+#  x: -12
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -223,10 +223,10 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 8th layout -> Separated Start 4
+# 8th layout, separated start 4
 #uav1:
 #  id: 1
-#  x: 12 
+#  x: 12
 #  y: 0
 #  z: 0.5
 #  heading: 3.14159
@@ -249,10 +249,10 @@ uav3:
 ####################################################################################
 ############################ SCHOOL ################################################
 ####################################################################################
-# 1st layout -> Joint Start 1 #(Done 2x (06/08, 16/08) RH_NBVP, Done 2x (15/08, 16/08) AEP)
+# 1st layout, joint start 1 (RH_NBVP 2x, AEP 2x)
 #uav1:
 #  id: 1
-#  x: -22 
+#  x: -22
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -271,10 +271,10 @@ uav3:
 #  z: 0.5
 #  heading: 0
 
-# 2st layout -> Joint Start 2 #(Done 1x (07/08) RH_NBVP, Done 1x (16/08) AEP)
+# 2nd layout, joint start 2 (RH_NBVP 1x, AEP 1x)
 #uav1:
 #  id: 1
-#  x: 22 
+#  x: 22
 #  y: 0
 #  z: 0.5
 #  heading: 3.14159
@@ -293,10 +293,10 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 3rd layout -> Joint Start 3 #(Done 1x (08/08) RH_NBVP, Done 1x (17/08) AEP)
+# 3rd layout, joint start 3 (RH_NBVP 1x, AEP 1x)
 #uav1:
 #  id: 1
-#  x: 0 
+#  x: 0
 #  y: -17
 #  z: 0.5
 #  heading: 1.57079
@@ -315,10 +315,10 @@ uav3:
 #  z: 0.5
 #  heading: 1.57079
 
-# 4th layout -> Joint Start 4 #(Done 1x (08/08) RH_NBVP, Done 1x (17/08) AEP)
+# 4th layout, joint start 4 (RH_NBVP 1x, AEP 1x)
 #uav1:
 #  id: 1
-#  x: 0 
+#  x: 0
 #  y: 12
 #  z: 0.5
 #  heading: -1.57079
@@ -337,10 +337,10 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 5th layout -> Separated Start 1 #(Done 2x (05/08) RH_NBVP, Done 2x (16/08, 17/08) AEP)
+# 5th layout, separated start 1 (RH_NBVP 2x, AEP 2x)
 #uav1:
 #  id: 1
-#  x: -22 
+#  x: -22
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -359,10 +359,10 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 6th layout -> Separated Start 2 #(Done 1x (16/08) RH_NBVP, Done 1x (16/08) AEP)
+# 6th layout, separated start 2 (RH_NBVP 1x, AEP 1x)
 #uav1:
 #  id: 1
-#  x: -22 
+#  x: -22
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -381,10 +381,10 @@ uav3:
 #  z: 0.5
 #  heading: 3.14159
 
-# 7th layout -> Separated Start 3 #(Done 1x (16/08) RH_NBVP, Done 1x (16/08) AEP)
+# 7th layout, separated start 3 (RH_NBVP 1x, AEP 1x)
 #uav1:
 #  id: 1
-#  x: -22 
+#  x: -22
 #  y: 0
 #  z: 0.5
 #  heading: 0
@@ -403,10 +403,10 @@ uav3:
 #  z: 0.5
 #  heading: -1.57079
 
-# 8th layout -> Separated Start 4 #(Done 1x (16/08) RH_NBVP, Done 1x (17/08) AEP)
+# 8th layout, separated start 4 (RH_NBVP 1x, AEP 1x)
 #uav1:
 #  id: 1
-#  x: 22 
+#  x: 22
 #  y: 0
 #  z: 0.5
 #  heading: 3.14159

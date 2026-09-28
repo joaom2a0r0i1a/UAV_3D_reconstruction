@@ -100,7 +100,7 @@ target_link_libraries(KRH_NBVP_lib ${catkin_LIBRARIES})
 target_link_libraries(AEP_lib ${catkin_LIBRARIES})
 target_link_libraries(KAEP_lib ${catkin_LIBRARIES})
 
- # Add executable for RH_NBVP_node.cpp
+ # Add executables
 add_executable(RH_NBVP src/RH_NBVP/RH_NBVP_node.cpp)
 add_executable(KRH_NBVP src/KRH_NBVP/KRH_NBVP_node.cpp)
 add_executable(AEP src/AEP/AEP_node.cpp)
@@ -126,7 +126,6 @@ install(TARGETS ${LIBRARIES}
 
 catkin_install_python(PROGRAMS
   scripts/depth_to_pointcloud.py
-  scripts/rqt_plot_velocity.py
   scripts/evaluation/nodes/eval_data_node.py
   scripts/evaluation/nodes/eval_plotting_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -2,17 +2,13 @@
 #define KD_TREE_H
 
 #include <Eigen/Dense>
-#include <iostream>
-#include <random>
-#include <algorithm>
-#include <limits>
 #include <vector>
 #include <memory>
 
 #include <rrt_construction/libs/nanoflann.hpp>
 
 class kd_tree {
-public:
+  public:
     struct KDTree_point {
         std::vector<Eigen::Vector3d> points;
 
@@ -33,13 +29,19 @@ public:
         }
 
         inline double kdtree_get_pt(const size_t idx, int dim) const {
-            if (dim == 0) return points[idx].x();
-            else if (dim == 1) return points[idx].y();
-            else return points[idx].z();
+            if (dim == 0) {
+                return points[idx].x();
+            } else if (dim == 1) {
+                return points[idx].y();
+            } else {
+                return points[idx].z();
+            }
         }
 
         template <class BBOX>
-        bool kdtree_get_bbox(BBOX& /*bb*/) const { return false; }
+        bool kdtree_get_bbox(BBOX& /*bb*/) const {
+            return false;
+        }
     };
 
     // Define the type for the KD-tree
@@ -55,9 +57,9 @@ public:
 
     void findNearestKDPoint(const Eigen::Vector3d& point, Eigen::Vector3d& nearest);
 
-private:
+  private:
     std::unique_ptr<Tree_points> goal_tree_;
     KDTree_point tree_points_;
 };
 
-#endif // KD_TREE_H
+#endif  // KD_TREE_H

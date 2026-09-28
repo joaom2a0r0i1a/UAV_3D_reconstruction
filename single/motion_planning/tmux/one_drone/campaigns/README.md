@@ -1,63 +1,74 @@
 # Campaign files for `run_campaign.sh`
 
-One parameterized driver (`../run_campaign.sh`) + `../lib_campaign.sh` replace the
-~25 one-off experiment drivers. Each campaign is a small sourced-bash file here.
+One parameterized driver (`../run_campaign.sh`) + `../lib_campaign.sh` run every experiment
+campaign. Each campaign is a small sourced-bash file here. Settings reach the stack as
+environment variables, no config file is edited.
 
 ## Run
 
 ```bash
 cd ..
-./run_campaign.sh --dry-run campaigns/school_n10.conf   # validate config injection, no launch
-./run_campaign.sh          campaigns/school_n10.conf    # configure + run + eval
-./run_campaign.sh -N 5     campaigns/school_n10.conf     # override target good runs
-./run_campaign.sh --eval-only campaigns/school_n10.conf # re-evaluate existing runs
-./run_campaign.sh --no-eval    campaigns/school_n10.conf # runs only
+./run_campaign.sh --dry-run   campaigns/aep_smoke.conf   # print settings and commands, no launch
+./run_campaign.sh             campaigns/aep_smoke.conf   # run + eval
+./run_campaign.sh -N 5        campaigns/aep_smoke.conf   # override target good runs
+./run_campaign.sh -T 900      campaigns/aep_smoke.conf   # override the per-run time limit
+./run_campaign.sh --eval-only campaigns/aep_smoke.conf   # re-evaluate existing runs
+./run_campaign.sh --no-eval   campaigns/aep_smoke.conf   # runs only
 ```
 
-`--dry-run` copies the 4 config files to a temp dir, applies the edits there, and
-prints the resulting diffs + the supervise/eval commands it *would* run — it never
-touches the real configs, the container, or tmux.
+`--dry-run` prints the resolved world, planner and per-condition settings plus the
+supervise/eval commands it *would* run. It never touches the container or tmux and writes
+nothing in the repo.
 
 ## Campaign fields
 
 | field | values | meaning |
 |-------|--------|---------|
-| `WORLD` | `school` \| `police` | session.yml world+spawn, AEP bounded_box, GainConfig region |
-| `PLANNER` | `aep` \| `nbvp` | session.yml planner launch line |
+| `WORLD` | `school` \| `police` \| `warehouse` \| `multistory` \| `big_maze` | world, spawn and regions from `uav_gazebo_environments/config/<world>.yaml`, plus the per-world planner tables in `lib_campaign.sh` |
+| `PLANNER` | `aep` \| `nbvp` \| `kaep` \| `krhnbvp` | planner launched by `planner.launch` |
 | `N` | int | target **good** runs per condition (supervise tops up to this) |
-| `T` | seconds | wall-clock kill per run (school 1850, police 950) |
-| `EARLY_STOP` | `true`\|`false` | stop ~`GRACE`s after planner self-terminates, pad coverage curve |
+| `T` | seconds | wall-clock kill per run, empty = world time limit + 50 s |
+| `EARLY_STOP` | `true` \| `false` | stop ~`GRACE` s after the planner self-terminates, pad the coverage curve |
 | `GRACE` | seconds | early-stop grace (default 60.0) |
 | `KEEP_FOLDER` | `multi_series_<name>` | where the stage-2 render is moved |
 | `SUMMARY` | filename | decision summary written under `variants_logs/` |
-| `RESTORE` | `true`\|`false` | restore repo to school / AEP-marginal-R1A at end (default true) |
+| `RESTORE` | `true` \| `false` | reset the exported settings to school / AEP marginal at the end (default true) |
+| `MAP_KEEP` | int | after evaluation keep every `MAP_KEEP`-th voxblox map and the last (default 5) |
 | `CONDITIONS` | array | one line per condition (see below) |
+
+`VOXEL_SIZE` (default 0.2, or from the environment) can also be set in the conf.
 
 ## Condition format
 
-**AEP:** `label|gain|variant[|rrt_star]`
-- `gain` = `abs` \| `marg` \| `control`
-- `variant` = `R1A|R2A|R1B|R2B` — R1/R2 = `marginal_edge_follow_yaw` false/true, A/B = `marginal_score_pathsum` true/false
-- `rrt_star` = `false`\|`true` (optional, default false)
+**AEP:** `label|gain|_|rrt_star|objective|N_max|N_termination|N_min_nodes`
+- `gain` = `abs` \| `marg` \| `control` (`control` = absolute gain)
+- `rrt_star` = `false` \| `true` (optional, default false)
+- `objective` = `expdecay` \| `rate_L` (optional, default expdecay)
+- node set (optional, empty keeps the world default)
 
-**RH_NBVP:** `label|gain|nmax|nterm|step|fixed[|optyaw]`
+**RH_NBVP:** `label|gain|nmax|nterm|step|fixed|optyaw|objective|horizon`
 - `gain` = `abs` \| `marg`
-- `nterm` MUST be `> nmax` (receding-horizon ceiling; asserted)
+- `nterm` MUST be `> nmax` (receding-horizon ceiling, asserted)
 - `fixed` = `fixed_step` (true = every edge == step_size)
 - `optyaw` = `optimize_yaw` (optional, default true)
+- `objective` = `expdecay` \| `rate_L` (optional, default expdecay)
+- `horizon` = execution horizon in steps (optional, default 1)
 
-## Presets → which old drivers they replace
+## Presets
 
-| conf | replaces |
-|------|----------|
-| `school_n10.conf` | school_to10_fs, school_campaign, school_to5/to9/3h, school_control_absR1A* (use `-N`) |
-| `police_n10.conf` | police_to10_fs, police_absmarg_fresh_fs, police_campaign, police_all_to10_campaign |
-| `police_variants.conf` | police_variants_campaign |
-| `aep_school_rrt_sweep.conf` | aep_campaign |
-| `nbvp_school_yawopt.conf` | nbvp_school_yawopt_2way |
-| `nbvp_school_nmax_sweep.conf` | nbvp_school_nmax_sweep, nbvp_day1_complete/resume/extra, nbvp_day2_n500 |
-| `nbvp_school_step_fixed.conf` | nbvp_overnight_20260730, nbvp_day2b_n250_fixedstep, nbvp_step05_n50_1200 |
+| conf | what it runs |
+|------|--------------|
+| `aep_smoke.conf`, `nbvp_smoke.conf` | one short run, pipeline check |
+| `aep_school_GL.conf`, `nbvp_school_GL.conf` | school, rate_L objective, absolute vs marginal |
+| `nbvp_school_yawopt.conf` | school RH-NBVP with yaw optimization, absolute vs marginal |
+| `nbvp_school_nmax_sweep.conf` | school RH-NBVP node-count sweep |
+| `nbvp_school_step_fixed.conf` | school RH-NBVP fixed step |
+| `school_nbvp_fixedstep_{50_300,500_1000,1000_1500}.conf` | school RH-NBVP fixed-step node sets |
+| `warehouse_aep.conf`, `warehouse_nbvp.conf` | warehouse, absolute vs marginal |
+| `multistory_n10.conf`, `multistory_nbvp.conf` | multistory, absolute vs marginal |
+| `big_maze_aep.conf`, `big_maze_nbvp.conf` | big maze, absolute vs marginal |
+| `big_maze_nbvp_GL.conf` | big maze RH-NBVP, rate_L objective |
+| `big_maze_nbvp_h3_10v10.conf`, `big_maze_nbvp_h5.conf` | big maze RH-NBVP execution horizon 3 and 5 |
 
-Shared infra kept as-is: `run_experiments.sh`, `supervise_runs.sh`, `session.yml`,
-`start.sh`, `kill.sh`. Eval-only helpers `aep_eval.sh`/`pol_eval.sh` are covered
-by `--eval-only`.
+Shared infra: `run_experiments.sh`, `supervise_runs.sh`, `environment.sh`, `session.yml`,
+`start.sh`, `kill.sh`.

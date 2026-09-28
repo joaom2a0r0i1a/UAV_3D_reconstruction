@@ -1,14 +1,12 @@
 <launch>
-  <!-- Data source Data, -->
+  <!-- Data Source -->
   <arg name="target_directory" default="$(find motion_planning)/data" />
   <arg name="gt_file_path" default="$(find motion_planning)/data/gt_school_processed.ply"/>
-  <arg name="experiment_config" default="School.yaml"/>
+  <arg name="environment" default="school"/>
   <arg name="method" default="all"/>
-  <!-- Comma-separated method folders to compare in multi_series mode
-       (e.g. "GPU_abs_RRT,GPU_marg_RRT"). Empty => auto-discover under target_directory. -->
   <arg name="series_labels" default=""/>
 
-  <!-- what to evaluate -->
+  <!-- Evaluation Steps -->
   <arg name="multi_series" default="false"/>
   <arg name="series" default="false"/>
   <arg name="evaluate" default="true"/>
@@ -17,16 +15,15 @@
   <arg name="create_meshes" default="false"/>
   <arg name="create_plots" default="true"/>
   <arg name="show_plots" default="false"/>
-  <arg name="clear_voxblox_maps" default="false"/>
-  <!-- automatic irreversible(!) map removal to free disk space -->
 
-  <!-- Eval args -->
+  <!-- Map removal to free disk space, irreversible -->
+  <arg name="clear_voxblox_maps" default="false"/>
+
+  <!-- Evaluation Parameters -->
   <arg name="truncation_distance" default="0.0"/>
   <arg name="mesh_every_n_steps" default="1"/>
 
-
-
-  <!-- plotting is the main node, voxblox encapsulates c++ voxblox code -->
+  <!-- Plotting Node -->
   <node name="eval_plotting_node" pkg="motion_planning" type="eval_plotting_node.py" output="screen" required="true">
     <param name="target_directory" value="$(arg target_directory)" />
     <param name="method" value="$(arg method)" />
@@ -42,6 +39,7 @@
     <param name="clear_voxblox_maps" value="$(arg clear_voxblox_maps)" />
   </node>
 
+  <!-- Voxblox Evaluation Node -->
   <node name="eval_voxblox_node" pkg="motion_planning" type="eval_voxblox_node" output="screen">
     <param name="ground_truth_path" value="$(arg gt_file_path)" />
     <param name="create_meshes" value="$(arg create_meshes)" />
@@ -50,6 +48,6 @@
     <param name="evaluate_volume" value="$(arg evaluate_volume)" />
     <param name="truncation_distance" value="$(arg truncation_distance)" />
     <param name="mesh_every_n_steps" value="$(arg mesh_every_n_steps)" />
-    <rosparam command="load" file="$(find motion_planning)/config/$(arg experiment_config)"/>
+    <rosparam command="load" file="$(find environments)/config/$(arg environment).yaml"/>
   </node>
 </launch>

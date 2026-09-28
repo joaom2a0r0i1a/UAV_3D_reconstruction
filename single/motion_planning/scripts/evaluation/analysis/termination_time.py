@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-# termination_time.py — AEP-only planner termination time, log-based: per run,
-# ("Planner terminated" timestamp - "Succesfully started the simulation" timestamp)
-# from data_log.txt. RH-NBVP never self-terminates (hits the time limit) -> NA/excluded.
+# AEP termination time from data_log.txt
 # Usage: MP=<motion_planning_dir> termination_time.py <label1> [label2 ...]
 import os, glob, re, sys
 from datetime import datetime
@@ -34,7 +32,7 @@ def stats(vals):
     if n == 0:
         return (0, float('nan'), float('nan'))
     m = sum(vals) / n
-    return (n, m, (sum((x - m) ** 2 for x in vals) / n) ** 0.5)
+    return (n, m, (sum((x - m)**2 for x in vals) / n)**0.5)
 
 
 def main():
@@ -49,7 +47,8 @@ def main():
         for d in runs:
             log = os.path.join(d, 'data_log.txt')
             tm = term_minutes(log) if os.path.isfile(log) else None
-            print("   %-20s term=%s" % (os.path.basename(d), "%.2f min" % tm if tm else "NA (no self-termination)"))
+            print("   %-20s term=%s" %
+                  (os.path.basename(d), "%.2f min" % tm if tm else "NA (no self-termination)"))
             vals.append(tm)
         n, m, s = stats(vals)
         print("   -> N=%d  mean=%.2f  std=%.2f  min" % (n, m, s))

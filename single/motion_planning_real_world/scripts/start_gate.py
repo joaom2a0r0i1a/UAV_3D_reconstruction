@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Interactive planner start gate. Confirm after GUIDED; then s stops, o re-offsets, q quits.
+# Interactive planner start gate, s stops, o re-offsets, q quits
 import select
 import sys
 
@@ -14,11 +14,10 @@ class StartGate(object):
         self.planner_ns = rospy.get_param('~ns_planner', 'planner_node')
         self.mode_required = rospy.get_param('~mode_required', 'GUIDED')
 
-        # automatic starts the planner itself once the preconditions hold, manual asks first
+        # Automatic or manual start
         self.auto_start = rospy.get_param('~auto_start', False)
-        
-        # preconditions must hold this long before an automatic start, mavros mode and armed
-        # both glitch for single samples and must not trigger a mission
+
+        # Hold time before an automatic start
         self.auto_start_settle = rospy.get_param('~auto_start_settle', 3.0)
         self.mode = '?'
         self.armed = False
@@ -41,11 +40,10 @@ class StartGate(object):
         self.last_pose_t = rospy.get_time()
 
     def pose_fresh(self):
-        return (self.last_pose_t is not None
-                and rospy.get_time() - self.last_pose_t < 2.0)
+        return (self.last_pose_t is not None and rospy.get_time() - self.last_pose_t < 2.0)
 
     def planner_up(self):
-        # throttled: the probe is an XML-RPC round trip, no need to run it every refresh
+        # Throttled service probe
         now = rospy.get_time()
         if (self.planner_checked_t is not None
                 and now - self.planner_checked_t < self.planner_check_period):
@@ -60,33 +58,32 @@ class StartGate(object):
 
     def status_line(self):
         return ("mode=%-8s armed=%s planner=%s pose=%s      " %
-                (self.mode, "Y" if self.armed else "n",
-                 "up" if self.planner_up() else "DOWN",
+                (self.mode, "Y" if self.armed else "n", "up" if self.planner_up() else "DOWN",
                  "fresh" if self.pose_fresh() else "STALE"))
 
     def prompt(self, text):
-        # Full-line prompt with bell; blocks THIS pane only.
+        # Blocking prompt with bell
         sys.stdout.write('\a\n' + text)
         sys.stdout.flush()
         return sys.stdin.readline().strip().lower()
 
     def wait_key(self, timeout):
-        # Non-blocking single-line read with timeout (lets the status line keep refreshing).
+        # Non-blocking read with timeout
         r, _, _ = select.select([sys.stdin], [], [], timeout)
         if r:
             return sys.stdin.readline().strip().lower()
         return None
 
     def run(self):
-        rospy.loginfo("[start_gate]: up — waiting for %s mode (planner ns: %s)",
-                      self.mode_required, self.planner_ns)
+        rospy.loginfo("[start_gate]: up — waiting for %s mode (planner ns: %s)", self.mode_required,
+                      self.planner_ns)
         started = False
         while not rospy.is_shutdown():
             if not started:
                 sys.stdout.write('\r' + self.status_line())
                 sys.stdout.flush()
-                ready = (self.mode == self.mode_required and self.armed
-                         and self.planner_up() and self.pose_fresh())
+                ready = (self.mode == self.mode_required and self.armed and self.planner_up()
+                         and self.pose_fresh())
                 if not ready:
                     self.ready_since = None
                     rospy.sleep(1.0)
@@ -98,8 +95,8 @@ class StartGate(object):
                         rospy.sleep(0.5)
                         continue
                     ans = 'y'
-                    print("\nauto start: preconditions held for %.0fs, starting planner."
-                          % self.auto_start_settle)
+                    print("\nauto start: preconditions held for %.0fs, starting planner." %
+                          self.auto_start_settle)
                 else:
                     ans = self.prompt("Start Planner? [Y/n] ")
                 if ans in ('', 'y', 'yes'):
