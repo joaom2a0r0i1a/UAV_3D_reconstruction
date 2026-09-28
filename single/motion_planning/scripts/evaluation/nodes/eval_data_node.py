@@ -257,7 +257,7 @@ class EvalData(object):
         self.writelog("Finished the simulation, %d/%d maps created." % (n_maps, self.eval_n_maps))
         self.eval_log_file.close()
         rospy.loginfo("On eval_data_node shutdown: closing data files.")
-        # Completion sentinel for run_experiments.sh
+        # Completion sentinel for run scripts
         try:
             open(os.path.join(os.path.dirname(self.eval_directory), ".run_complete"), "w").close()
         except Exception:

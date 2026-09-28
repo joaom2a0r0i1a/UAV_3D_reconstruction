@@ -2,8 +2,8 @@
 <package format="2">
 
   <name>motion_planning</name>
-  <version>0.0.0</version>
-  <description>The motion planner</description>
+  <version>1.0.0</version>
+  <description>Single-UAV exploration planners and their evaluation.</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
   <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>

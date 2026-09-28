@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>gain_evaluation</name>
-  <version>0.0.0</version>
-  <description>Information-gain evaluation package.</description>
+  <version>1.0.0</version>
+  <description>Information gain evaluation on the CPU and GPU.</description>
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
-  <license>BSD</license>
+  <license>TODO</license>
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>rospy</depend>

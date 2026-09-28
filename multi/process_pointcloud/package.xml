@@ -2,11 +2,11 @@
 <package format="2">
   <name>process_pointcloud</name>
   <version>1.0.0</version>
-  <description>The process_pointcloud package</description>
+  <description>Pointcloud processing for multi-UAV mapping.</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
 
-  <license>MIT</license>
+  <license>TODO</license>
 
   <author>Joao Mendes</author>
 

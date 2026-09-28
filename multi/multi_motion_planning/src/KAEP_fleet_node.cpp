@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include "multidrone_motion_planning/KAEP_fleet.h"
+#include "multi_motion_planning/KAEP_fleet.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "KAEP_fleet");

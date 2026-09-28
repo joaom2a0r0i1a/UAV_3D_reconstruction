@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>multi_motion_planning</name>
-  <version>0.0.0</version>
-  <description>The multidrone_motion_planning package</description>
+  <version>1.0.0</version>
+  <description>Centralized multi-UAV exploration planners.</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
   <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>cache_nodes</name>
-  <version>0.0.1</version>
-  <description>The cache package</description>
+  <version>1.0.0</version>
+  <description>Caches local planner nodes in an R-tree for the global planner.</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
 

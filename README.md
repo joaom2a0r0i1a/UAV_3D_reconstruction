@@ -111,7 +111,7 @@ cd ~/catkin_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone
 For a three-drone simulation:
 
 ```bash
-cd ~/catkin_ws/src/UAV_3D_reconstruction/multi_motion_planning/tmux/three_drones
+cd ~/catkin_ws/src/UAV_3D_reconstruction/multi/multi_motion_planning/tmux/three_drones
 ./start.sh
 ```
 To configure which simulation scenario and algorithms to run, edit the ```session.yml``` file accordingly. This follows the standard MRS UAV System format. 

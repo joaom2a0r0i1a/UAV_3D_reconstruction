@@ -1,5 +1,5 @@
 <launch>
-  <!-- Environment and Campaign Overrides -->
+  <!-- Environment and Parameter Overrides -->
   <arg name="env" default="$(optenv PLANNER_ENV)" />
   <arg name="overrides" default="$(optenv PLANNER_OVERRIDES)" />
 

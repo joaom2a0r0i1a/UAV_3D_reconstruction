@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 # yapf: disable
 MP  = os.environ.get("MP") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-LOG = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ACCURACY_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
+LOG = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ACCURACY_LOG", ".")
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("ACCURACY_OUT", LOG)
 os.makedirs(OUT, exist_ok=True)
 NS  = [50, 100, 500, 1000, 5000, 10000]
