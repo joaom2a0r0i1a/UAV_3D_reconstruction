@@ -46,7 +46,7 @@ for n in cfg.nodes:
 PYREMAP
   printf "%-64s parse=%-4s params=%s\n" "${lf#./}" "$parse" "$dump" >>"$OUT/summary.txt"
   if [ "$parse" = ok ] && [ "$dump" = ok ]; then ok=$((ok + 1)); else bad=$((bad + 1)); fi
-done < <(find . -name "*.launch" -not -path "*/.claude/*" | sort)
+done < <(find . -name "*.launch" -not -path "*/.*/*" | sort)
 
 echo >>"$OUT/summary.txt"
 echo "launches ok $ok, launches with a failure $bad" >>"$OUT/summary.txt"
