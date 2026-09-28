@@ -16,12 +16,12 @@ world_marker(){ case "$1" in
   big_maze)   echo "BigMaze" ;;
   *) die "unknown world '$1'";; esac; }
 world_gt(){ case "$1" in
-  school)     echo '$(rospack find motion_planning)/data/gt_school_processed.ply' ;;
-  police)     echo '$(rospack find motion_planning)/data/gt_police_station_processed.ply' ;;
-  warehouse)  echo '$(rospack find motion_planning)/data/gt_warehouse_processed.ply' ;;
-  multistory) echo '$(rospack find motion_planning)/data/gt_multistory_processed.ply' ;;
+  school)     echo '$(rospack find uav_gazebo_environments)/ground_truth/school.ply' ;;
+  police)     echo '$(rospack find uav_gazebo_environments)/ground_truth/police.ply' ;;
+  warehouse)  echo '$(rospack find uav_gazebo_environments)/ground_truth/warehouse.ply' ;;
+  multistory) echo '$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply' ;;
   # big_maze ground truth not generated yet, volume evaluation only
-  big_maze)   echo '$(rospack find motion_planning)/data/gt_big_maze_processed.ply' ;;
+  big_maze)   echo '$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply' ;;
   *) die "unknown world '$1'";; esac; }
 # Planner clearance, under half the tightest passage and over the 0.348 m f450 footprint
 world_uav_radius(){ case "$1" in
