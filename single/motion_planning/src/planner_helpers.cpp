@@ -350,7 +350,14 @@ void benchmarkAccuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& n
     const char* csv_path = std::getenv("RH_NBVP_ACCURACY_CSV");
     std::ofstream csv;
     if (csv_path) {
+        // Header on a new or empty file
+        std::ifstream probe(csv_path);
+        const bool is_new = !probe || probe.peek() == std::ifstream::traits_type::eof();
+        probe.close();
         csv.open(csv_path, std::ios::app);
+        if (is_new && csv.is_open()) {
+            csv << "replan,depth,abs_cpu,abs_gpu,p1_cpu,p1_gpu,all_cpu,all_gpu\n";
+        }
     }
     for (size_t i = 0; i < n; ++i) {
         rrt_star::Node* nd = nodes[i];

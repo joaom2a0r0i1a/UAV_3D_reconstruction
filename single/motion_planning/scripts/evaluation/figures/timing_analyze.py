@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Gain evaluation cost against tree size, from the timing logs
 # Tags timing_marg, timing_abs, timing_cpu and timing_full
-import os, re, statistics as st
+# Usage timing_analyze.py [log_dir] [out_dir], TIMING_LOG and TIMING_OUT otherwise
+import os, re, sys, statistics as st
 import matplotlib
 
 matplotlib.use("Agg")
@@ -9,8 +10,8 @@ import matplotlib.pyplot as plt
 
 # yapf: disable
 MP  = os.environ.get("MP") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-LOG = os.environ.get("TIMING_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
-OUT = os.path.join(MP, "data")
+LOG = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TIMING_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
+OUT = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("TIMING_OUT", LOG)
 NS  = [50, 100, 500, 1000, 5000, 10000]
 BUDGET, BUDGET2 = 500.0, 1000.0
 # TIMING_TAG and TIMING_SUFFIX select the yaw optimization run
@@ -62,6 +63,11 @@ def parse(n):
     return {k: msd(v[:MAX_CAPS]) for k, v in acc.items()}
 
 
+# Stop when no log matches
+if not any(os.path.exists(f"{LOG}/{TAG}{n}.log") for n in NS):
+    print(f"no timing logs in {LOG}, expected " + ", ".join(f"{TAG}{n}.log" for n in NS))
+    raise SystemExit(1)
+os.makedirs(OUT, exist_ok=True)
 rows = [(n, parse(n)) for n in NS]
 
 
