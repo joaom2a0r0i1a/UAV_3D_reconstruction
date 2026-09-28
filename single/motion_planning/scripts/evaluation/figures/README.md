@@ -53,5 +53,6 @@ python3 timing_analyze.py ~/figures_in [out_dir]
 python3 accuracy_analyze.py ~/figures_in [out_dir]
 ```
 
-Output goes to the input folder unless `out_dir` is given. `TIMING_TAG` changes the log prefix
-(default `timing_n`), `DEPTH_N` and `DEPTH_MAX` pick the trees and depths of the accuracy panels.
+Without arguments the current folder is read. Output goes to the input folder unless `out_dir`
+is given. `TIMING_TAG` changes the log prefix (default `timing_n`), `DEPTH_N` and `DEPTH_MAX` pick
+the trees and depths of the accuracy panels.

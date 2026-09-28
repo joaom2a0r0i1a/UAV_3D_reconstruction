@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>multiagent_collision_check</name>
-  <version>0.0.0</version>
-  <description>The multiagent_collision_check package</description>
+  <version>1.0.0</version>
+  <description>Collision checking between the planned paths of several UAVs.</description>
 
   <maintainer email="andreas.bircher@mavt.ethz.ch">Andreas Bircher</maintainer>
 

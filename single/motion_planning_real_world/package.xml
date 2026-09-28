@@ -2,8 +2,8 @@
 <package format="2">
 
   <name>motion_planning_real_world</name>
-  <version>0.0.0</version>
-  <description>The motion planner for real drones using mavros</description>
+  <version>1.0.0</version>
+  <description>Real-world versions of the exploration planners using mavros.</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
   <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>

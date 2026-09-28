@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include "multidrone_motion_planning/KRH_NBVP_fleet.h"
+#include "multi_motion_planning/KRH_NBVP_fleet.h"
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "KRH_NBVP_fleet");

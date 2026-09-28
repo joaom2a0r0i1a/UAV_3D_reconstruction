@@ -2,8 +2,8 @@
 <package format="2">
 
   <name>rrt_construction</name>
-  <version>0.0.0</version>
-  <description>The rrt construction package</description>
+  <version>1.0.0</version>
+  <description>RRT, RRT* and KRRT tree construction.</description>
 
   <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
   <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>

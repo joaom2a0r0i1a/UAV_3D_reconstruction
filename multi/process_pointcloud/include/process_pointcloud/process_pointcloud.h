@@ -1,3 +1,6 @@
+#ifndef PROCESS_POINTCLOUD_H
+#define PROCESS_POINTCLOUD_H
+
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_listener.h>
@@ -19,3 +22,5 @@ class Processing {
     ros::Publisher pub_pointcloud;
     ros::Subscriber sub_pointcloud;
 };
+
+#endif // PROCESS_POINTCLOUD_H

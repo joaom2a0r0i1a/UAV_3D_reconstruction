@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include <process_pointcloud.h>
+#include <process_pointcloud/process_pointcloud.h>
 
 int main(int argc, char **argv)
 {

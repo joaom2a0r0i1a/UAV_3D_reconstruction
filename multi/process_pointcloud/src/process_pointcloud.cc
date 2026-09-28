@@ -1,5 +1,5 @@
 #include <ros/ros.h>
-#include <process_pointcloud.h>
+#include <process_pointcloud/process_pointcloud.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl_ros/transforms.h>
 #include <pcl/filters/filter.h>

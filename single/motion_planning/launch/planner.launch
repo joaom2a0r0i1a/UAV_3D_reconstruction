@@ -13,7 +13,7 @@
   <arg name="benchmark"       default="$(optenv AEP_BENCHMARK false)" />
   <arg name="benchmark_suite" default="$(optenv AEP_BENCH_SUITE timing)" />
 
-  <!-- Environment and Campaign Overrides -->
+  <!-- Environment and Parameter Overrides -->
   <arg name="env" default="$(optenv PLANNER_ENV)" />
   <arg name="overrides" default="$(optenv PLANNER_OVERRIDES)" />
 
