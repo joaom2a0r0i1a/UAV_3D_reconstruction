@@ -1,34 +1,33 @@
-# Recording profiles
+# Recording Profiles
 
-`record.sh <profile>` — `eval` | `eval-viz` | `eval-camera` | `mapping-replay` | `full-debug`
+The flight sessions record a bag with `record.sh <profile>`, where the profile is `eval`,
+`eval-viz`, `eval-camera`, `mapping-replay` or `full-debug`. The Rosbag window of the sessions
+uses `eval`, which is also the default.
 
-Default is `eval`. The Rosbag window of the flight sessions runs `record.sh eval`.
-
-## Which one do I use?
+## Choosing a profile
 
 | Situation | Profile | Scored run? |
 |---|---|---|
 | Scored experiment, the normal case | `eval` | yes |
-| Scored experiment, want RViz playback later | `eval-viz` | yes |
-| Scored experiment, want to see what the camera saw | `eval-camera` | yes |
+| Scored experiment, replayed in RViz later | `eval-viz` | yes |
+| Scored experiment, with the camera images | `eval-camera` | yes |
 | Rebuilding the map offline with other depth_to_pointcloud or voxblox settings | `mapping-replay` | no |
-| Something is broken and you cannot yet name it | `full-debug` | no |
+| Diagnosing a problem that is not yet understood | `full-debug` | no |
 
-The first three write to `$EXP_DIR/tmp_bags/tmp_bag_<date>.bag` under the node name
-`eval_bag_recorder`, which is what `eval_data_node_rw.py` looks for and kills at the end of a
-run, so any of them yields a fully scored run. The last two write to `~/bag_files/<date>/`
-instead and do **not** feed the eval pipeline: a run recorded with those has no path length and
-no average velocity.
+The first three profiles write to `$EXP_DIR/tmp_bags/tmp_bag_<date>.bag` under the node name
+`eval_bag_recorder`, which the recorder node stops at the end of a run, so these runs are fully
+scored. The last two write to `~/bag_files/<date>/` and are not used by the evaluation, so a run
+recorded with them has no path length or average velocity.
 
-## Where everything lands
+## Folder layout
 
 ```
 ~/real_experiments/
-  rhnbvp_marginal/                 one directory per planner and gain variant
+  rhnbvp_marginal/                 one folder per planner and gain variant
     20260903_101500/               one run: voxblox_data.csv, voxblox_maps/, offset.txt, ...
-    tmp_bags/tmp_bag_<date>.bag    the scored bag, matched to runs by timestamp
+    tmp_bags/tmp_bag_<date>.bag    the scored bag, matched to its run by timestamp
   aep_absolute/
-  tmux_logs/                       every tmux session, grouped away from the run data
+  tmux_logs/                       the logs of every tmux session
     rhnbvp_marginal/
       1_<date>/tmux/*.log          one log per window, one folder per session
       2_<date>/tmux/*.log
@@ -38,96 +37,93 @@ no average velocity.
 ~/bag_files/<date>/                mapping-replay and full-debug only
 ```
 
-`eval_rw.sh ~/real_experiments` picks up the variant folders as its labels. The variant name
-comes from `PLANNER` and `GAIN` in `env.sh`. The heavy profiles stay under `~/bag_files` on
-purpose: `offload_runs.sh` ships those to their own `session_bags` destination on the PC instead
-of mixing tens of GB into the results tree.
+`eval_rw.sh ~/real_experiments` uses the variant folders as labels. The variant name comes from
+`PLANNER` and `GAIN` in `env.sh`. The bags of the large profiles stay in `~/bag_files`, and
+`offload_runs.sh` copies them to a separate `session_bags` folder on the PC so they are kept apart
+from the results.
 
 ## eval
 
-The eight topics a scored run cannot do without. About 1 MB per minute, so it is never what
-fills the disk. Use it unless you have a reason not to.
+The topics a scored run needs, about 1 MB per minute. This is the profile for experiments.
 
-| Topic | Why |
+| Topic | Use |
 |---|---|
 | `/mavros/local_position/pose` | path length and average velocity (`path_vel_mapped.py`) |
-| `/mavros/local_position/velocity_local` | the speed term of the waypoint arrival gate |
-| `/mavros/state` | armed and mode, for reconstructing the timeline |
-| `/mavros/setpoint_raw/local` | what the planner commanded, the record of the control loop |
+| `/mavros/local_position/velocity_local` | the speed condition for reaching a waypoint |
+| `/mavros/state` | armed state and flight mode, for the timeline of the flight |
+| `/mavros/setpoint_raw/local` | the commands sent by the planner |
 | `/tf`, `/tf_static` | body and camera frames |
-| `/$UAV_NAME/offset_out` | the takeoff offset, the eval box is shifted by it |
-| `/$UAV_NAME/simulation_ready` | mission start and stop edges |
+| `/$UAV_NAME/offset_out` | the takeoff offset, by which the evaluation box is shifted |
+| `/$UAV_NAME/simulation_ready` | start and end of the mission |
 
 ## eval-viz
 
-`eval` plus the map and planner visualisation, so the flight can be replayed in RViz: the
-voxblox mesh, occupied nodes, and the esdf/tsdf/surface pointclouds. The pointclouds are the
-expensive part — hundreds of MB to a few GB for a ten minute flight, depending on how much of
-the box gets mapped.
+`eval` plus the voxblox mesh, the occupied nodes and the esdf, tsdf and surface pointclouds, so
+the flight can be replayed in RViz. The pointclouds take most of the space, from a few hundred MB
+to a few GB for a ten minute flight depending on how much of the box is mapped.
 
 ## eval-camera
 
-`eval-viz` plus the colour image (compressed) and its `camera_info`. Compressed colour at
-640x360 and 15 Hz is roughly 30 MB per minute. Use it to show what the drone saw, or to
-diagnose a mapping failure that might really be exposure or motion blur.
+`eval-viz` plus the compressed colour image and its `camera_info`, about 30 MB per minute at
+640x360 and 15 Hz. It shows what the drone saw, which also helps when a mapping problem may come
+from exposure or motion blur.
 
 ## mapping-replay
 
-Everything needed to re-run `depth_to_pointcloud` and voxblox offline, and nothing else. Aligned depth
-is stored raw because that is what the pipeline consumes: roughly 420 MB per minute at 640x360
-and 15 Hz, so budget about 4.5 GB per ten minutes.
+The topics needed to run `depth_to_pointcloud` and voxblox again offline. The aligned depth is
+stored raw, as the pipeline uses it, which is about 420 MB per minute at 640x360 and 15 Hz, or
+4.5 GB for a ten minute flight.
 
-Colour is stored **compressed** to keep the size sane, but `depth_to_pointcloud` subscribes to the raw
-topic. Bridge it before replaying:
+The colour image is stored compressed, while `depth_to_pointcloud` subscribes to the raw image.
+Convert it while replaying:
 
 ```bash
 rosrun image_transport republish compressed \
   in:=/camera/color/image_raw raw out:=/camera/color/image_raw
 ```
 
-Then play the bag and bring up `depth_to_pointcloud_rw.launch` and `processed_voxblox.launch` as
-usual. The N4 harness under `motion_planning/data/n4_ptcld_verify` does exactly this.
+Then play the bag and start `depth_to_pointcloud_rw.launch` and `processed_voxblox.launch`.
 
 ## full-debug
 
-Records everything except parameter chatter and the theora/compressedDepth duplicates. Tens of
-GB per flight. A diagnostic tool for a bring-up day, not for a scored run.
+Every topic except parameter updates and the theora and compressedDepth copies of the images,
+tens of GB per flight. It is meant for diagnosing problems during a setup day, not for scored
+runs.
 
-## Is it still recording?
+## Checking the recording
 
-The Rosbag window prints a line every 15 seconds (`RECORD_HEARTBEAT` to change the interval):
+The Rosbag window prints a line every 15 seconds, set by `RECORD_HEARTBEAT`:
 
 ```
 [record] RECORDING    120s     46M  tmp_bag_2026-09-03-10-15-04.bag.active
 ```
 
-If those lines stop, recording stopped. On exit the window prints one of:
+When these lines stop, the recording has stopped. On exit the window prints one of:
 
 ```
 [record] STOPPED after 612s, bag closed: .../tmp_bag_....bag (46M)
 [record] STOPPED after 612s but a .active file remains, the bag was NOT closed
 ```
 
-The second is the bad one. A `.bag.active` file is invisible to `path_vel_mapped.py`, which
-globs `tmp_bags/*.bag`, so the run would score with no path length. It happens when the
-recorder is SIGKILLed. Recover it:
+The second means the bag was not closed, which happens when the recorder is killed. The
+evaluation only reads closed bags, so the run would have no path length. The bag can be recovered
+with:
 
 ```bash
 rosbag reindex tmp_bag_<date>.bag.active
 mv tmp_bag_<date>.bag.active tmp_bag_<date>.bag
 ```
 
-Three ways of stopping close the bag properly, all verified: `rosnode kill /eval_bag_recorder`
-(what the recorder node does at the end of a run), Ctrl+C in the pane, and `./kill.sh`, which
-sends Ctrl+C to every pane and waits before killing the session. Prefer those over killing the
-tmux server.
+The bag is closed properly when the recorder is stopped with `rosnode kill /eval_bag_recorder`,
+as the recorder node does at the end of a run, with Ctrl+C in its pane, or with `./kill.sh`, which
+sends Ctrl+C to every pane before closing the session.
 
-## Disk
+## Disk space
 
-Check before a session with several flights, especially for anything past `eval`:
+Check the free space before a session with several flights, especially with the larger profiles:
 
 ```bash
 df -h ~ ; du -sh ~/real_experiments ~/bag_files
 ```
 
-Offload and free space with `scripts/evaluate/offload_runs.sh`.
+`scripts/evaluate/offload_runs.sh` moves the runs to the PC and frees the space.
