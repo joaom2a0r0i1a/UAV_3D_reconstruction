@@ -96,6 +96,8 @@ struct ParentFrame {
     const float*            depth;   // p_width * p_height planar depths
     gpuray::RotationRows       R;       // world->camera rotation
     gpuray::ParentCameraConfig cam;
+    cudaTextureObject_t     depth_tex;   // layered depth texture (0 -> read `depth` linearly)
+    int                     depth_layer; // texture layer for this ancestor
 };
 
 // Full ancestor chain of a candidate (v3 multi-ancestor); depth_idx (opt) pools depth buffers, else contiguous.
@@ -107,6 +109,8 @@ struct AncestorSet {
     int                     num;
     gpuray::ParentCameraConfig cam;         // shared geometry across ancestors
     const int*              depth_idx;   // null -> contiguous; else pool index per ancestor
+    cudaTextureObject_t     depth_tex;   // layered depth texture (0 -> linear depth)
+    int                     depth_layer_base; // global layer offset (contiguous layout)
 };
 
 // Per-candidate output buffers.
@@ -128,6 +132,7 @@ struct AncestorBatchDev {
     int           per;
     gpuray::ParentCameraConfig cam;
     const int*    depth_idx; // null -> contiguous depth; else pool index per ancestor slot
+    cudaTextureObject_t depth_tex; // layered depth texture (0 -> linear depth)
 };
 
 // Host-side bookkeeping for a batched launch: device allocations + launch dims (used only by the extern "C" launchers).
@@ -138,6 +143,8 @@ struct BatchDeviceMem {
     float*  d_yaw;
     float3* d_R;
     float*  d_depth;
+    cudaArray_t d_depth_array; // layered depth cudaArray (texture path; null when linear)
+    cudaTextureObject_t d_depth_tex; // depth texture object (0 when linear)
     int*    d_depth_idx;   // pooled depth index (null when contiguous)
     float*  d_gain;
     float*  d_yaw_out;
@@ -466,8 +473,16 @@ __device__ inline ParentFrame ancestor_frame(const AncestorSet& a, int i) {
     p.R     = {a.R_rows[i * 3 + 0], a.R_rows[i * 3 + 1], a.R_rows[i * 3 + 2]};
     size_t di = a.depth_idx ? (size_t)a.depth_idx[i] : (size_t)i;
     p.depth = a.depth + di * a.cam.p_width * a.cam.p_height;
+    p.depth_tex   = a.depth_tex;
+    p.depth_layer = a.depth_idx ? (int)di : (a.depth_layer_base + i);
     p.cam   = a.cam;
     return p;
+}
+
+// Read parent-depth texel (x,y): via layered texture when depth_tex set, else linear buffer.
+__device__ inline float read_parent_depth(const ParentFrame& p, int x, int y) {
+    if (p.depth_tex) return tex2DLayered<float>(p.depth_tex, x + 0.5f, y + 0.5f, p.depth_layer);
+    return p.depth[y * p.cam.p_width + x];
 }
 
 // Slice one candidate's AncestorSet from the batched CSR view (pooled or contiguous depth).
@@ -479,6 +494,8 @@ __device__ inline AncestorSet ancestors_for(const AncestorBatchDev& ab, int cand
     s.R_rows    = ab.R + (size_t)base * 3;
     s.num       = ab.offsets[candidate + 1] - base;
     s.cam       = ab.cam;
+    s.depth_tex = ab.depth_tex;
+    s.depth_layer_base = base;
     if (ab.depth_idx) {
         s.depth     = ab.depth;
         s.depth_idx = ab.depth_idx + base;
@@ -600,7 +617,7 @@ __device__ inline float3 compute_skip_distance(const ParentFrame& parent, Ray ra
             float z_entry = 1.0f / w_entry;
             float z_exit  = 1.0f / w_exit;
 
-            float parent_z = parent.depth[d.y * parent.cam.p_width + d.x];
+            float parent_z = read_parent_depth(parent, d.x, d.y);
             if (parent_z < 0.0f) return make_float3(-1.0f, -1.0f, 0.0f);   // root / uninitialised
 
             if (parent_z <= z_entry + 0.35f) {
@@ -652,7 +669,7 @@ __device__ inline void accumulate_skip_intervals(const ParentFrame& parent, cons
 
         if (d.x >= 0 && d.x < parent.cam.p_width && d.y >= 0 && d.y < parent.cam.p_height) {
             float z_exit = 1.0f / (rp.w_start + t_exit * (rp.w_end - rp.w_start));
-            float parent_z = parent.depth[d.y * parent.cam.p_width + d.x];
+            float parent_z = read_parent_depth(parent, d.x, d.y);
             if (parent_z >= 0.0f) {
                 in_known_space = (z_exit <= parent_z + margin);
                 // On a state flip, refine the sub-pixel crossing factor.

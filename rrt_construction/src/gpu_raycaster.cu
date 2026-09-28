@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include <rrt_construction/gpu_raycast_math.cuh>
 #include <rrt_construction/gpu_raycast_launch.h>
@@ -1078,6 +1079,37 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
         mem->d_depth_idx = nullptr;
     }
 
+    // Optional depth texture (env GPU_DEPTH_TEX): upload the pool to a 2D-layered cudaArray for tex2DLayered; falls back to linear on any failure/limit.
+    mem->d_depth_array = nullptr;
+    mem->d_depth_tex   = 0;
+    if (getenv("GPU_DEPTH_TEX")) {
+        int num_layers = anc.depth_idx ? anc.num_nodes : total;
+        int max_layers = 0, dev = 0;
+        cudaGetDevice(&dev);
+        cudaDeviceGetAttribute(&max_layers, cudaDevAttrMaxTexture2DLayeredLayers, dev);
+        cudaChannelFormatDesc chan = cudaCreateChannelDesc<float>();
+        cudaExtent ext = make_cudaExtent(cam.p_width, cam.p_height, num_layers);
+        if (num_layers > 0 && num_layers <= max_layers &&
+            cudaMalloc3DArray(&mem->d_depth_array, &chan, ext, cudaArrayLayered) == cudaSuccess) {
+            cudaMemcpy3DParms cp = {};
+            cp.srcPtr   = make_cudaPitchedPtr((void*)anc.depth, (size_t)cam.p_width * sizeof(float),
+                                              (size_t)cam.p_width, (size_t)cam.p_height);
+            cp.dstArray = mem->d_depth_array;
+            cp.extent   = ext;
+            cp.kind     = cudaMemcpyHostToDevice;
+            cudaMemcpy3D(&cp);
+            cudaResourceDesc rd = {}; rd.resType = cudaResourceTypeArray;
+            rd.res.array.array = mem->d_depth_array;
+            cudaTextureDesc td = {};
+            td.addressMode[0] = cudaAddressModeClamp; td.addressMode[1] = cudaAddressModeClamp;
+            td.filterMode = cudaFilterModePoint;    // exact texel -> bit-identical to linear read
+            td.readMode = cudaReadModeElementType; td.normalizedCoords = 0;
+            cudaCreateTextureObject(&mem->d_depth_tex, &rd, &td, nullptr);
+        } else {
+            mem->d_depth_array = nullptr;
+        }
+    }
+
     cudaMalloc(&mem->d_gain,      nc * sizeof(float));
     cudaMalloc(&mem->d_yaw_out,   nc * sizeof(float));
     cudaMalloc(&mem->d_depth_buf, (size_t)depth_slots * per * sizeof(float));
@@ -1097,7 +1129,7 @@ static AncestorBatchDev setup_batch(const GpuMap& map, const GpuCandidates& cand
     *out = GainResults{mem->d_gain, mem->d_yaw_out, nullptr, mem->d_depth_buf};
     out->fixed_yaw = mem->d_fixed_yaw;
     AncestorBatchDev ab = {mem->d_off, mem->d_pos, mem->d_yaw, mem->d_depth,
-                           mem->d_R, (int)per, cam, mem->d_depth_idx};
+                           mem->d_R, (int)per, cam, mem->d_depth_idx, mem->d_depth_tex};
     return ab;
 }
 
@@ -1110,6 +1142,8 @@ static void teardown_batch(const BatchDeviceMem& mem, GpuResult out) {
     }
     cudaFree(mem.d_cand); cudaFree(mem.d_off);   cudaFree(mem.d_pos);    cudaFree(mem.d_yaw);
     cudaFree(mem.d_R);    cudaFree(mem.d_depth);
+    if (mem.d_depth_tex)   cudaDestroyTextureObject(mem.d_depth_tex);
+    if (mem.d_depth_array) cudaFreeArray(mem.d_depth_array);
     if (mem.d_depth_idx) cudaFree(mem.d_depth_idx);
     cudaFree(mem.d_gain); cudaFree(mem.d_yaw_out); cudaFree(mem.d_depth_buf);
     if (mem.d_fixed_yaw) cudaFree(mem.d_fixed_yaw);
