@@ -130,8 +130,8 @@ code was tested with. To move it to the newest `main`:
 git submodule update --remote uav_gazebo_environments
 ```
 
-Do not keep a second clone of it elsewhere in the workspace, catkin refuses two `environments`
-packages.
+Do not keep a second clone of it elsewhere in the workspace, catkin refuses two
+`uav_gazebo_environments` packages.
 
 It carries six worlds and, for each, the three regions the pipeline needs, where the planner
 may sample, where gain is counted and what the evaluation measures.
@@ -149,6 +149,68 @@ Choosing a planner is the same idea:
 roslaunch motion_planning planner.launch planner:=kaep      # or rhnbvp, aep, krhnbvp
 ```
 
+# Running Experiments
+
+An experiment is one recorded flight of the single-drone simulation, scored afterwards. The
+evaluation needs `python3-scipy` and `python3-matplotlib`.
+
+### 1. Fly
+
+```bash
+cd ~/catkin_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone
+export PLANNER_KIND=aep        # aep | rhnbvp | kaep | krhnbvp
+export PLANNER_ENV=school      # school | police | warehouse | multistory | big_maze | maze
+export EXP_TIME_LIMIT=30       # [min] flight length
+export EXP_DATA_DIR=$(rospack find motion_planning)/data/label_a   # one folder per condition
+./start.sh
+```
+
+The planner starts once the drone is airborne and the experiment stops at the time limit. Each
+run is saved as `label_a/<date>_<time>/` (maps, `voxblox_data.csv`, `data_log.txt`) with its
+flight bag in `label_a/tmp_bags/`. Close the session with `./kill.sh` and start again for the
+next run. `AEP_MARGINAL_GAIN=true|false` selects the gain of AEP and RH-NBVP.
+
+### 2. Score each run
+
+```bash
+roslaunch motion_planning full_voxblox_eval.launch \
+  target_directory:=$(rospack find motion_planning)/data/label_a method:=all \
+  environment:=school evaluate_volume:=true create_meshes:=true error_histogram:=true
+```
+
+School and police are scored against `uav_gazebo_environments/ground_truth/<environment>.ply`
+(mean error, RMSE, unknown voxels) and by reconstructed volume. The other worlds have no ground
+truth cloud, add `evaluate:=false` to score them by volume only. Results are appended to each
+run's `voxblox_data.csv`, figures go to its `graphs/`.
+
+### 3. Compare conditions
+
+```bash
+roslaunch motion_planning full_voxblox_eval.launch \
+  target_directory:=$(rospack find motion_planning)/data \
+  multi_series:=true series_labels:=label_a,label_b environment:=school | tee ~/series.log
+```
+
+Writes `data/multi_series_evaluation/` and prints, for ground truth scored runs, the time each
+condition needs to reach 25, 50, 75 and 95 % of the known voxels.
+
+### 4. Further metrics
+
+```bash
+cd $(rospack find motion_planning)/scripts/evaluation/analysis
+export MP=$(rospack find motion_planning)
+python3 milestones_from_log.py ~/series.log             # milestone table
+OUT=path_vel.json python3 path_vel_mapped.py label_a    # path length and average speed
+BOX=9367 python3 path_vel_at95.py label_a               # path and speed up to 95 % coverage
+python3 termination_time.py label_a                     # AEP self-termination time
+python3 stall_forensics.py $MP/data/label_a/tmp_bags/<bag> 30   # motion per 30 s window of one flight
+python3 thin_maps.py $MP/data/label_a 5                 # keep every 5th map once scored
+```
+
+`BOX` is the reconstruction box volume in m³, printed as `map_volume` by the evaluation. The gain
+benchmark figures are described in
+[scripts/evaluation/figures](single/motion_planning/scripts/evaluation/figures/README.md).
+
 # Notes
 - For reproducibility of the results shown in the papers below, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
 - Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments of the marginal gain on the GPU paper were conducted using:
@@ -157,7 +219,7 @@ roslaunch motion_planning planner.launch planner:=kaep      # or rhnbvp, aep, kr
 
 # Credits
 
-If you use this work, please cite whichever of the three applies.
+If you use this work, please cite the paper that corresponds to the part you use.
 
 **Kinodynamic planning**, published in IEEE Robotics and Automation Letters.
 
