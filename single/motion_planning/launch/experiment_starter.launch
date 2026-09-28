@@ -17,8 +17,8 @@
   <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
 
   <group ns="$(arg UAV_NAME)">
-    <!-- Bag Recorder -->
-    <node pkg="rosbag" type="record" name="rosbag_recorder" launch-prefix="bash -c 'mkdir -p $(arg data_directory)/tmp_bags; exec &quot;$0&quot; &quot;$@&quot;'" args="/rosout /clock /tf /tf_gazebo_static /tf_static /$(arg UAV_NAME)/voxblox_node/mesh /$(arg UAV_NAME)/estimation_manager/uav_state /$(arg UAV_NAME)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
+    <!-- Bag Recorder, creates its folder on a fresh clone -->
+    <node pkg="rosbag" type="record" name="rosbag_recorder" launch-prefix="bash -c 'mkdir -p $(arg data_directory)/tmp_bags; exec $0 $@'" args="/rosout /clock /tf /tf_gazebo_static /tf_static /$(arg UAV_NAME)/voxblox_node/mesh /$(arg UAV_NAME)/estimation_manager/uav_state /$(arg UAV_NAME)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
 
 
     <!-- Experiment Launcher -->
