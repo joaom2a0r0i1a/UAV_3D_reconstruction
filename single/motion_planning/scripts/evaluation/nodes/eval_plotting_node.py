@@ -463,6 +463,9 @@ class EvalPlotting(object):
                     print(
                         f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes."
                     )
+                print(
+                    f"{series}: Final coverage = {100 - unknown[-1]:.2f} +/- {100 * std_devs['UnknownVoxels'][-1]:.2f}%."
+                )
 
             else:
                 known = means['Volume']
@@ -525,6 +528,9 @@ class EvalPlotting(object):
                 ])
                 print(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes."
+                )
+                print(
+                    f"{series}: Final coverage = {100 - unknown[-1]:.2f} +/- {std_deviations[-1]:.2f}%."
                 )
 
             axes[0, 1].set_xlim(left=0, right=x[-1])

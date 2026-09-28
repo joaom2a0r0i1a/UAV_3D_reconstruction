@@ -8,6 +8,7 @@ from collections import OrderedDict
 MILESTONES = [25, 50, 75, 95]
 LINE_RE = re.compile(r"^(?P<series>.+?): Timing corresponding to Known voxels = "
                      r"(?P<known>\d+)% is time = (?P<t>[-\d.]+) \+/- (?P<s>[-\d.]+) minutes\.")
+FINAL_RE = re.compile(r"^(?P<series>.+?): Final coverage = (?P<c>[-\d.]+) \+/- (?P<s>[-\d.]+)%\.")
 
 
 def parse(path):
@@ -16,7 +17,13 @@ def parse(path):
     data = OrderedDict()
     with open(path, errors="replace") as fh:
         for raw in fh:
-            m = LINE_RE.match(ansi.sub("", raw).rstrip("\n"))
+            line = ansi.sub("", raw).rstrip("\n")
+            f = FINAL_RE.match(line)
+            if f:
+                data.setdefault(f.group("series").strip(),
+                                {})["final"] = (float(f.group("c")), float(f.group("s")))
+                continue
+            m = LINE_RE.match(line)
             if not m:
                 continue
             series = m.group("series").strip()
@@ -43,6 +50,10 @@ def render(data):
     for k in MILESTONES:
         row = f"   {k:>3}%  │ " + " │ ".join(f"{fmt_cell(data[s].get(k)):^13}" for s in series)
         lines.append(row)
+    # Final coverage in percent
+    lines.append("  ───────┼" + "┼".join("─" * 15 for _ in series))
+    lines.append("   final │ " + " │ ".join(f"{fmt_cell(data[s].get('final')):^13}"
+                                            for s in series))
     # Pairwise delta for two series
     if len(series) == 2:
         a, b = series

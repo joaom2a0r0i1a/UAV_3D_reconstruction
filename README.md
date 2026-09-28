@@ -210,25 +210,22 @@ roslaunch motion_planning full_voxblox_eval.launch target_directory:=$DATA envir
 ```
 
 Use the same `evaluate` settings as in step 2. The conditions are plotted together in
-`$DATA/multi_series_evaluation/`, and the time each one needs to know 25, 50, 75 and 95 % of the
-region is printed. Without a ground truth cloud, the known part is the reconstructed volume over
-the volume of the region.
+`$DATA/multi_series_evaluation/`, and for each one the time to reach 25, 50, 75 and 95 % coverage
+and the final coverage are printed. Coverage is the known part of the ground truth for school and
+police, and the reconstructed volume over the volume of the region for the other worlds.
 
-### 4. Other metrics
+### 4. Paper metrics
 
 ```bash
 export MP=$(rospack find motion_planning)
 S=$MP/scripts/evaluation/analysis
-python3 $S/milestones_from_log.py ~/series.log                     # table of the times from step 3
-OUT=~/path_vel.json python3 $S/path_vel_mapped.py aep_school       # path length and average speed
-BOX=9367 python3 $S/path_vel_at95.py aep_school                    # path and speed until 95 % is known
-python3 $S/termination_time.py aep_school                          # time at which AEP stops by itself
-python3 $S/stall_forensics.py $DATA/aep_school/tmp_bags/<bag> 30   # movement per 30 s of one flight
-python3 $S/thin_maps.py $DATA/aep_school 5                         # keep every 5th map once scored
+python3 $S/milestones_from_log.py ~/series.log   # E25 to E95 and final coverage
+python3 $S/path_vel_mapped.py aep_school         # path length and average velocity
+python3 $S/termination_time.py aep_school        # AEP termination time
 ```
 
-The scripts that take a condition name read it from `$MP/data`. `BOX` is the volume of the scored
-region in m³, printed as `map_volume` while scoring. The gain benchmark has its own guide in
+The last two read the condition from `$MP/data`. The gain accuracy and computation time come from
+the gain benchmark, described in
 [scripts/evaluation/figures](single/motion_planning/scripts/evaluation/figures/README.md).
 
 # Notes
