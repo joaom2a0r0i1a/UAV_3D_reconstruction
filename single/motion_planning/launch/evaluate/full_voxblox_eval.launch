@@ -48,6 +48,6 @@
     <param name="evaluate_volume" value="$(arg evaluate_volume)" />
     <param name="truncation_distance" value="$(arg truncation_distance)" />
     <param name="mesh_every_n_steps" value="$(arg mesh_every_n_steps)" />
-    <rosparam command="load" file="$(find environments)/config/$(arg environment).yaml"/>
+    <rosparam command="load" file="$(find uav_gazebo_environments)/config/$(arg environment).yaml"/>
   </node>
 </launch>

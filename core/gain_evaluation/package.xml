@@ -15,5 +15,5 @@
   <depend>rrt_construction</depend>
   <depend>roslib</depend>
   <depend>yaml-cpp</depend>
-  <exec_depend>environments</exec_depend>
+  <exec_depend>uav_gazebo_environments</exec_depend>
 </package>

@@ -18,7 +18,7 @@ bool loadEnvironmentRegion(const ros::NodeHandle& nh, const std::string& region,
         ROS_ERROR("[environment] parameter 'environment' is not set");
         return false;
     }
-    const std::string path = ros::package::getPath("environments") + "/config/" + environment + ".yaml";
+    const std::string path = ros::package::getPath("uav_gazebo_environments") + "/config/" + environment + ".yaml";
     try {
         const YAML::Node box = YAML::LoadFile(path)[region];
         min_x = box["min_x"].as<float>();

@@ -16,7 +16,7 @@ $T -f /etc/ctu-mrs/tmux.conf new-session -d -s $S -n roscore
 send roscore 'roscore'
 
 $T new-window -t $S -n gazebo
-send gazebo 'waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/grass_plane_school.world gui:=true'
+send gazebo 'waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find uav_gazebo_environments)/worlds/grass_plane_school.world gui:=true'
 $T split-window -t $S:gazebo
 send gazebo.1 'waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"'
 

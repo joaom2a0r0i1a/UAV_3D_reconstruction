@@ -1,7 +1,7 @@
 #!/bin/bash
-# Sourced, sets the world and spawn of $PLANNER_ENV from environments/config
+# Sourced, sets the world and spawn of $PLANNER_ENV from uav_gazebo_environments/config
 
-ENV_CONFIG_DIR="$(rospack find environments 2>/dev/null)/config"
+ENV_CONFIG_DIR="$(rospack find uav_gazebo_environments 2>/dev/null)/config"
 # uav_gazebo_environments submodule on the host
 [ -d "$ENV_CONFIG_DIR" ] || ENV_CONFIG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../uav_gazebo_environments/config" && pwd)"
 

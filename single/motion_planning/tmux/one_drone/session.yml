@@ -15,7 +15,7 @@ windows:
   - gazebo:
       layout: tiled
       panes:
-        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find environments)/worlds/$PLANNER_WORLD_FILE gui:=true
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find uav_gazebo_environments)/worlds/$PLANNER_WORLD_FILE gui:=true
         - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos $PLANNER_SPAWN --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
         # Other sensor sets, kept for reference
         #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos $PLANNER_SPAWN --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
