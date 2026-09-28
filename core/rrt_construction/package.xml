@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="2">
+
+  <name>rrt_construction</name>
+  <version>0.0.0</version>
+  <description>The rrt construction package</description>
+
+  <maintainer email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</maintainer>
+  <author email="joao.felix.mendes@tecnico.ulisboa.pt">Joao Mendes</author>
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>eigen</depend>
+
+  <export>
+  </export>
+
+</package>

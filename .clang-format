@@ -1,0 +1,19 @@
+# The layout of the kinodynamic sources, which the rest of the repository follows.
+BasedOnStyle: Google
+Language: Cpp
+ColumnLimit: 0
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AccessModifierOffset: -2
+PointerAlignment: Left
+SortIncludes: false
+MaxEmptyLinesToKeep: 1
+ReflowComments: false
+SpacesInLineCommentPrefix:
+  Minimum: 0
+  Maximum: -1

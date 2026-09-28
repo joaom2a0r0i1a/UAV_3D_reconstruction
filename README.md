@@ -1,5 +1,22 @@
-# Kinodynamic Trajectory Planning For Exploration and 3D Reconstruction
-This repository contains two real-time kinodynamic trajectory planners for efficient Unmanned Aerial Vehicle (UAV) exploration: the **Kinodynamic Autonomous Exploration Planner (KAEP)** and the **Kinodynamic Receding-Horizon Next-Best-View Planner (KRH-NBVP)**. Both planners use a Kinodynamic Rapidly-Exploring Random Tree (KRRT) to evaluate and select the next-best viewpoints that maximize expected information gain while minimizing flight cost. The methods explicitly account for the UAV’s kinodynamic model and constraints, enabling fast, smooth, and feasible trajectories for exploration and 3D reconstruction tasks.
+# UAV Exploration and 3D Reconstruction
+
+Real time planners that explore an unknown space with a UAV and reconstruct it as they go.
+Four planners share one pipeline, two classic and two kinodynamic.
+
+| planner | what it is |
+|---|---|
+| AEP | Autonomous Exploration Planner |
+| RH-NBVP | Receding Horizon Next Best View Planner |
+| KAEP | Kinodynamic AEP |
+| KRH-NBVP | Kinodynamic RH-NBVP |
+
+The kinodynamic planners build a Kinodynamic RRT and pick viewpoints that maximise expected
+information gain against flight cost, respecting the UAV model and its constraints.
+
+AEP and RH-NBVP can also score viewpoints by marginal gain, which counts only the space a
+viewpoint sees beyond what the path leading to it already covers, so overlapping views along a
+branch are not counted twice. Gain is evaluated on the GPU, which is what makes this path
+dependent formulation affordable online.
 
 # Installation
 
@@ -49,6 +66,8 @@ catkin profile set reldeb                     # set the reldeb profile as active
 ```
 
 ### 2. Clone the repository
+The Gazebo worlds come with the `uav_gazebo_environments` submodule, fetched with the same
+protocol as the main clone: an SSH clone gets it over SSH, an HTTPS clone over HTTPS.
 ```bash
 cd ~/catkin_ws/src
 ```
@@ -59,7 +78,7 @@ git clone --recursive git@github.com:joaom2a0r0i1a/UAV_3D_reconstruction.git
 # OR using HTTPS
 git clone --recursive https://github.com/joaom2a0r0i1a/UAV_3D_reconstruction.git
 ```
-If you clone without ```--recursive```, initialize submodules manually:
+If you clone without ```--recursive```, fetch the submodule afterwards:
 ```bash
 cd UAV_3D_reconstruction
 git submodule update --init --recursive
@@ -84,7 +103,7 @@ catkin build
 To start the simulation with one drone:
 
 ```bash
-cd ~/catkin_ws/src/UAV_3D_reconstruction/motion_planning/tmux/one_drone
+cd ~/catkin_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone
 ./start.sh
 ```
 ### Multi-Drone Simulation
@@ -100,30 +119,66 @@ To configure which simulation scenario and algorithms to run, edit the ```sessio
 You can find additional MRS examples in the [mrs_core_examples](https://github.com/ctu-mrs/mrs_core_examples) repository.
 
 # Environments
-The three Gazebo environments used to evaluate the exploration algorithms can be downloaded [here](https://github.com/joaom2a0r0i1a/UAV_3D_reconstruction/releases/tag/environments-v1/Environments.zip). They are provided as a ```.zip``` archive containing the ```.world``` files.
 
-To use these environments with the MRS UAV System, extract the contents of the archive and move the ```.world``` files into the following directory:
+The Gazebo worlds live in their own repository,
+[uav_gazebo_environments](https://github.com/joaom2a0r0i1a/uav_gazebo_environments),
+linked here as the `uav_gazebo_environments` submodule and cloned with the repository (see
+[Clone the repository](#2-clone-the-repository)). The submodule is pinned to the commit this
+code was tested with. To move it to the newest `main`:
+
 ```bash
-/opt/ros/noetic/share/mrs_gazebo_common_resources/worlds/
+git submodule update --remote uav_gazebo_environments
 ```
-This is the default location used by the MRS framework to load world files. After moving, you can select the desired world in your ```session.yml``` file via the ```world_name``` argument.
+
+Do not keep a second clone of it elsewhere in the workspace, catkin refuses two `environments`
+packages.
+
+It carries six worlds and, for each, the three regions the pipeline needs, where the planner
+may sample, where gain is counted and what the evaluation measures.
+
+Switching environment is one name. Set `environment` in the planner config, or export
+`PLANNER_ENV`, and every node picks up the right regions:
+
+```yaml
+environment: warehouse
+```
+
+Choosing a planner is the same idea:
+
+```bash
+roslaunch motion_planning planner.launch planner:=kaep      # or rhnbvp, aep, krhnbvp
+```
 
 # Notes
-- For reproducibility of the results shown in the paper, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
-- Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments in the paper were conducted using:
-  - **CPU:** Intel® Core™ i9 (14th Gen)
-  - **GPU:** NVIDIA GeForce RTX 4060
+- For reproducibility of the results shown in the papers below, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
+- Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments of the marginal gain on the GPU paper were conducted using:
+  - **CPU:** Intel® Core™ i7-13650HX (13th Gen)
+  - **GPU:** NVIDIA GeForce RTX 5060 Laptop GPU
 
 # Credits
-If you use this work in your research, please cite the following paper:
 
-Joao Felix Mendes, Meysam Basiri, and Rodrigo Ventura.,**“Kinodynamic Trajectory Planning for Efficient UAV Exploration and Reconstruction of Unknown Environments.”** in IEEE Robotics and Automation Letters (RAL), Accepted, November 2025.
-```bash
-@article{mendes2025kinodynamic,
-  title={Kinodynamic Trajectory Planning for Efficient UAV Exploration and Reconstruction of Unknown Environments},
-  author={Mendes, Joao Felix and Basiri, Meysam and Ventura, Rodrigo},
-  journal={IEEE Robotics and Automation Letters},
-  year={2025},
-  note={Accepted, November 2025}
+If you use this work, please cite whichever of the three applies.
+
+**Kinodynamic planning**, published in IEEE Robotics and Automation Letters.
+
+```bibtex
+@article{Mendes_2026,
+  author  = {Mendes, Jo{\~a}o F{\'e}lix and Basiri, Meysam and Ventura, Rodrigo},
+  title   = {Kinodynamic Trajectory Planning for Efficient UAV Exploration
+             and Reconstruction of Unknown Environments},
+  journal = {IEEE Robotics and Automation Letters},
+  year    = {2026},
+  volume  = {11},
+  number  = {2},
+  pages   = {1530--1537},
+  doi     = {10.1109/LRA.2025.3641147}
 }
 ```
+
+**Centralized multi UAV exploration**, accepted and presented at ICARM 2026, IEEE Xplore entry
+pending. Cite as to appear until the DOI exists.
+
+Joao Felix Mendes, Meysam Basiri and Rodrigo Ventura, "Centralized Multi-UAV Exploration and
+3D Reconstruction Using Single-UAV Planners", ICARM 2026.
+
+**Marginal gain on the GPU**, submitted to ICRA and under review.

@@ -3,6 +3,23 @@ logs/
 build/
 bin/
 lib/
+data/
 
 # Ignore Visual Studio Code configuration files
 .vscode/
+.catkin_tools/
+.claude/
+
+# Loose markdown notes/handoffs (READMEs stay tracked)
+*.md
+!README.md
+
+# Campaign run logs + decision summaries (regenerated each run) and Python caches
+variants_logs/
+__pycache__/
+*.pyc
+
+# Workshop paper draft (kept local, not tracked)
+worklog/workshop_paper_draft.txt
+current_config.env
+current_overrides.yaml

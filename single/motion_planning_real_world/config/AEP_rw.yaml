@@ -1,0 +1,124 @@
+frame_id: "map"
+
+body:
+  frame_id: "base_link"
+
+timer_main:
+  rate: 10.0 # [Hz]
+
+# Bounded box relative to the takeoff pose
+
+# Patio Lamp
+#bounded_box:
+#  min_x: -2.5 # [m]
+#  max_x: 9.0  # [m]
+#  min_y: -2.0 # [m]
+#  max_y: 11.5 # [m]
+#  min_z: 2.0  # [m]
+#  max_z: 9.0  # [m]
+
+# Short Grove
+bounded_box:
+  min_x: -25.0 # [m]
+  max_x: 3.0   # [m]
+  min_y: -5.5  # [m]
+  max_y: 5.5   # [m]
+  min_z: 3.0   # [m]
+  max_z: 11.0  # [m]
+
+# Long Grove
+#bounded_box:
+#  min_x: -35.0 # [m]
+#  max_x: 3.0   # [m]
+#  min_y: -4.0  # [m]
+#  max_y: 5.5   # [m]
+#  min_z: 3.0   # [m]
+#  max_z: 12.5  # [m]
+
+# Long Clearing
+#bounded_box:
+#  min_x: -35.0 # [m]
+#  max_x: 3.0   # [m]
+#  min_y: -4.0  # [m]
+#  max_y: 5.5   # [m]
+#  min_z: 3.0   # [m]
+#  max_z: 12.5  # [m]
+
+# Basketball
+#bounded_box:
+#  min_x: -6.0 # [m]
+#  max_x: 6.0  # [m]
+#  min_y: -6.0 # [m]
+#  max_y: 6.0  # [m]
+#  min_z: 2.0  # [m]
+#  max_z: 8.0  # [m]
+
+# School Sim Test
+#bounded_box:
+#  min_x: -3.0  # [m]
+#  max_x: 47.0  # [m]
+#  min_y: -20.0 # [m]
+#  max_y: 15.0  # [m]
+#  min_z: 1.0   # [m]
+#  max_z: 20.0  # [m]
+
+# IST Lamp
+#bounded_box:
+#  min_x: -1.0 # [m]
+#  max_x: 11.0 # [m]
+#  min_y: -6.0 # [m]
+#  max_y: 6.0  # [m]
+#  min_z: 2.0  # [m]
+#  max_z: 9.0  # [m]
+
+local_planning:
+  N_max: 200
+  N_termination: 400
+  N_yaw_samples: 10
+  radius: 2.0          # [m]
+  step_size: 2.0       # [m]
+  min_edge_length: 0.2 # [m]
+  tolerance: 0.5       # [m]
+  g_zero: 1.0
+
+global_planning:
+  N_min_nodes: 400
+  selection: "score" # "cost" | "gain" | "score"
+
+evaluation:
+  marginal_gain: true   # marginal | absolute gain
+  objective: expdecay   # expdecay | rate_L
+  compute: "gpu"        # "gpu" | "cpu"
+  marginal_split: false # split | fused GPU kernel
+
+camera:
+  frame_id: "camera_link"
+  h_fov: 1.38203    # [rad]
+  width: 640
+  height: 480
+  min_distance: 0.3 # [m]
+  max_distance: 5   # [m]
+  pitch: 10.0       # [deg]
+
+path:
+  uav_radius: 1.5                 # [m]
+  waypoint_reach_distance: 0.5    # [m]
+  waypoint_reach_velocity: 0.225  # [m/s] stop gate at the final waypoint
+  collision_check_resolution: 0.1 # [m]
+  optimistic_iterations: 5        # replans allowed through unknown space
+  recovery_enabled: true          # in-planner backtrack on | off
+  recovery_boxed_deadline: 4.0    # [s]
+  recovery_min_tree: 10           # tree size still counted as boxed in
+  recovery_timeout: 12.0          # [s]
+  lambda: 0.5                     # (tuning factor)
+  global_lambda: 0.05             # (tuning factor)
+
+rotation:
+  step_deg: 45.0 # [deg] keep well under 180
+  settle: 1.0    # [s] wait per step
+
+exploration:
+  initial: false        # up, rotate, down before the first plan
+  climb: 1.5            # [m] relative climb
+  settle: 4.0           # [s] after the climb and the return
+  return_to_start: true # back to the start pose after the sweep

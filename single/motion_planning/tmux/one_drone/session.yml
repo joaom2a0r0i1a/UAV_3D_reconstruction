@@ -1,0 +1,83 @@
+# Do not modify these
+root: ./
+name: simulation
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# You can modify these
+pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0; [ -f ./current_config.env ] && source ./current_config.env; source ./environment.sh; export PLANNER_KIND=${PLANNER_KIND:-rhnbvp}
+startup_window: motion_planner
+windows:
+  - roscore:
+      layout: tiled
+      panes:
+        - roscore
+  - gazebo:
+      layout: tiled
+      panes:
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find uav_gazebo_environments)/worlds/$PLANNER_WORLD_FILE gui:=true
+        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos $PLANNER_SPAWN --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+        # Other sensor sets, kept for reference
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos $PLANNER_SPAWN --enable-realsense-front --enable-ouster model:=OS0-128 use_gpu:=True update_rate:=1"
+        #- waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos $PLANNER_SPAWN --enable-rangefinder --enable-mobius-camera-front"
+        #- waitForControl; gz camera -c gzclient_camera -f $UAV_NAME; history -s gz camera -c gzclient_camera -f $UAV_NAME
+  #- gz_rate:
+    #layout: tiled
+    #panes:
+      #- waitForOdometry; sleep 5; gz physics -u 175
+  - status:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_status status.launch
+  - hw_api:
+      layout: tiled
+      panes:
+        - waitForTime; roslaunch mrs_uav_px4_api api.launch custom_config:=./config/hw_api.yaml
+  - core:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_core core.launch
+          platform_config:=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml
+          custom_config:=./config/custom_config.yaml
+          world_config:=./config/world_config.yaml
+          network_config:=./config/network_config.yaml
+  - takeoff:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_autostart automatic_start.launch custom_config:=./config/automatic_start.yaml
+        - 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
+  - motion_planner:
+      layout: tiled
+      panes:
+        #- 'history -s python3 eval_paths.py'
+        - waitForControl; roslaunch motion_planning planner.launch planner:=$PLANNER_KIND
+        - waitForControl; roslaunch motion_planning experiment_starter.launch
+        #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
+  - cached_nodes:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch cache_nodes cache.launch
+  - voxblox:
+      layout: tiled
+      panes:
+        #- waitForControl; roslaunch motion_planning voxblox.launch
+        - waitForControl; roslaunch motion_planning processed_voxblox.launch
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/school/one_drone/KinodynamicAEP(ours)/20240904_120233/voxblox_maps/00045.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/police_station/police_station/three_drones/JS/JSKinodynamicAEPours/20241005_130649/voxblox_maps/00006.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /mnt/c/Users/joaof/Documents/data/police_station/police_station/three_drones/SS/SSKinodynamicAEPours/20241005_122942/voxblox_maps/00006.vxblx'
+        #- 'history -s rosservice call /uav1/voxblox_node/load_map /home/joaomendes/police_station_gt.tsdf'
+        #- 'history -s rosservice call /uav1/voxblox_node/generate_mesh'
+  - processed_pointclouds:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning depth_to_pointcloud.launch
+  - rviz:
+      layout: tiled
+      panes:
+        - waitForControl; rosrun rviz rviz -d ./config/custom_rviz.rviz
+        - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch
+  - layout:
+      layout: tiled
+      panes:
+        - waitForControl; sleep 5; ~/.i3/layout_manager.sh ./layout.json

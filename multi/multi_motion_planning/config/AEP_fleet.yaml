@@ -1,0 +1,35 @@
+frame_id: "world_origin"
+
+body:
+  frame_id: "fcu"
+
+timer_main:
+  rate: 10.0 # [Hz]
+
+environment: school
+
+local_planning:
+  N_max: 50
+  N_termination: 300
+  N_yaw_samples: 10
+  radius: 4.0    # [m]
+  step_size: 2.0 # [m]
+  tolerance: 1.5 # [m]
+  g_zero: 5.0
+
+global_planning:
+  N_min_nodes: 300
+
+camera:
+  frame_id: "rgbd_front_pitched/aligned_depth_to_color"
+  h_fov: 1.51844    # [rad]
+  width: 1080
+  height: 720
+  min_distance: 0.2 # [m]
+  max_distance: 5   # [m]
+
+path:
+  uav_radius: 1.5     # [m]
+  lambda: 0.5         # (tuning factor)
+  global_lambda: 0.05 # (tuning factor)
+

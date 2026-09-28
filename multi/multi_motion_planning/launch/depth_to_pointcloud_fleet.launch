@@ -1,0 +1,45 @@
+<launch>
+  <!-- UAV -->
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+
+  <!-- Topics and Frame -->
+  <arg name="color_topic" default="/$(arg UAV_NAME)/rgbd_front_pitched/color/image_raw" />
+  <arg name="depth_topic" default="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/image_raw" />
+  <arg name="info_topic"  default="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/camera_info" />
+  <arg name="frame_id"    default="$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color" />
+  <arg name="pointcloud_out" default="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points" />
+
+  <!-- Depth Processing -->
+  <arg name="flatten_distance" default="6.0" />
+  <arg name="minimum_distance" default="0.0" />
+  <arg name="invalid_is_far" default="true" />
+  <arg name="downsample_step" default="2" />
+
+  <!-- Other UAVs Removal -->
+  <arg name="max_distance" default="1.5" />
+  <arg name="transformed_pointcloud_out" default="/$(arg UAV_NAME)/transformed_points" />
+
+  <group ns="$(arg UAV_NAME)">
+    <!-- Depth to Point Cloud -->
+    <node name="sensor_model" pkg="motion_planning" type="depth_to_pointcloud.py" output="screen">
+      <param name="model_type" value="ground_truth"/>
+      <param name="color_topic" value="$(arg color_topic)" />
+      <param name="depth_topic" value="$(arg depth_topic)" />
+      <param name="info_topic"  value="$(arg info_topic)" />
+      <param name="frame_id"  value="$(arg frame_id)" />
+      <param name="pointcloud_out" value="$(arg pointcloud_out)" />
+      <param name="flatten_distance" value="$(arg flatten_distance)" />
+      <param name="minimum_distance" value="$(arg minimum_distance)" />
+      <param name="invalid_is_far" value="$(arg invalid_is_far)" />
+      <param name="downsample_step" value="$(arg downsample_step)" />
+    </node>
+
+    <!-- Point Cloud Processing -->
+    <node name="pcl_process" pkg="process_pointcloud" type="process_node" output="screen">
+      <param name="uav_namespace" value="$(arg UAV_NAME)" />
+      <param name="max_distance" value="$(arg max_distance)" />
+      <remap from="pointcloud_in" to="$(arg pointcloud_out)"/>
+      <remap from="transformed_pointcloud_out" to="$(arg transformed_pointcloud_out)"/>
+    </node>
+  </group>
+</launch>

@@ -1,0 +1,429 @@
+uav1:
+  id: 1
+  x: -22
+  y: 0
+  z: 0.5
+  heading: 0
+
+uav2:
+  id: 2
+  x: -22
+  y: 4
+  z: 0.5
+  heading: 0
+
+uav3:
+  id: 3
+  x: -22
+  y: -4
+  z: 0.5
+  heading: 0
+
+####################################################################################
+################################### MAZE ###########################################
+####################################################################################
+# 1st layout, joint start 1
+#uav1:
+#  id: 1
+#  x: 8.5
+#  y: 7.5
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 0.0
+#  y: 7.5
+#  z: 0.5
+#  heading: 3.14159
+
+#uav3:
+#  id: 3
+#  x: -8.5
+#  y: 7.5
+#  z: 0.5
+#  heading: -1.57079
+
+# 2nd layout, separated start 1
+#uav1:
+#  id: 1
+#  x: 8.5
+#  y: 7.5
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 8.5
+#  y: 4.0
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: -8.5
+#  y: -7.5
+#  z: 0.5
+#  heading: 0.0
+
+####################################################################################
+############################ POLICE STATION ########################################
+####################################################################################
+# 1st layout, joint start 1
+#uav1:
+#  id: 1
+#  x: -12
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: -12
+#  y: 4
+#  z: 0.5
+#  heading: 0
+
+#uav3:
+#  id: 3
+#  x: -12
+#  y: -4
+#  z: 0.5
+#  heading: 0
+
+# 2nd layout, joint start 2
+#uav1:
+#  id: 1
+#  x: 12
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 12
+#  y: 4
+#  z: 0.5
+#  heading: 3.14159
+
+#uav3:
+#  id: 3
+#  x: 12
+#  y: -4
+#  z: 0.5
+#  heading: 3.14159
+
+# 3rd layout, joint start 3
+#uav1:
+#  id: 1
+#  x: 0
+#  y: -13.5
+#  z: 0.5
+#  heading: 1.57079
+
+#uav2:
+#  id: 2
+#  x: 4
+#  y: -13.5
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: -4
+#  y: -13.5
+#  z: 0.5
+#  heading: 1.57079
+
+# 4th layout, joint start 4
+#uav1:
+#  id: 1
+#  x: 0
+#  y: 13.5
+#  z: 0.5
+#  heading: -1.57079
+
+#uav2:
+#  id: 2
+#  x: 4
+#  y: 13.5
+#  z: 0.5
+#  heading: -1.57079
+
+#uav3:
+#  id: 3
+#  x: -4
+#  y: 13.5
+#  z: 0.5
+#  heading: -1.57079
+
+# 5th layout, separated start 1
+#uav1:
+#  id: 1
+#  x: -12
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: 13.5
+#  z: 0.5
+#  heading: -1.57079
+
+#uav3:
+#  id: 3
+#  x: 12
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+# 6th layout, separated start 2
+#uav1:
+#  id: 1
+#  x: -12
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -13.5
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 12
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+# 7th layout, separated start 3
+#uav1:
+#  id: 1
+#  x: -12
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -13.5
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 0
+#  y: 13.5
+#  z: 0.5
+#  heading: -1.57079
+
+# 8th layout, separated start 4
+#uav1:
+#  id: 1
+#  x: 12
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -13.5
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 0
+#  y: 13.5
+#  z: 0.5
+#  heading: -1.57079
+
+
+####################################################################################
+############################ SCHOOL ################################################
+####################################################################################
+# 1st layout, joint start 1 (RH_NBVP 2x, AEP 2x)
+#uav1:
+#  id: 1
+#  x: -22
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: -22
+#  y: 4
+#  z: 0.5
+#  heading: 0
+
+#uav3:
+#  id: 3
+#  x: -22
+#  y: -4
+#  z: 0.5
+#  heading: 0
+
+# 2nd layout, joint start 2 (RH_NBVP 1x, AEP 1x)
+#uav1:
+#  id: 1
+#  x: 22
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 22
+#  y: 4
+#  z: 0.5
+#  heading: 3.14159
+
+#uav3:
+#  id: 3
+#  x: 22
+#  y: -4
+#  z: 0.5
+#  heading: 3.14159
+
+# 3rd layout, joint start 3 (RH_NBVP 1x, AEP 1x)
+#uav1:
+#  id: 1
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav2:
+#  id: 2
+#  x: 4
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: -4
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+# 4th layout, joint start 4 (RH_NBVP 1x, AEP 1x)
+#uav1:
+#  id: 1
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+#uav2:
+#  id: 2
+#  x: 4
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+#uav3:
+#  id: 3
+#  x: -4
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+# 5th layout, separated start 1 (RH_NBVP 2x, AEP 2x)
+#uav1:
+#  id: 1
+#  x: -22
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+#uav3:
+#  id: 3
+#  x: 22
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+# 6th layout, separated start 2 (RH_NBVP 1x, AEP 1x)
+#uav1:
+#  id: 1
+#  x: -22
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 22
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+# 7th layout, separated start 3 (RH_NBVP 1x, AEP 1x)
+#uav1:
+#  id: 1
+#  x: -22
+#  y: 0
+#  z: 0.5
+#  heading: 0
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+# 8th layout, separated start 4 (RH_NBVP 1x, AEP 1x)
+#uav1:
+#  id: 1
+#  x: 22
+#  y: 0
+#  z: 0.5
+#  heading: 3.14159
+
+#uav2:
+#  id: 2
+#  x: 0
+#  y: -17
+#  z: 0.5
+#  heading: 1.57079
+
+#uav3:
+#  id: 3
+#  x: 0
+#  y: 12
+#  z: 0.5
+#  heading: -1.57079
+
+
+##################################################################################
