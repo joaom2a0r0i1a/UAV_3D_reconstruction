@@ -10,8 +10,8 @@ The planners read the drone pose from `/mavros/local_position/pose` and send the
 `/mavros/setpoint_raw/local`. The planning box and the gain box are defined relative to the
 takeoff pose. When the mission starts, the planner takes the current pose as the offset, shifts
 both boxes by it and publishes it on `offset_out` for the cached node server. `~offset` captures
-it again. There is no automatic takeoff and no gain benchmark. RH-NBVP flies one step per
-replan, and AEP flies its chosen branch as a chain of waypoints.
+it again. RH-NBVP flies one step per replan, and AEP flies its chosen branch as a chain of
+waypoints.
 
 ## Flying
 
