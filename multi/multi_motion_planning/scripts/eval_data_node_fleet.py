@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 # Python
-import sys
 import time
 import csv
 import datetime
@@ -39,9 +38,8 @@ class EvalData(object):
         if self.evaluate:
             # Setup parameters
             self.eval_directory = rospy.get_param('~eval_directory', 'DirParamNotSet')
-            if not os.path.isdir(self.eval_directory):
-                rospy.logfatal("Invalid target directory '%s'.", self.eval_directory)
-                sys.exit(-1)
+            # Data folder, created on a fresh clone
+            os.makedirs(self.eval_directory, exist_ok=True)
 
             self.ns_voxblox = rospy.get_param('~ns_voxblox', "/voxblox_node")
 
