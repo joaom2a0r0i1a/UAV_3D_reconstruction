@@ -3,7 +3,7 @@
 # Usage MAXJ=<n> parallel_eval.sh [environment] [gt_ply] <label_or_run_dir> [more dirs...]
 set -u
 ENVIRONMENT="${1:-school}"
-GTPLY="${2:-$(rospack find motion_planning)/data/gt_school_processed.ply}"
+GTPLY="${2:-$(rospack find uav_gazebo_environments)/ground_truth/$ENVIRONMENT.ply}"
 shift 2
 MAXJ="${MAXJ:-3}"
 

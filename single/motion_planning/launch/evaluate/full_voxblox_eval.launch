@@ -1,8 +1,8 @@
 <launch>
   <!-- Data Source -->
   <arg name="target_directory" default="$(find motion_planning)/data" />
-  <arg name="gt_file_path" default="$(find motion_planning)/data/gt_school_processed.ply"/>
   <arg name="environment" default="school"/>
+  <arg name="gt_file_path" default="$(find uav_gazebo_environments)/ground_truth/$(arg environment).ply"/>
   <arg name="method" default="all"/>
   <arg name="series_labels" default=""/>
 

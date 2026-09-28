@@ -14,7 +14,7 @@
   <arg name="world_frame" default="common_origin" />
 
   <!-- Bag Recorder -->
-  <node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_gazebo_static /tf_static /voxblox_node/mesh /$(arg UAV_NAME_1)/estimation_manager/uav_state /$(arg UAV_NAME_1)/reference_out /$(arg UAV_NAME_2)/estimation_manager/uav_state /$(arg UAV_NAME_2)/reference_out /$(arg UAV_NAME_3)/estimation_manager/uav_state /$(arg UAV_NAME_3)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
+  <node pkg="rosbag" type="record" name="rosbag_recorder" launch-prefix="bash -c 'mkdir -p $(arg data_directory)/tmp_bags; exec &quot;$0&quot; &quot;$@&quot;'" args="/rosout /clock /tf /tf_gazebo_static /tf_static /voxblox_node/mesh /$(arg UAV_NAME_1)/estimation_manager/uav_state /$(arg UAV_NAME_1)/reference_out /$(arg UAV_NAME_2)/estimation_manager/uav_state /$(arg UAV_NAME_2)/reference_out /$(arg UAV_NAME_3)/estimation_manager/uav_state /$(arg UAV_NAME_3)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/>
   <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="/rosout /clock /tf /tf_gazebo_static /tf_static /voxblox_node/mesh /$(arg UAV_NAME_1)/estimation_manager/uav_state /$(arg UAV_NAME_1)/reference_out /$(arg UAV_NAME_2)/estimation_manager/uav_state /$(arg UAV_NAME_2)/reference_out -o $(arg data_directory)/tmp_bags/tmp_bag"/-->
   <!--node pkg="rosbag" type="record" name="rosbag_recorder" args="-a -o my_data"/-->
 
