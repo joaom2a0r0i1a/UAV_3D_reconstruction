@@ -151,64 +151,84 @@ roslaunch motion_planning planner.launch planner:=kaep      # or rhnbvp, aep, kr
 
 # Running Experiments
 
-An experiment is one recorded flight of the single-drone simulation, scored afterwards. The
-evaluation needs `python3-scipy` and `python3-matplotlib`.
+An experiment is one flight in the single-drone simulation. The flight is recorded and scored
+afterwards. The scoring needs `python3-scipy` and `python3-matplotlib`.
 
 ### 1. Fly
 
+The settings of an experiment are at the top of
+`single/motion_planning/tmux/one_drone/session.yml`:
+
+```yaml
+  - export PLANNER_KIND=${PLANNER_KIND:-rhnbvp}                                   # aep | rhnbvp | kaep | krhnbvp
+  - export PLANNER_ENV=${PLANNER_ENV:-school}                                     # school | police | warehouse | multistory | big_maze | maze
+  - export EXP_TIME_LIMIT=${EXP_TIME_LIMIT:-30}                                   # [min] flight length
+  - export EXP_DATA_DIR=${EXP_DATA_DIR:-$(rospack find motion_planning)/data}    # run and bag folder
+```
+
+Change the value after `:-`. Give every condition its own data folder, for example
+`$(rospack find motion_planning)/data/aep_school`, so the conditions can be compared later. To
+choose the gain of AEP and RH-NBVP, add `marginal_gain:=true` or `marginal_gain:=false` to the
+`planner.launch` line further down the same file. Then start the simulation:
+
 ```bash
 cd ~/catkin_ws/src/UAV_3D_reconstruction/single/motion_planning/tmux/one_drone
-export PLANNER_KIND=aep        # aep | rhnbvp | kaep | krhnbvp
-export PLANNER_ENV=school      # school | police | warehouse | multistory | big_maze | maze
-export EXP_TIME_LIMIT=30       # [min] flight length
-export EXP_DATA_DIR=$(rospack find motion_planning)/data/label_a   # one folder per condition
 ./start.sh
 ```
 
-The planner starts once the drone is airborne and the experiment stops at the time limit. Each
-run is saved as `label_a/<date>_<time>/` (maps, `voxblox_data.csv`, `data_log.txt`) with its
-flight bag in `label_a/tmp_bags/`. Close the session with `./kill.sh` and start again for the
-next run. `AEP_MARGINAL_GAIN=true|false` selects the gain of AEP and RH-NBVP.
+The drone takes off, the planner starts on its own and the flight ends at the time limit. The run
+is saved in the data folder as `<date>_<time>/`, with the saved maps, `voxblox_data.csv` and
+`data_log.txt`, and its recording goes to `tmp_bags/` next to it. Close the session with
+`./kill.sh` and start again for the next run.
 
 ### 2. Score each run
 
 ```bash
-roslaunch motion_planning full_voxblox_eval.launch \
-  target_directory:=$(rospack find motion_planning)/data/label_a method:=all \
-  environment:=school evaluate_volume:=true create_meshes:=true error_histogram:=true
+DATA=$(rospack find motion_planning)/data
+roslaunch motion_planning full_voxblox_eval.launch target_directory:=$DATA/aep_school \
+    environment:=school method:=all evaluate_volume:=true create_meshes:=true error_histogram:=true
 ```
 
-School and police are scored against `uav_gazebo_environments/ground_truth/<environment>.ply`
-(mean error, RMSE, unknown voxels) and by reconstructed volume. The other worlds have no ground
-truth cloud, add `evaluate:=false` to score them by volume only. Results are appended to each
-run's `voxblox_data.csv`, figures go to its `graphs/`.
+This scores every run in `aep_school`.
+
+- `environment` selects the region that is scored, the same one the drone flew in.
+- School and police are compared with their ground truth cloud,
+  `uav_gazebo_environments/ground_truth/<environment>.ply`, which gives the mean error, RMSE and
+  unknown voxels of every saved map. `evaluate_volume:=true` adds the reconstructed volume.
+- The other worlds have no ground truth cloud. `evaluate:=false` turns the comparison off, so they
+  are scored by reconstructed volume alone, which is why `evaluate_volume:=true` must stay on.
+- `create_meshes` and `error_histogram` add a mesh of every saved map and a histogram of the errors.
+
+The scores are added to each run's `voxblox_data.csv` and the figures go to its `graphs/`. A run
+is only scored once, running the command again skips it.
 
 ### 3. Compare conditions
 
 ```bash
-roslaunch motion_planning full_voxblox_eval.launch \
-  target_directory:=$(rospack find motion_planning)/data \
-  multi_series:=true series_labels:=label_a,label_b environment:=school | tee ~/series.log
+roslaunch motion_planning full_voxblox_eval.launch target_directory:=$DATA environment:=school \
+    multi_series:=true series_labels:=aep_school,rhnbvp_school | tee ~/series.log
 ```
 
-Writes `data/multi_series_evaluation/` and prints, for ground truth scored runs, the time each
-condition needs to reach 25, 50, 75 and 95 % of the known voxels.
+Use the same `evaluate` settings as in step 2. The conditions are plotted together in
+`$DATA/multi_series_evaluation/`, and the time each one needs to know 25, 50, 75 and 95 % of the
+region is printed. Without a ground truth cloud, the known part is the reconstructed volume over
+the volume of the region.
 
-### 4. Further metrics
+### 4. Other metrics
 
 ```bash
-cd $(rospack find motion_planning)/scripts/evaluation/analysis
 export MP=$(rospack find motion_planning)
-python3 milestones_from_log.py ~/series.log             # milestone table
-OUT=path_vel.json python3 path_vel_mapped.py label_a    # path length and average speed
-BOX=9367 python3 path_vel_at95.py label_a               # path and speed up to 95 % coverage
-python3 termination_time.py label_a                     # AEP self-termination time
-python3 stall_forensics.py $MP/data/label_a/tmp_bags/<bag> 30   # motion per 30 s window of one flight
-python3 thin_maps.py $MP/data/label_a 5                 # keep every 5th map once scored
+S=$MP/scripts/evaluation/analysis
+python3 $S/milestones_from_log.py ~/series.log                     # table of the times from step 3
+OUT=~/path_vel.json python3 $S/path_vel_mapped.py aep_school       # path length and average speed
+BOX=9367 python3 $S/path_vel_at95.py aep_school                    # path and speed until 95 % is known
+python3 $S/termination_time.py aep_school                          # time at which AEP stops by itself
+python3 $S/stall_forensics.py $DATA/aep_school/tmp_bags/<bag> 30   # movement per 30 s of one flight
+python3 $S/thin_maps.py $DATA/aep_school 5                         # keep every 5th map once scored
 ```
 
-`BOX` is the reconstruction box volume in m³, printed as `map_volume` by the evaluation. The gain
-benchmark figures are described in
+The scripts that take a condition name read it from `$MP/data`. `BOX` is the volume of the scored
+region in m³, printed as `map_volume` while scoring. The gain benchmark has its own guide in
 [scripts/evaluation/figures](single/motion_planning/scripts/evaluation/figures/README.md).
 
 # Notes
