@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Accuracy figures from the per-node CSVs
 # DEPTH_N and DEPTH_REPLAN pick the trees of panel 2
-import csv, glob, os, math, statistics as st
+# Usage accuracy_analyze.py [csv_dir] [out_dir], ACCURACY_LOG and ACCURACY_OUT otherwise
+import csv, glob, os, sys, math, statistics as st
 import matplotlib
 
 matplotlib.use("Agg")
@@ -9,8 +10,8 @@ import matplotlib.pyplot as plt
 
 # yapf: disable
 MP  = os.environ.get("MP") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-LOG = os.environ.get("ACCURACY_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
-OUT = os.environ.get("ACCURACY_OUT", os.path.join(MP, "data"))
+LOG = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ACCURACY_LOG", os.path.join(MP, "tmux", "one_drone", "variants_logs"))
+OUT = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("ACCURACY_OUT", LOG)
 os.makedirs(OUT, exist_ok=True)
 NS  = [50, 100, 500, 1000, 5000, 10000]
 # all pools every tree size
@@ -47,8 +48,8 @@ for n in NS:
         rows.append(d)
 print(f"loaded {len(rows)} node-rows")
 if not rows:
-    print("no data")
-    raise SystemExit
+    print(f"no data in {LOG}, expected accuracy_n<N>.csv files with a header row")
+    raise SystemExit(1)
 
 
 def r2(xs, ys):
