@@ -18,7 +18,7 @@ closed_loop_hil/
     sim.sh              launches Gazebo + MRS (sim+control+sensors) inside the noetic_ws
                         container; reads ../../config/*.yaml + ../../current_config.env.
   onboard_jetson/       run on the Jetson Orin (also mirrored under jm_ws on the Jetson)
-    run_config.sh V N   one config: seds NBVPlanner.yaml (N_max, N_termination=max(2N,300),
+    run_config.sh V N   one config: seds RH_NBVP.yaml (N_max, N_termination=max(2N,300),
                         timing_after_s=600, max_replans=25, recovery_timeout=900), launches the
                         stack, starts the mission, waits for 10 whole-tree captures, tears down.
     stack.sh            launches voxblox + RH-NBVP planner (timing suite) + cache; planner

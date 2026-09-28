@@ -20,7 +20,7 @@ $T kill-session -t $S 2>/dev/null
 $T new-session -d -s $S -n voxblox
 send voxblox 'roslaunch motion_planning processed_voxblox.launch'
 $T new-window -t $S -n planner
-send planner "AEP_BENCHMARK=true AEP_MARGINAL_GAIN=true NBV_BENCH_SUITE=timing roslaunch motion_planning NBVPlanner.launch 2>&1 | tee $HIL_LOG"
+send planner "AEP_BENCHMARK=true AEP_MARGINAL_GAIN=true RH_NBVP_BENCH_SUITE=timing roslaunch motion_planning RH_NBVP.launch 2>&1 | tee $HIL_LOG"
 $T new-window -t $S -n cache
 send cache 'roslaunch cache_nodes cache.launch'
 

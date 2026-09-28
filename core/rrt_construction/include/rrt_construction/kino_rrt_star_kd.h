@@ -116,7 +116,7 @@ public:
 
     void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
 
-    void computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result);
+    void computeSamplingDimensionsRH_NBVP(double radius, Eigen::Vector4d& result);
 
     void computeAccelerationSampling(double a_max, Eigen::Vector3d& result);
 

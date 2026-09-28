@@ -1,0 +1,65 @@
+<launch>
+  <arg name="voxel_size" default="$(optenv VOXEL_SIZE 0.2)"/>
+  <arg name="voxels_per_side" default="$(optenv VOXELS_PER_SIDE 16)" />
+  <arg name="truncation_distance" default="0.6" />
+  <arg name="ray_length" default="5" />
+
+  <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
+  <arg name="world_frame" default="$(arg UAV_NAME)/world_origin" />
+
+  <!-- Experiment sweep overrides (defaults match RH_NBVP.yaml; set per-run via AEP_* env). -->
+  <arg name="rrt_star"       default="$(optenv AEP_RRT_STAR false)" />
+  <arg name="marginal_gain"  default="$(optenv AEP_MARGINAL_GAIN false)" />
+  <arg name="compute"        default="$(optenv AEP_COMPUTE gpu)" />
+  <arg name="marginal_split" default="$(optenv AEP_MARGINAL_SPLIT false)" />
+  <arg name="benchmark"      default="$(optenv AEP_BENCHMARK false)" />
+  <arg name="benchmark_suite" default="$(optenv RH_NBVP_BENCH_SUITE timing)" />
+
+  <group ns="$(arg UAV_NAME)">
+    <node pkg="motion_planning" type="RH_NBVP" name="planner_node" output="screen">
+      <rosparam file="$(find gain_evaluation)/config/GainConfig.yaml" />
+      <rosparam file="$(find motion_planning)/config/RH_NBVP.yaml" />
+
+      <!-- Sweep overrides, applied after the yaml so they win. -->
+      <param name="rrt/rrt_star"              value="$(arg rrt_star)" />
+      <param name="evaluation/marginal_gain"  value="$(arg marginal_gain)" />
+      <param name="evaluation/compute"        value="$(arg compute)" />
+      <param name="evaluation/marginal_split" value="$(arg marginal_split)" />
+      <param name="benchmark/enabled"         value="$(arg benchmark)" />
+      <param name="benchmark/suite"           value="$(arg benchmark_suite)" />
+      <param name="uav_namespace"             value="$(arg UAV_NAME)" />
+
+      <!-- Voxblox Planner -->
+      <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />
+      <remap from="~tsdf_map_in" to="voxblox_node/tsdf_map_out" />
+      <param name="use_tf_transforms" value="false" />
+      <param name="tsdf_voxel_size" value="$(arg voxel_size)" />
+      <param name="tsdf_voxels_per_side" value="$(arg voxels_per_side)" />
+      <param name="update_mesh_every_n_sec" value="0.0" />
+      <param name="publish_traversable" value="false" />
+
+      <!-- Publishers -->
+      <remap from="~visualization_marker_out" to="visualization_marker_out" />
+      <remap from="~initial_reference_out" to="control_manager/reference" />
+      <remap from="~reference_out" to="reference_out" />
+      <remap from="~frustum_out" to="frustum_out" />
+      <remap from="~unknown_voxels_out" to="unknown_voxels_out" />
+      <remap from="~simulation_ready" to="simulation_ready" />
+
+      <!-- Subscribers -->
+      <remap from="~constraints_in" to="control_manager/current_constraints" />
+      <remap from="~uav_state_in" to="estimation_manager/uav_state" />
+      <remap from="~tracker_cmd_in" to="control_manager/tracker_cmd" />
+      <remap from="~control_manager_diag_in" to="control_manager/diagnostics" />
+
+      <!-- Service clients -->
+      <remap from="~trajectory_generation_out" to="trajectory_generation/get_path" />
+      <remap from="~trajectory_reference_out" to="control_manager/trajectory_reference" />
+
+      <!-- Service servers -->
+      <remap from="~start_in" to="~start" />
+      <remap from="~stop_in" to="~stop" />
+    </node>
+  </group>
+
+</launch>

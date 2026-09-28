@@ -1,5 +1,5 @@
 # LongGrove volume evaluation box, takeoff relative, shifted per run by offset.txt.
-# Mirrors the matching gain_evaluation block in GainConfigReal.yaml.
+# Mirrors the matching gain_evaluation block in GainConfig_rw.yaml.
 
 bounded_box:
   min_x: -32.0 # [m]

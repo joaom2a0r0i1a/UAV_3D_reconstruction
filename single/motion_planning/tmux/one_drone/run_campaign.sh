@@ -22,7 +22,7 @@
 #   KEEP_FOLDER=multi_series_<name>   SUMMARY=DECISION_SUMMARY_<NAME>.txt
 #   RESTORE=true|false    # restore repo to school/marginal default at end (default true)
 #   CONDITIONS=(          # AEP : "label|gain[|_|rrt_star]"  gain=abs|marg  (field 3 unused)
-#     ...                 # NBVP: "label|gain|nmax|nterm|step|fixed[|optyaw]"  gain=abs|marg
+#     ...                 # RH_NBVP: "label|gain|nmax|nterm|step|fixed[|optyaw]"  gain=abs|marg
 #   )
 # =============================================================================
 set -u
@@ -67,17 +67,17 @@ SUMMARY="$LOGDIR/$SUMMARY"
 # ---- config file targets: real files, or temp copies under --dry-run --------
 if [ "$DRY" = 1 ]; then
   TMPD=$(mktemp -d)
-  cp "$REPO/single/motion_planning/config/AEPlanner.yaml"      "$TMPD/AEPlanner.yaml"
-  cp "$REPO/single/motion_planning/config/NBVPlanner.yaml"     "$TMPD/NBVPlanner.yaml"
+  cp "$REPO/single/motion_planning/config/AEP.yaml"      "$TMPD/AEP.yaml"
+  cp "$REPO/single/motion_planning/config/RH_NBVP.yaml"     "$TMPD/RH_NBVP.yaml"
   cp "$REPO/core/gain_evaluation/config/GainConfig.yaml"    "$TMPD/GainConfig.yaml"
   cp "$REPO/core/cache_nodes/config/config.yaml"             "$TMPD/cache_config.yaml"
   cp "$REPO/single/motion_planning/tmux/one_drone/session.yml" "$TMPD/session.yml"
-  YAML="$TMPD/AEPlanner.yaml"; NYAML="$TMPD/NBVPlanner.yaml"
+  YAML="$TMPD/AEP.yaml"; NYAML="$TMPD/RH_NBVP.yaml"
   GCFG="$TMPD/GainConfig.yaml"; SESS="$TMPD/session.yml"; CCFG="$TMPD/cache_config.yaml"
   echo "### DRY-RUN — editing temp copies in $TMPD, no launches, no real writes ###"
 else
-  YAML="$REPO/single/motion_planning/config/AEPlanner.yaml"
-  NYAML="$REPO/single/motion_planning/config/NBVPlanner.yaml"
+  YAML="$REPO/single/motion_planning/config/AEP.yaml"
+  NYAML="$REPO/single/motion_planning/config/RH_NBVP.yaml"
   GCFG="$REPO/core/gain_evaluation/config/GainConfig.yaml"
   SESS="$REPO/single/motion_planning/tmux/one_drone/session.yml"
   CCFG="$REPO/core/cache_nodes/config/config.yaml"
@@ -159,7 +159,7 @@ fi
 
 if [ "$DRY" = 1 ]; then
   echo; echo "### DRY-RUN diffs (temp copies vs repo) ###"
-  for f in AEPlanner.yaml NBVPlanner.yaml GainConfig.yaml cache_config.yaml session.yml; do
+  for f in AEP.yaml RH_NBVP.yaml GainConfig.yaml cache_config.yaml session.yml; do
     case "$f" in
       GainConfig.yaml)   real="$REPO/core/gain_evaluation/config/$f" ;;
       cache_config.yaml) real="$REPO/core/cache_nodes/config/config.yaml" ;;

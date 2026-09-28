@@ -100,22 +100,22 @@ target_link_libraries(cached
 #########
 
 # Create library from class implementation
-add_library(cached_multi_lib
-  src/cached_multi.cpp
+add_library(cached_fleet_lib
+  src/cached_fleet.cpp
 )
 
-add_dependencies(cached_multi_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(cached_fleet_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-target_link_libraries(cached_multi_lib
+target_link_libraries(cached_fleet_lib
   ${catkin_LIBRARIES}
 )
 
-# Add executable for cached_multi.cpp
-add_executable(cached_multi src/cached_multi_node.cpp)
+# Add executable for cached_fleet.cpp
+add_executable(cached_fleet src/cached_fleet_node.cpp)
 
 # Link executable against required libraries
-target_link_libraries(cached_multi
-  cached_multi_lib
+target_link_libraries(cached_fleet
+  cached_fleet_lib
   ${catkin_LIBRARIES}
 )
 

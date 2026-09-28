@@ -74,7 +74,7 @@ void kino_rrt_star::computeSamplingDimensions(double radius, Eigen::Vector3d& re
     result = Eigen::Vector3d(rand_x, rand_y, rand_z);
 }
 
-void kino_rrt_star::computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result) {
+void kino_rrt_star::computeSamplingDimensionsRH_NBVP(double radius, Eigen::Vector4d& result) {
     bool solutionFound = false;
     double rand_x, rand_y, rand_z, rand_yaw;
     while (!solutionFound) {

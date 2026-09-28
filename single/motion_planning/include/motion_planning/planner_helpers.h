@@ -63,7 +63,7 @@ struct BenchAccum {
 void benchmarkBatchCheck(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                              bool optimize_yaw, bool marginal_split, const char* phase);
 
-// Per-node CPU-vs-GPU gain values (abs / 1-parent / all) -> NBV_ACCURACY_CSV for R².
+// Per-node CPU-vs-GPU gain values (abs / 1-parent / all) -> RH_NBVP_ACCURACY_CSV for R².
 void benchmarkAccuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                          const std::vector<uint8_t>& flat_map, bool optimize_yaw, int replan_count, const char* phase);
 

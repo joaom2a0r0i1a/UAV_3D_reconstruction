@@ -5,16 +5,16 @@
 # Consolidates the config-injection + run + eval backbone that the ~25 one-off
 # experiment drivers (school_*, police_*, nbvp_*, aep_*) all duplicated. Those
 # drivers differed ONLY in a config descriptor (world, planner, gain mode,
-# NBVP N_max/step/fixed_step, N, T, early-stop, labels);
+# RH_NBVP N_max/step/fixed_step, N, T, early-stop, labels);
 # everything below is byte-for-byte what they shared.
 #
 # Injection channels (unchanged from the originals):
 #   1. config-spec -> current_config.env -> session.yml -> planner .launch optenv
 #      "label:rrt_star:marginal_gain:compute:marginal_split:benchmark"
-#   2. sed AEPlanner.yaml  : marginal_gain, absolute_pathsum, bounded_box (full 6-dim, per world)
-#   3. sed NBVPlanner.yaml : optimize_yaw, N_max, N_termination, step_size, fixed_step
+#   2. sed AEP.yaml  : marginal_gain, absolute_pathsum, bounded_box (full 6-dim, per world)
+#   3. sed RH_NBVP.yaml : optimize_yaw, N_max, N_termination, step_size, fixed_step
 #   4. sed GainConfig.yaml : gain_evaluation region (world) + active-world marker
-#   5. sed session.yml     : world+spawn lines, AEPlanner<->NBVPlanner launch line
+#   5. sed session.yml     : world+spawn lines, AEP<->RH_NBVP launch line
 #
 # File paths (YAML/NYAML/GCFG/SESS) are set by run_campaign.sh so the same
 # helpers can operate on temp copies during --dry-run.
@@ -87,14 +87,14 @@ world_uav_radius(){ case "$1" in
   big_maze)      echo "0.8" ;;  # corridors 2.2-3.9 m (min 2.23) -> 0.8 leaves a 0.6 m valid tube
   *) die "unknown world '$1'";; esac; }
 # AEP gain threshold (g_zero): a node/frontier counts as worth visiting when gain > g_zero. Lower = more
-# frontiers, later termination, less missed reconstruction in clutter. AEP-only (NBV uses best_score==0).
+# frontiers, later termination, less missed reconstruction in clutter. AEP-only (RH_NBVP uses best_score==0).
 world_g_zero(){ case "$1" in
   school|police|big_maze) echo "5.0" ;;
   warehouse) echo "3.0" ;;    # 2026-08-18 user set 3.0 (5.0 terminated too early / left clutter unseen; 2.0 washed out)
   multistory) echo "2.0" ;;   # tightest corridors/layout -> keep low to catch the last ~5%
   *) die "unknown world '$1'";; esac; }
 # Waypoint-advance distance: publish the next waypoint when within this dist of the current one. Larger = smoother
-# but cuts corners (clips tight doors on long global paths); smaller = tighter follow. AEP-only (NBV flies single targets).
+# but cuts corners (clips tight doors on long global paths); smaller = tighter follow. AEP-only (RH_NBVP flies single targets).
 world_wp_reach(){ case "$1" in
   school|police) echo "0.8" ;;
   warehouse|multistory|big_maze) echo "0.5" ;;   # tight doors -> less corner-cutting
@@ -107,7 +107,7 @@ world_aep_params(){ case "$1" in
   multistory)    echo "400 1600 1600 2.0 1.0 1.0" ;;
   big_maze)      echo "250 1000 1000 2.0 1.5 1.0" ;;   # node counts + step 1.5 == warehouse now
   *) die "unknown world '$1'";; esac; }
-# NBV (receding-horizon) sizing + motion: N_max N_termination radius step_size tolerance
+# RH_NBVP (receding-horizon) sizing + motion: N_max N_termination radius step_size tolerance
 world_nbv_params(){ case "$1" in
   school|police) echo "50 300 2.0 2.0 0.5" ;;
   warehouse)     echo "250 1000 2.0 1.5 1.0" ;;   # matches big_maze/AEP (250/1000, step 1.5)
@@ -141,12 +141,12 @@ set_world(){  # $1=school|police|warehouse|multistory
   done
   sed -i -E "s@^([[:space:]]*)#-([[:space:]]*waitForRos.*${wf//./\\.}.*)@\1-\2@"      "$SESS"
   sed -i -E "s@^([[:space:]]*)#-([[:space:]]*waitForGazebo.*--pos ${pos} .*)@\1-\2@"  "$SESS"
-  # AEPlanner.yaml bounded_box (full 6-dim RRT sampling region)
+  # AEP.yaml bounded_box (full 6-dim RRT sampling region)
   read -r axmn axmx aymn aymx azmn azmx <<< "$(world_aep_box "$w")"
   set_key "$YAML" min_x "$axmn"; set_key "$YAML" max_x "$axmx"
   set_key "$YAML" min_y "$aymn"; set_key "$YAML" max_y "$aymx"
   set_key "$YAML" min_z "$azmn"; set_key "$YAML" max_z "$azmx"
-  # NBVPlanner.yaml bounded_box MUST match AEP's (same world, same sampling region)
+  # RH_NBVP.yaml bounded_box MUST match AEP's (same world, same sampling region)
   set_key "$NYAML" min_x "$axmn"; set_key "$NYAML" max_x "$axmx"
   set_key "$NYAML" min_y "$aymn"; set_key "$NYAML" max_y "$aymx"
   set_key "$NYAML" min_z "$azmn"; set_key "$NYAML" max_z "$azmx"
@@ -172,15 +172,15 @@ set_world(){  # $1=school|police|warehouse|multistory
   read -r nn nt nr nstep ntol <<< "$(world_nbv_params "$w")"
   set_key "$NYAML" N_max "$nn"; set_key "$NYAML" N_termination "$nt"      # set_nbvp may override for NBV sweeps
   set_key "$NYAML" radius "$nr"; set_key "$NYAML" step_size "$nstep"; set_key "$NYAML" tolerance "$ntol"
-  log "world -> $w (session world+spawn, AEP box=${axmn}/${axmx}/${aymn}/${aymx}/${azmn}/${azmx}, gain region + marker, uav_radius=${uavr}, AEP N=${an}/${at}/${anm}, NBV N=${nn}/${nt})"
+  log "world -> $w (session world+spawn, AEP box=${axmn}/${axmx}/${aymn}/${aymx}/${azmn}/${azmx}, gain region + marker, uav_radius=${uavr}, AEP N=${an}/${at}/${anm}, RH_NBVP N=${nn}/${nt})"
 }
 
 # ---- planner switch: session.yml launch line -------------------------------
 set_planner(){  # $1=aep|nbvp
   local want other
   case "$1" in
-    aep)  want=AEPlanner;  other=NBVPlanner ;;
-    nbvp) want=NBVPlanner; other=AEPlanner ;;
+    aep)  want=AEP;  other=RH_NBVP ;;
+    nbvp) want=RH_NBVP; other=AEP ;;
     *) die "unknown planner '$1'";;
   esac
   sed -i -E "s@^([[:space:]]*)#-([[:space:]]*waitForControl; roslaunch motion_planning ${want}\.launch)@\1-\2@" "$SESS"
@@ -209,7 +209,7 @@ set_nbvp(){  # $1=optyaw $2=nmax $3=nterm $4=step $5=fixed $6=objective(expdecay
   set_key "$NYAML" objective      "${6:-expdecay}"
   set_key "$NYAML" execution_horizon "${7:-1}"
   [ "$3" -gt "$2" ] || die "N_termination ($3) MUST be > N_max ($2) or receding-horizon never recedes"
-  log "NBVP optimize_yaw=$1 N_max=$2 N_term=$3 step=$4 fixed_step=$5 objective=${6:-expdecay} horizon=${7:-1}"
+  log "RH_NBVP optimize_yaw=$1 N_max=$2 N_term=$3 step=$4 fixed_step=$5 objective=${6:-expdecay} horizon=${7:-1}"
 }
 
 # ---- preflight: read-only asserts on the live config (catches wrong world/planner)
@@ -219,7 +219,7 @@ preflight(){  # $1=world $2=planner
   grep -qE "^[[:space:]]*-[[:space:]]*waitForRos.*${wf//./\\.}" "$SESS"      || die "session world not $w"
   grep -qE "^[[:space:]]*-[[:space:]]*waitForGazebo.*--pos ${pos} " "$SESS"  || die "session spawn not $w"
   grep -qE "^gain_evaluation:.*${marker}" "$GCFG"                            || die "GainConfig not $w"
-  case "$p" in aep) launch=AEPlanner;; nbvp) launch=NBVPlanner;; esac
+  case "$p" in aep) launch=AEP;; nbvp) launch=RH_NBVP;; esac
   grep -qE "^[[:space:]]*-[[:space:]]*waitForControl; roslaunch motion_planning ${launch}\.launch" "$SESS" || die "planner not $p"
   log "PREFLIGHT OK — $w / $p"
 }

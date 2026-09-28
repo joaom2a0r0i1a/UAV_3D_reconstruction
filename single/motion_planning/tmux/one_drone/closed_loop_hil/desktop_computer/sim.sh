@@ -29,7 +29,7 @@ $T new-window -t $S -n hw_api  ; send hw_api  'waitForTime; roslaunch mrs_uav_px
 $T new-window -t $S -n core    ; send core    'waitForHw; roslaunch mrs_uav_core core.launch platform_config:=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml custom_config:=./config/custom_config.yaml world_config:=./config/world_config.yaml network_config:=./config/network_config.yaml'
 $T new-window -t $S -n takeoff ; send takeoff 'waitForHw; roslaunch mrs_uav_autostart automatic_start.launch custom_config:=./config/automatic_start.yaml'
 $T split-window -t $S:takeoff  ; send takeoff.1 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
-$T new-window -t $S -n pointclouds ; send pointclouds 'waitForControl; roslaunch motion_planning cam_to_ptcld.launch'
+$T new-window -t $S -n pointclouds ; send pointclouds 'waitForControl; roslaunch motion_planning depth_to_pointcloud.launch'
 $T new-window -t $S -n rviz    ; send rviz    'waitForControl; rosrun rviz rviz -d ./config/custom_rviz.rviz'
 
 echo ">>> desktop sim launched (socket '$L', session '$S')."

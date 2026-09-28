@@ -44,11 +44,11 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
  # Define libraries
 set(LIBRARIES
-  PlannerHelpersReal
-  NBVPlannerReal
-  KinoNBVPlannerReal
-  AEPlannerReal
-  KinoAEPlannerReal
+  planner_helpers_rw
+  RH_NBVP_rw_lib
+  KRH_NBVP_rw_lib
+  AEP_rw_lib
+  KAEP_rw_lib
   )
 
   # Define Catkin package
@@ -70,61 +70,61 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   )
   
- # mrs-free helpers shared by the real AEP + NBV planners
-add_library(PlannerHelpersReal
-  src/planner_helpers_real.cpp
+ # mrs-free helpers shared by the real AEP + RH_NBVP planners
+add_library(planner_helpers_rw
+  src/planner_helpers_rw.cpp
   )
 
    # Add library targets
-add_library(NBVPlannerReal
-  src/NBVReal/NBVplannerReal.cpp
+add_library(RH_NBVP_rw_lib
+  src/RH_NBVP/RH_NBVP_rw.cpp
   )
 
  # Add library targets
- add_library(KinoNBVPlannerReal 
- src/KinoNBVReal/KinoNBVplannerReal.cpp
+ add_library(KRH_NBVP_rw_lib 
+ src/KRH_NBVP/KRH_NBVP_rw.cpp
  )
   
  # Add library targets
-add_library(AEPlannerReal
-  src/AEPReal/AEPlannerReal.cpp
+add_library(AEP_rw_lib
+  src/AEP/AEP_rw.cpp
   )
   
    # Add library targets
-add_library(KinoAEPlannerReal 
-  src/KinoAEPReal/KinoAEPlannerReal.cpp
+add_library(KAEP_rw_lib 
+  src/KAEP/KAEP_rw.cpp
   )
 
 
  # Add dependencies for library targets
-add_dependencies(PlannerHelpersReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(NBVPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(KinoNBVPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(AEPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(KinoAEPlannerReal ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(planner_helpers_rw ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(RH_NBVP_rw_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KRH_NBVP_rw_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(AEP_rw_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KAEP_rw_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
-target_link_libraries(PlannerHelpersReal ${catkin_LIBRARIES})
-target_link_libraries(NBVPlannerReal ${catkin_LIBRARIES} PlannerHelpersReal)
-target_link_libraries(KinoNBVPlannerReal ${catkin_LIBRARIES})
-target_link_libraries(AEPlannerReal ${catkin_LIBRARIES} PlannerHelpersReal)
-target_link_libraries(KinoAEPlannerReal ${catkin_LIBRARIES})
+target_link_libraries(planner_helpers_rw ${catkin_LIBRARIES})
+target_link_libraries(RH_NBVP_rw_lib ${catkin_LIBRARIES} planner_helpers_rw)
+target_link_libraries(KRH_NBVP_rw_lib ${catkin_LIBRARIES})
+target_link_libraries(AEP_rw_lib ${catkin_LIBRARIES} planner_helpers_rw)
+target_link_libraries(KAEP_rw_lib ${catkin_LIBRARIES})
 
- # Add executable for NBVplanner_node.cpp
-add_executable(NBVReal src/NBVReal/NBVplannerReal_node.cpp)
-add_executable(KinoNBVReal src/KinoNBVReal/KinoNBVplannerReal_node.cpp)
-add_executable(AEPReal src/AEPReal/AEPlannerReal_node.cpp)
-add_executable(KinoAEPReal src/KinoAEPReal/KinoAEPlannerReal_node.cpp)
+ # Add executable for RH_NBVP_rw_node.cpp
+add_executable(RH_NBVP_rw src/RH_NBVP/RH_NBVP_rw_node.cpp)
+add_executable(KRH_NBVP_rw src/KRH_NBVP/KRH_NBVP_rw_node.cpp)
+add_executable(AEP_rw src/AEP/AEP_rw_node.cpp)
+add_executable(KAEP_rw src/KAEP/KAEP_rw_node.cpp)
 
 # tf broadcast
 add_executable(mavros_tf_broadcaster src/mavros_tf_broadcaster.cpp)
 target_link_libraries(mavros_tf_broadcaster ${catkin_LIBRARIES})
 
  # Link executable against required libraries
-target_link_libraries(NBVReal ${catkin_LIBRARIES} NBVPlannerReal)
-target_link_libraries(KinoNBVReal ${catkin_LIBRARIES} KinoNBVPlannerReal)
-target_link_libraries(AEPReal ${catkin_LIBRARIES} AEPlannerReal)
-target_link_libraries(KinoAEPReal ${catkin_LIBRARIES} KinoAEPlannerReal)
+target_link_libraries(RH_NBVP_rw ${catkin_LIBRARIES} RH_NBVP_rw_lib)
+target_link_libraries(KRH_NBVP_rw ${catkin_LIBRARIES} KRH_NBVP_rw_lib)
+target_link_libraries(AEP_rw ${catkin_LIBRARIES} AEP_rw_lib)
+target_link_libraries(KAEP_rw ${catkin_LIBRARIES} KAEP_rw_lib)
 
  ## --------------------------------------------------------------
  ## |                           Install                          |

@@ -1,29 +1,29 @@
 # Real-World Motion Planning
 
-Real-world (mavros/ArduPilot) versions of the exploration planners. `AEPReal` and `NBVReal`
-are ports of the current sim planners (`motion_planning/{AEP,NBV}`) with the same layout and
+Real-world (mavros/ArduPilot) versions of the exploration planners. `AEP_rw` and `RH_NBVP_rw`
+are ports of the current sim planners (`motion_planning/{AEP,RH_NBVP}`) with the same layout and
 feature set — GPU marginal gain, batched expansion, recovery/backtrack, edge collision — and
 these real-world deltas:
 
 - **mavros instead of MRS**: pose in from `geometry_msgs/PoseStamped`
   (`/mavros/local_position/pose`), commands out as `mavros_msgs/PositionTarget`
-  (`/mavros/setpoint_raw/local`). No mrs_lib/mrs_msgs in the AEP/NBV code paths
+  (`/mavros/setpoint_raw/local`). No mrs_lib/mrs_msgs in the AEP/RH_NBVP code paths
   (Kino variants are older and still mrs-based).
 - **Start offset, automatic**: configs define the bounded box and the gain box RELATIVE TO THE
   TAKEOFF POSE. On `~start` the planner snapshots the current pose, shifts both boxes by it
   (`GainEvaluator::setWorldOffset`), and publishes the offset LATCHED on `offset_out` (the
   cached frontier server consumes it). `~offset` re-captures manually; it is idempotent.
-- **No benchmark suites, execution horizon fixed to 1** (NBV flies one step per replan; AEP
+- **No benchmark suites, execution horizon fixed to 1** (RH_NBVP flies one step per replan; AEP
   flies its chosen branch as a waypoint chain with distance+yaw advance).
 - **No auto-takeoff**: take off yourself (GUIDED), then call `~start`.
 
 ## How to fly
 
 1. Pre-flight: `scripts/evaluate/offload_runs.sh --check` (refuses below 15 GB free).
-2. `tmux/one_drone_real/mavros_tmux_{aep,nbv}.sh` — brings up mavros (`apm.launch`), realsense,
+2. `tmux/one_drone_rw/{aep,rh_nbvp}.sh` — brings up mavros (`apm.launch`), realsense,
    TF connect, voxblox, pointcloud processing, the planner, (AEP) the cached frontier server
-   via `cache_nodes cache_real.launch`, the experiment recorder
-   (`evaluate_map_real.launch` — waits for mission start, does NOT start anything), the
+   via `cache_nodes cache_rw.launch`, the experiment recorder
+   (`evaluate_map_rw.launch` — waits for mission start, does NOT start anything), the
    `record.sh eval` bag, and the `start_gate` pane.
 3. Take off manually, fly/look around (voxblox maps from the get-go), switch to GUIDED.
 4. The `start_gate` pane detects GUIDED and asks **"Start Planner? [Y/n]"** — `Y` starts the
@@ -36,12 +36,12 @@ these real-world deltas:
 6. After the session: `scripts/evaluate/offload_runs.sh` on the Jetson — copies finished runs
    (+ bags) to the PC results root (`data/real_world/`), verifies with a full checksum pass,
    and only then deletes the Jetson copies (manifest kept on both machines).
-7. On the PC: `scripts/evaluate/eval_real.sh <experiment_dir>` — per-run volume evaluation
+7. On the PC: `scripts/evaluate/eval_rw.sh <experiment_dir>` — per-run volume evaluation
    (box auto-shifted by each run's offset.txt), multi-series graphs, milestones table,
    path/velocity, `RESULTS.txt`.
 
-Environment switch = edit the `bounded_box` in `config/{AEP,NBV}plannerReal.yaml` **and** the
-`gain_evaluation` box in `config/GainConfigReal.yaml` (both takeoff-relative).
+Environment switch = edit the `bounded_box` in `config/{AEP,RH_NBVP}_rw.yaml` **and** the
+`gain_evaluation` box in `config/GainConfig_rw.yaml` (both takeoff-relative).
 
 ## Testing in the MRS simulator (no mavros)
 
@@ -76,13 +76,13 @@ Recommended topology: **Jetson as 5 GHz AP** (no external infra needed):
 
 ## Package layout
 
-- `src/{AEPReal,NBVReal}` — the ported planners; `src/planner_helpers_real.cpp` — mrs-free
+- `src/{AEP_rw,RH_NBVP_rw}` — the ported planners; `src/planner_helpers_rw.cpp` — mrs-free
   helpers (sim `planner_helpers` minus the benchmark section).
-- `src/{KinoAEPReal,KinoNBVReal}` — older mrs-based kinodynamic variants (not yet ported).
-- `config/` — planner yamls + `GainConfigReal.yaml` (real gain box; real launches load this
+- `src/{KAEP_rw,KRH_NBVP_rw}` — older mrs-based kinodynamic variants (not yet ported).
+- `config/` — planner yamls + `GainConfig_rw.yaml` (real gain box; real launches load this
   instead of the sim GainConfig).
 - `launch/` — per-planner launches, `sim_test/RealPlannerSimTest.launch`, voxblox/pointcloud
   processing, `tf_realsense_connect_mavros.launch`.
 - `scripts/` — `mrs_sim_bridge.py`, `start_gate.py`, `rviz_bbx.py`;
-  `scripts/evaluate/` — `eval_data_node_real.py` (stage-1 recorder),
-  `eval_real.sh` (stage-2 orchestrator, PC), `offload_runs.sh` (Jetson→PC).
+  `scripts/evaluate/` — `eval_data_node_rw.py` (stage-1 recorder),
+  `eval_rw.sh` (stage-2 orchestrator, PC), `offload_runs.sh` (Jetson→PC).

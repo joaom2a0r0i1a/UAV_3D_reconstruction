@@ -240,7 +240,7 @@ void benchmarkBatchCheck(GainEvaluator& seg, const std::vector<rrt_star::Node*>&
     for (size_t i = 0; i < n; ++i) { nodes[i]->gain = sg[i]; nodes[i]->point[3] = sy[i]; }
 }
 
-// [accuracy] Per-node gain VALUES: CPU {abs, 1-parent, all} + GPU {abs, all} -> NBV_ACCURACY_CSV for R². Accuracy, not time.
+// [accuracy] Per-node gain VALUES: CPU {abs, 1-parent, all} + GPU {abs, all} -> RH_NBVP_ACCURACY_CSV for R². Accuracy, not time.
 void benchmarkAccuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& nodes,
                          const std::vector<uint8_t>& flat_map, bool optimize_yaw, int replan_count, const char* phase) {
     if (nodes.empty()) return;
@@ -288,7 +288,7 @@ void benchmarkAccuracy(GainEvaluator& seg, const std::vector<rrt_star::Node*>& n
     for (size_t i = 0; i < n; ++i) { g_g1p_cpu[i] = g1p_of[nodes[i]]; g_gall_cpu[i] = gall_of[nodes[i]]; }
 
     // Per-node CSV: replan,depth,abs_cpu,abs_gpu,p1_cpu,p1_gpu,all_cpu,all_gpu.
-    const char* csv_path = std::getenv("NBV_ACCURACY_CSV");
+    const char* csv_path = std::getenv("RH_NBVP_ACCURACY_CSV");
     std::ofstream csv;
     if (csv_path) csv.open(csv_path, std::ios::app);
     for (size_t i = 0; i < n; ++i) {

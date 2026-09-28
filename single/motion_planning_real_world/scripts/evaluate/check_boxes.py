@@ -31,12 +31,12 @@ def fmt(b):
     return 'x[%g, %g] y[%g, %g] z[%g, %g]' % b if b else '(absent)'
 
 
-gain_f = os.path.join(CFG, 'GainConfigReal.yaml')
-aep_f = os.path.join(CFG, 'AEPlannerReal.yaml')
-nbv_f = os.path.join(CFG, 'NBVplannerReal.yaml')
-# Default comes from eval_real.sh, so this check can never disagree with what eval actually uses.
+gain_f = os.path.join(CFG, 'GainConfig_rw.yaml')
+aep_f = os.path.join(CFG, 'AEP_rw.yaml')
+nbv_f = os.path.join(CFG, 'RH_NBVP_rw.yaml')
+# Default comes from eval_rw.sh, so this check can never disagree with what eval actually uses.
 def default_eval_config():
-    sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'eval_real.sh')
+    sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'eval_rw.sh')
     m = re.search(r'EVAL_CONFIG="\$\{EVAL_CONFIG:-([^}]+)\}"', open(sh).read())
     return m.group(1) if m else 'PatioLamp.yaml'
 
@@ -49,12 +49,12 @@ ev = box(eval_f, 'bounded_box') if os.path.exists(eval_f) else None
 
 print('  gain     %-34s %s' % (label(gain_f, 'gain_evaluation'), fmt(gain)))
 print('  AEP bbx  %-34s %s' % (label(aep_f, 'bounded_box'), fmt(aep)))
-print('  NBV bbx  %-34s %s' % (label(nbv_f, 'bounded_box'), fmt(nbv)))
+print('  RH_NBVP bbx  %-34s %s' % (label(nbv_f, 'bounded_box'), fmt(nbv)))
 print('  eval     %-34s %s' % (eval_name, fmt(ev)))
 
 bad = []
 if aep != nbv:
-    bad.append('AEP and NBV planner boxes differ')
+    bad.append('AEP and RH_NBVP planner boxes differ')
 if ev is None:
     bad.append('eval box %s not found' % eval_name)
 elif ev != gain:

@@ -85,7 +85,7 @@ void launch_marginal_gain(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,
 
 /* BATCHED MARGINAL-GAIN LAUNCHERS (whole wavefront; fused vs split, both GPU-resident-pool: ancestor depth is
    read in place from d_pool via anc.depth_idx, each candidate writes its render to d_pool[out_slot[c]];
-   kernel_ms=device ms; fixed_yaws=NBVP per-candidate or null=AEP) */
+   kernel_ms=device ms; fixed_yaws=RH_NBVP per-candidate or null=AEP) */
 void launch_marginal_gain_batch_fused(GpuMap map, GpuCandidates cands,
                                       GpuAncestorBatch anc, GpuResult out,
                                       GpuSensor cfg, float* kernel_ms,
@@ -98,7 +98,7 @@ void launch_marginal_gain_batch_split(GpuMap map, GpuCandidates cands,
                                       float* d_pool, const int* out_slot);
 
 
-/* FIXED-YAW VARIANTS (NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
+/* FIXED-YAW VARIANTS (RH_NBVP): eval the FOV window at fixed_yaws[i] instead of optimizing yaw; out.yaw = input yaw */
 void launch_absolute_gain_batch_fixed(GpuMap map, GpuCandidates cands, GpuResult out,
                                     GpuSensor cfg, const float* fixed_yaws, float* kernel_ms);
 void launch_marginal_gain_fixed(GpuMap map, GpuVec3 cand, GpuAncestors ancestors,

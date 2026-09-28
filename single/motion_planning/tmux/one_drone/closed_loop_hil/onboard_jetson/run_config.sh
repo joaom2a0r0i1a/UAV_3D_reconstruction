@@ -5,7 +5,7 @@
 # Precondition: the DESKTOP sim is already running FRESH and the ROS link is up (~/hil_env.sh).
 V=${1:?voxel 0.2|0.1}; N=${2:?N_max}
 ROOT=~/jm_ws/src/UAV_3D_reconstruction/single/motion_planning
-YAML=$ROOT/config/NBVPlanner.yaml ; HERE=$ROOT/tmux/one_drone/closed_loop_hil/onboard_jetson
+YAML=$ROOT/config/RH_NBVP.yaml ; HERE=$ROOT/tmux/one_drone/closed_loop_hil/onboard_jetson
 VT=$(echo "$V" | sed 's/^0\./0p/;s/^\./0p/')          # 0.2->0p2  0.1->0p1
 LOG=~/hilB_logs/timing_yawopt_${VT}_n${N}.log ; mkdir -p ~/hilB_logs
 NEED=10 ; XMAX=25 ; THR=$(awk "BEGIN{printf \"%d\", 0.7*$N}")   # collect 10 mature captures; benchmark up to 25 replans

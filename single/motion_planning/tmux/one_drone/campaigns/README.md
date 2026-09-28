@@ -40,7 +40,7 @@ touches the real configs, the container, or tmux.
 - `variant` = `R1A|R2A|R1B|R2B` — R1/R2 = `marginal_edge_follow_yaw` false/true, A/B = `marginal_score_pathsum` true/false
 - `rrt_star` = `false`\|`true` (optional, default false)
 
-**NBVP:** `label|gain|nmax|nterm|step|fixed[|optyaw]`
+**RH_NBVP:** `label|gain|nmax|nterm|step|fixed[|optyaw]`
 - `gain` = `abs` \| `marg`
 - `nterm` MUST be `> nmax` (receding-horizon ceiling; asserted)
 - `fixed` = `fixed_step` (true = every edge == step_size)

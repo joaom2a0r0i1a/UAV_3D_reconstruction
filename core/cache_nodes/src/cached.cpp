@@ -79,8 +79,8 @@ void Cached::GetTransformation() {
     tf::transformMsgToKindr(T_C_B_message.transform, &T_C_B);
     evaluator.setCameraExtrinsics(T_C_B);
 
-    ROS_INFO("[KinoAEPlanner]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
-    ROS_INFO("[KinoAEPlanner]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
+    ROS_INFO("[KAEP]: T_C_B Translation: [%f, %f, %f]", T_C_B_message.transform.translation.x, T_C_B_message.transform.translation.y, T_C_B_message.transform.translation.z);
+    ROS_INFO("[KAEP]: T_C_B Rotation: [%f, %f, %f, %f]", T_C_B_message.transform.rotation.x, T_C_B_message.transform.rotation.y, T_C_B_message.transform.rotation.z, T_C_B_message.transform.rotation.w);
 }
 
 void Cached::callbackUavState(const mrs_msgs::UavState::ConstPtr& msg) {

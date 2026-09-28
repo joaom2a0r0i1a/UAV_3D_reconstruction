@@ -72,10 +72,10 @@ windows:
       layout: tiled
       panes:
         #- 'history -s python3 eval_paths.py'
-        - waitForControl; roslaunch motion_planning NBVPlanner.launch
-        #- waitForControl; roslaunch motion_planning AEPlanner.launch
-        #- waitForControl; roslaunch motion_planning KinoNBVPlanner.launch
-        #- waitForControl; roslaunch motion_planning KinoAEPlanner.launch
+        - waitForControl; roslaunch motion_planning RH_NBVP.launch
+        #- waitForControl; roslaunch motion_planning AEP.launch
+        #- waitForControl; roslaunch motion_planning KRH_NBVP.launch
+        #- waitForControl; roslaunch motion_planning KAEP.launch
         - waitForControl; roslaunch motion_planning experiment_starter.launch
         #- 'history -s rosservice call /$UAV_NAME/planner_node/start'
   - cached_nodes:
@@ -95,7 +95,7 @@ windows:
   - processed_pointclouds:
       layout: tiled
       panes:
-        - waitForControl; roslaunch motion_planning cam_to_ptcld.launch
+        - waitForControl; roslaunch motion_planning depth_to_pointcloud.launch
   #- rqt_plot:
       #layout: tiled
       #panes:

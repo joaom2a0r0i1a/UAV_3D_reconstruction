@@ -110,7 +110,7 @@ public:
 
     void computeSamplingDimensions(double radius, Eigen::Vector3d& result);
 
-    void computeSamplingDimensionsNBV(double radius, Eigen::Vector4d& result);
+    void computeSamplingDimensionsRH_NBVP(double radius, Eigen::Vector4d& result);
 
 
     /* ----------------------- Nearest / nearby queries ----------------------- */

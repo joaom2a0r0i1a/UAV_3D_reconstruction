@@ -39,10 +39,10 @@ set(Eigen_LIBRARIES ${EIGEN3_LIBRARIES})
 
  # Define libraries
 set(LIBRARIES
-  NBVMultiPlanner
-  KinoNBVPMultiPlanner
-  AEPMultiPlanner
-  KinoAEPMultiPlanner
+  RH_NBVP_fleet_lib
+  KRH_NBVP_fleet_lib
+  AEP_fleet_lib
+  KAEP_fleet_lib
 )
 
   # Define Catkin package
@@ -65,45 +65,45 @@ include_directories(
 )
 
  # Add library targets
-add_library(NBVMultiPlanner 
-  src/NBVMultiplanner.cpp
+add_library(RH_NBVP_fleet_lib 
+  src/RH_NBVP_fleet.cpp
 )
 
-add_library(KinoNBVPMultiPlanner 
-  src/KinoNBVPMultiplanner.cpp
+add_library(KRH_NBVP_fleet_lib 
+  src/KRH_NBVP_fleet.cpp
 )
 
-add_library(AEPMultiPlanner 
- src/AEPMultiplanner.cpp
+add_library(AEP_fleet_lib 
+ src/AEP_fleet.cpp
 )
 
-add_library(KinoAEPMultiPlanner 
-  src/KinoAEPMultiplanner.cpp
+add_library(KAEP_fleet_lib 
+  src/KAEP_fleet.cpp
 )
 
  # Add dependencies for library targets
-add_dependencies(NBVMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(KinoNBVPMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(AEPMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
-add_dependencies(KinoAEPMultiPlanner ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(RH_NBVP_fleet_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KRH_NBVP_fleet_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(AEP_fleet_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
+add_dependencies(KAEP_fleet_lib ${catkin_EXPORTED_TARGETS} ${${PROJECT_NAME}_EXPORTED_TARGETS})
 
  # Link libraries against required Catkin libraries
-target_link_libraries(NBVMultiPlanner ${catkin_LIBRARIES})
-target_link_libraries(KinoNBVPMultiPlanner ${catkin_LIBRARIES})
-target_link_libraries(AEPMultiPlanner ${catkin_LIBRARIES})
-target_link_libraries(KinoAEPMultiPlanner ${catkin_LIBRARIES})
+target_link_libraries(RH_NBVP_fleet_lib ${catkin_LIBRARIES})
+target_link_libraries(KRH_NBVP_fleet_lib ${catkin_LIBRARIES})
+target_link_libraries(AEP_fleet_lib ${catkin_LIBRARIES})
+target_link_libraries(KAEP_fleet_lib ${catkin_LIBRARIES})
 
- # Add executable for NBVplanner_node.cpp
-add_executable(NBVMulti src/NBVMultiplanner_node.cpp)
-add_executable(KinoNBVPMulti src/KinoNBVPMultiplanner_node.cpp)
-add_executable(AEPMulti src/AEPMultiplanner_node.cpp)
-add_executable(KinoAEPMulti src/KinoAEPMultiplanner_node.cpp)
+ # Add executable for RH_NBVP_node.cpp
+add_executable(RH_NBVP_fleet src/RH_NBVP_fleet_node.cpp)
+add_executable(KRH_NBVP_fleet src/KRH_NBVP_fleet_node.cpp)
+add_executable(AEP_fleet src/AEP_fleet_node.cpp)
+add_executable(KAEP_fleet src/KAEP_fleet_node.cpp)
 
  # Link executable against required libraries
-target_link_libraries(NBVMulti ${catkin_LIBRARIES} NBVMultiPlanner)
-target_link_libraries(KinoNBVPMulti ${catkin_LIBRARIES} KinoNBVPMultiPlanner)
-target_link_libraries(AEPMulti ${catkin_LIBRARIES} AEPMultiPlanner)
-target_link_libraries(KinoAEPMulti ${catkin_LIBRARIES} KinoAEPMultiPlanner)
+target_link_libraries(RH_NBVP_fleet ${catkin_LIBRARIES} RH_NBVP_fleet_lib)
+target_link_libraries(KRH_NBVP_fleet ${catkin_LIBRARIES} KRH_NBVP_fleet_lib)
+target_link_libraries(AEP_fleet ${catkin_LIBRARIES} AEP_fleet_lib)
+target_link_libraries(KAEP_fleet ${catkin_LIBRARIES} KAEP_fleet_lib)
 
  ## --------------------------------------------------------------
  ## |                           Install                          |

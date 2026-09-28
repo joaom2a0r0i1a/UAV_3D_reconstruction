@@ -5,7 +5,7 @@
 #
 # Each config is pushed to the planner via env vars written to
 # ./current_config.env, which session.yml sources in its pre_window. The four
-# planner knobs map to AEPlanner.yaml as:
+# planner knobs map to AEP.yaml as:
 #   AEP_MARGINAL_GAIN  -> evaluation/marginal_gain    (false=absolute, true=marginal/hash)
 #   AEP_COMPUTE        -> evaluation/compute          (cpu | gpu)
 #   AEP_MARGINAL_SPLIT -> evaluation/marginal_split   (false=fused, true=split)
@@ -54,7 +54,7 @@ EXPLORE_CONFIGS=(
 
 # Benchmark mode: all methods are timed/compared on the same tree per planning
 # iteration, so a single benchmark=true run yields the B/C/D comparisons.
-# (Full per-method CSV columns + v4 timing still require the AEPlanner.cpp
+# (Full per-method CSV columns + v4 timing still require the AEP.cpp
 #  changes noted in the plan; this just enables the instrumentation.)
 BENCHMARK_CONFIGS=(
   "BENCH_gpu_marg:false:true:gpu:false:true"
@@ -72,7 +72,7 @@ export EXP_DATA_DIR=$6
 export EXP_TIME_LIMIT=$7
 export AEP_EARLY_STOP=${AEP_EARLY_STOP:-false}
 export AEP_EARLY_STOP_GRACE=${AEP_EARLY_STOP_GRACE:-60.0}
-export NBV_ACCURACY_CSV=${NBV_ACCURACY_CSV:-}
+export RH_NBVP_ACCURACY_CSV=${RH_NBVP_ACCURACY_CSV:-}
 export VOXEL_SIZE=${VOXEL_SIZE:-0.2}
 EOF
 }

@@ -524,7 +524,7 @@ std::pair<double, double> GainEvaluator::computeGainCPU_FlatMap(const std::vecto
     }
   }
 
-  // Yaw window: fixed yaw (NBVP) sums the window at that yaw; else slide for the best window (AEP).
+  // Yaw window: fixed yaw (RH_NBVP) sums the window at that yaw; else slide for the best window (AEP).
   return pickYawWindow(yaw_gains, dtheta_rad, theta_bins, fixed_yaw);
 }
 

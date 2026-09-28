@@ -14,7 +14,7 @@
 
   <group ns="$(arg UAV_NAME)">
 
-    <!-- Voxblox mapping fed directly by cam_to_ptcld_real.launch; free space comes from the flattened far pixels as clearing rays (no separate freespace pointcloud). -->
+    <!-- Voxblox mapping fed directly by depth_to_pointcloud_rw.launch; free space comes from the flattened far pixels as clearing rays (no separate freespace pointcloud). -->
     <node name="voxblox_node" pkg="voxblox_ros" type="esdf_server" output="screen" args="-alsologtostderr">
       <remap from="pointcloud" to="/$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color/points"/>
       <param name="tsdf_voxel_size" value="$(arg voxel_size)" />

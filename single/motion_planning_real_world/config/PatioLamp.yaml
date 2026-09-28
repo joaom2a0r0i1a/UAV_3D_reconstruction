@@ -1,5 +1,5 @@
 # Patio Lamp volume evaluation box, takeoff relative, shifted per run by offset.txt.
-# Mirrors the gain_evaluation box in GainConfigReal.yaml: score what you compute gain over.
+# Mirrors the gain_evaluation box in GainConfig_rw.yaml: score what you compute gain over.
 
 bounded_box:
   min_x: -4.0 # [m]
