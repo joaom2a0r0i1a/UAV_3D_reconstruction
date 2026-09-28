@@ -130,9 +130,6 @@ code was tested with. To move it to the newest `main`:
 git submodule update --remote uav_gazebo_environments
 ```
 
-Do not keep a second clone of it elsewhere in the workspace, catkin refuses two
-`uav_gazebo_environments` packages.
-
 It carries six worlds and, for each, the three regions the pipeline needs, where the planner
 may sample, where gain is counted and what the evaluation measures.
 
@@ -206,22 +203,23 @@ is only scored once, running the command again skips it.
 
 ```bash
 roslaunch motion_planning full_voxblox_eval.launch target_directory:=$DATA environment:=school \
-    multi_series:=true series_labels:=aep_school,rhnbvp_school | tee ~/series.log
+    multi_series:=true series_labels:=aep_school,rhnbvp_school
 ```
 
 Use the same `evaluate` settings as in step 2. The conditions are plotted together in
-`$DATA/multi_series_evaluation/`, and for each one the time to reach 25, 50, 75 and 95 % coverage
-and the final coverage are printed. Coverage is the known part of the ground truth for school and
-police, and the reconstructed volume over the volume of the region for the other worlds.
+`$DATA/multi_series_evaluation/`, and the time each one takes to reach 25, 50, 75 and 95 %
+coverage, with its final coverage, is saved in `milestones.txt` in the same folder. Coverage is
+the known part of the ground truth for school and police, and the reconstructed volume over the
+volume of the region for the other worlds.
 
 ### 4. Paper metrics
 
 ```bash
 export MP=$(rospack find motion_planning)
 S=$MP/scripts/evaluation/analysis
-python3 $S/milestones_from_log.py ~/series.log   # E25 to E95 and final coverage
-python3 $S/path_vel_mapped.py aep_school         # path length and average velocity
-python3 $S/termination_time.py aep_school        # AEP termination time
+python3 $S/milestones_from_log.py $DATA/multi_series_evaluation/milestones.txt   # E25 to E95 and final coverage
+python3 $S/path_vel_mapped.py aep_school                                       # path length and average velocity
+python3 $S/termination_time.py aep_school                                      # AEP termination time
 ```
 
 The last two read the condition from `$MP/data`. The gain accuracy and computation time come from
