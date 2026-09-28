@@ -5,7 +5,14 @@ socket_name: mrs
 attach: false
 tmux_options: -f /etc/ctu-mrs/tmux.conf
 # You can modify these
-pre_window: export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0; [ -f ./current_config.env ] && source ./current_config.env; source ./environment.sh; export PLANNER_KIND=${PLANNER_KIND:-rhnbvp}
+pre_window:
+  - export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0
+  - '[ -f ./current_config.env ] && source ./current_config.env'
+  - export PLANNER_KIND=${PLANNER_KIND:-rhnbvp}                                   # aep | rhnbvp | kaep | krhnbvp
+  - export PLANNER_ENV=${PLANNER_ENV:-school}                                     # school | police | warehouse | multistory | big_maze | maze
+  - export EXP_TIME_LIMIT=${EXP_TIME_LIMIT:-30}                                   # [min] flight length
+  - export EXP_DATA_DIR=${EXP_DATA_DIR:-$(rospack find motion_planning)/data}    # run and bag folder
+  - source ./environment.sh
 startup_window: motion_planner
 windows:
   - roscore:
