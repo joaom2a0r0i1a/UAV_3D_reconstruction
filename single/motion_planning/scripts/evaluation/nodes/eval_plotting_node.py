@@ -242,6 +242,7 @@ class EvalPlotting(object):
         if not os.path.isdir(os.path.join(target_dir, folder_name)):
             os.mkdir(os.path.join(target_dir, folder_name))
         self.eval_log_file = open(os.path.join(target_dir, folder_name, "eval_log.txt"), 'a')
+        self.milestones_file = open(os.path.join(target_dir, folder_name, "milestones.txt"), 'w')
 
         # Read all the data
         fig, axes = plt.subplots(2, 2)
@@ -285,6 +286,7 @@ class EvalPlotting(object):
                 rospy.loginfo("No valid experiments found, stopping series evaluation.")
                 self.writelog("No valid experiments found, stopping series evaluation.")
                 self.eval_log_file.close()
+                self.milestones_file.close()
                 return
 
             # Common timeline across runs
@@ -445,13 +447,13 @@ class EvalPlotting(object):
                     np.fabs(x_value_75 - std_interp_function_1(y_value_75)),
                     np.fabs(x_value_75 - std_interp_function_2(y_value_75))
                 ])
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes."
                 )
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes."
                 )
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_75}% is time = {x_value_75:.2f} +/- {x_std_value_75:.2f} minutes."
                 )
                 if series != "RH-NBVP" and series != "JS - RH-NBVP" and series != "SS - RH-NBVP":
@@ -460,10 +462,10 @@ class EvalPlotting(object):
                         np.fabs(x_value_95 - std_interp_function_1(y_value_95)),
                         np.fabs(x_value_95 - std_interp_function_2(y_value_95))
                     ])
-                    print(
+                    self.report(
                         f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes."
                     )
-                print(
+                self.report(
                     f"{series}: Final coverage = {100 - unknown[-1]:.2f} +/- {100 * std_devs['UnknownVoxels'][-1]:.2f}%."
                 )
 
@@ -505,10 +507,10 @@ class EvalPlotting(object):
                     np.fabs(x_value_50 - std_interp_function_1(y_value_50)),
                     np.fabs(x_value_50 - std_interp_function_2(y_value_50))
                 ])
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_25}% is time = {x_value_25:.2f} +/- {x_std_value_25:.2f} minutes."
                 )
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_50}% is time = {x_value_50:.2f} +/- {x_std_value_50:.2f} minutes."
                 )
                 y_value_75 = 25
@@ -517,7 +519,7 @@ class EvalPlotting(object):
                     np.fabs(x_value_75 - std_interp_function_1(y_value_75)),
                     np.fabs(x_value_75 - std_interp_function_2(y_value_75))
                 ])
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_75}% is time = {x_value_75:.2f} +/- {x_std_value_75:.2f} minutes."
                 )
                 #if series != "RH-NBVP":
@@ -526,10 +528,10 @@ class EvalPlotting(object):
                     np.fabs(x_value_95 - std_interp_function_1(y_value_95)),
                     np.fabs(x_value_95 - std_interp_function_2(y_value_95))
                 ])
-                print(
+                self.report(
                     f"{series}: Timing corresponding to Known voxels = {100 - y_value_95}% is time = {x_value_95:.2f} +/- {x_std_value_95:.2f} minutes."
                 )
-                print(
+                self.report(
                     f"{series}: Final coverage = {100 - unknown[-1]:.2f} +/- {std_deviations[-1]:.2f}%."
                 )
 
@@ -575,6 +577,7 @@ class EvalPlotting(object):
         plt.savefig(save_name, dpi=300, format='png', bbox_inches='tight')
         self.writelog("Created graph 'MultiSeriesOverview'.")
         self.eval_log_file.close()
+        self.milestones_file.close()
 
         if self.show_plots:
             rospy.loginfo("Displaying '%s'. Close to continue...", save_name)
@@ -1093,6 +1096,11 @@ class EvalPlotting(object):
         if self.show_plots:
             rospy.loginfo("Displaying '%s'. Close to continue...", save_name)
             plt.show()
+
+    def report(self, text):
+        # Milestone line, to the screen and to milestones.txt
+        print(text)
+        self.milestones_file.write(text + "\n")
 
     def writelog(self, text):
         if self.eval_log_file is not None:

@@ -11,48 +11,40 @@ N is 50, 100, 500, 1000, 5000 or 10000, any subset works.
 
 ## Producing the inputs
 
-The benchmark runs inside the normal simulation (`tmux/one_drone/start.sh`) with RH-NBVP, the
-session default. One run per tree size.
+The benchmark runs during a normal RH-NBVP flight (`tmux/one_drone`), one flight per tree size.
 
-1. Tree size and benchmark start, in a yaml passed as overrides. `N_termination` must be larger
-   than `N_max`.
+1. Set the tree size and when the benchmark starts in `config/RH_NBVP.yaml`:
 
    ```yaml
-   # n500.yaml
    rrt:
      N_max: 500
-     N_termination: 1000
+     N_termination: 1000   # larger than N_max
+
    benchmark:
-     timing_after_s: 600.0 # [s] sim time before the benchmark starts
-     max_replans: 10       # benchmarked replans
+     timing_after_s: 600.0 # [s] benchmark start time
+     max_replans: 10       # benchmarked replans cap
    ```
 
-2. Export in the shell that runs `start.sh`. The `AEP_` variables apply to both planners.
+2. Turn the benchmark on in the planner line of `tmux/one_drone/session.yml`, and choose where the
+   accuracy results are written:
 
-   ```bash
-   mkdir -p ~/figures_in
-   export PLANNER_OVERRIDES=$PWD/n500.yaml
-   export AEP_BENCHMARK=true
-   export AEP_BENCH_SUITE="accuracy timing"
-   export RH_NBVP_ACCURACY_CSV=~/figures_in/accuracy_n500.csv
-   ./start.sh
+   ```yaml
+   - waitForControl; export RH_NBVP_ACCURACY_CSV=~/figures_in/accuracy_n500.csv; roslaunch motion_planning planner.launch planner:=$PLANNER_KIND benchmark:=true benchmark_suite:="accuracy timing"
    ```
 
-   The accuracy CSV is written directly, header included.
-
-3. After the run, keep the timing lines of the planner log.
+3. Create `~/figures_in` and fly with `./start.sh`. Right after the flight, keep the planner log
+   as the timing input:
 
    ```bash
-   grep -hE "\[timing_(marg|abs|cpu|full)\]" ~/.ros/log/latest/rosout.log* > ~/figures_in/timing_n500.log
+   cp ~/.ros/log/latest/rosout.log ~/figures_in/timing_n500.log
    ```
 
 ## Running the scripts
 
 ```bash
-python3 timing_analyze.py ~/figures_in [out_dir]
-python3 accuracy_analyze.py ~/figures_in [out_dir]
+python3 timing_analyze.py ~/figures_in
+python3 accuracy_analyze.py ~/figures_in
 ```
 
-Without arguments the current folder is read. Output goes to the input folder unless `out_dir`
-is given. `TIMING_TAG` changes the log prefix (default `timing_n`), `DEPTH_N` and `DEPTH_MAX` pick
-the trees and depths of the accuracy panels.
+The tables and figures are written next to the inputs. A second folder can be given as the output
+instead.
