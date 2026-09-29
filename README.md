@@ -1,22 +1,23 @@
 # UAV Exploration and 3D Reconstruction
 
-Real time planners that explore an unknown space with a UAV and reconstruct it as they go.
-Four planners share one pipeline, two classic and two kinodynamic.
+This repository contains sampling-based motion planners for the autonomous exploration and 3D
+reconstruction of unknown environments with Unmanned Aerial Vehicles (UAVs). It includes the
+Receding-Horizon Next-Best-View Planner (RH-NBVP) and the Autonomous Exploration Planner (AEP),
+together with their kinodynamic versions, the Kinodynamic Receding-Horizon Next-Best-View Planner
+(KRH-NBVP) and the Kinodynamic Autonomous Exploration Planner (KAEP).
 
-| planner | what it is |
-|---|---|
-| AEP | Autonomous Exploration Planner |
-| RH-NBVP | Receding Horizon Next Best View Planner |
-| KAEP | Kinodynamic AEP |
-| KRH-NBVP | Kinodynamic RH-NBVP |
+KRH-NBVP and KAEP incorporate the UAV's kinodynamic model and constraints into a kinodynamic RRT,
+producing smooth and dynamically feasible trajectories. KRH-NBVP is a local kinodynamic planner,
+and KAEP is a global kinodynamic planner that ensures full environment coverage through the
+Iterative Minimum Gain (IMG) and selects the yaw of each viewpoint with the Informed Yaw
+Optimization (IYO).
 
-The kinodynamic planners build a Kinodynamic RRT and pick viewpoints that maximise expected
-information gain against flight cost, respecting the UAV model and its constraints.
+RH-NBVP and AEP evaluate the information gain of their candidate viewpoints on the GPU, either as
+the absolute gain of each viewpoint or as the path-dependent marginal gain, which excludes the
+space that the preceding viewpoints on the same path are already expected to observe.
 
-AEP and RH-NBVP can also score viewpoints by marginal gain, which counts only the space a
-viewpoint sees beyond what the path leading to it already covers, so overlapping views along a
-branch are not counted twice. Gain is evaluated on the GPU, which is what makes this path
-dependent formulation affordable online.
+All planners run in simulation with the MRS UAV System, in centralized multi-UAV exploration, and
+on real UAVs through mavros.
 
 # Installation
 
@@ -234,9 +235,9 @@ the gain benchmark, described in
 
 # Credits
 
-If you use this work, please cite the paper that corresponds to the part you use.
+If you use this work, please cite the corresponding paper.
 
-**Kinodynamic planning**, published in IEEE Robotics and Automation Letters [ [IEEE](https://doi.org/10.1109/LRA.2025.3641147) | [video](https://youtu.be/FH2H081dvIY?si=S1QOr2jUzNWFeyol) ].
+**Kinodynamic planners (KRH-NBVP and KAEP)**, published in IEEE Robotics and Automation Letters [ [IEEE](https://doi.org/10.1109/LRA.2025.3641147) | [video](https://youtu.be/FH2H081dvIY?si=S1QOr2jUzNWFeyol) ].
 
 ```bibtex
 @article{Mendes_2026,
@@ -252,10 +253,17 @@ If you use this work, please cite the paper that corresponds to the part you use
 }
 ```
 
-**Centralized multi UAV exploration**, accepted and presented at ICARM 2026, IEEE Xplore entry
-pending. Cite as to appear until the DOI exists.
+**Centralized multi-UAV exploration**, presented at the IEEE International Conference on Advanced
+Robotics and Mechatronics (ICARM) 2026. The IEEE Xplore entry is not yet available.
 
-Joao Felix Mendes, Meysam Basiri and Rodrigo Ventura, "Centralized Multi-UAV Exploration and
-3D Reconstruction Using Single-UAV Planners", ICARM 2026.
+```bibtex
+@inproceedings{Mendes_ICARM_2026,
+  author    = {Mendes, Jo{\~a}o F{\'e}lix and Basiri, Meysam and Ventura, Rodrigo},
+  title     = {Centralized Multi-UAV Exploration and 3D Reconstruction Using Single-UAV
+               Planners},
+  booktitle = {IEEE International Conference on Advanced Robotics and Mechatronics (ICARM)},
+  year      = {2026}
+}
+```
 
-**Marginal gain on the GPU**, submitted to ICRA and under review.
+**Path-dependent marginal gain on the GPU**, submitted to ICRA and under review.
