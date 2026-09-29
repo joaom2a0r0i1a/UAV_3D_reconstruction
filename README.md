@@ -236,7 +236,7 @@ the gain benchmark, described in
 
 If you use this work, please cite the paper that corresponds to the part you use.
 
-**Kinodynamic planning**, published in IEEE Robotics and Automation Letters [[video](https://youtu.be/FH2H081dvIY?si=S1QOr2jUzNWFeyol) | [paper](https://doi.org/10.1109/LRA.2025.3641147)].
+**Kinodynamic planning**, published in IEEE Robotics and Automation Letters [ [IEEE](https://doi.org/10.1109/LRA.2025.3641147) | [video](https://youtu.be/FH2H081dvIY?si=S1QOr2jUzNWFeyol) ].
 
 ```bibtex
 @article{Mendes_2026,
