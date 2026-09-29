@@ -229,15 +229,15 @@ the gain benchmark, described in
 
 # Notes
 - For reproducibility of the results shown in the papers below, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
-- Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments of the marginal gain on the GPU paper were conducted using:
-  - **CPU:** Intel® Core™ i7-13650HX (13th Gen)
-  - **GPU:** NVIDIA GeForce RTX 5060 Laptop GPU
+- Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments were conducted using:
+  - **Kinodynamic planners and centralized multi-UAV exploration:** Intel® Core™ i9 (14th Gen) CPU and NVIDIA GeForce RTX 4060 GPU
+  - **Path-dependent marginal gain on the GPU:** Intel® Core™ i7-13650HX (13th Gen) CPU and NVIDIA GeForce RTX 5060 Laptop GPU
 
 # Credits
 
 If you use this work, please cite the corresponding paper.
 
-**Kinodynamic planners (KRH-NBVP and KAEP)**, published in IEEE Robotics and Automation Letters [ [IEEE](https://doi.org/10.1109/LRA.2025.3641147) | [video](https://youtu.be/FH2H081dvIY?si=S1QOr2jUzNWFeyol) ].
+**Kinodynamic planners (KRH-NBVP and KAEP)**, published in IEEE Robotics and Automation Letters [[IEEE](https://doi.org/10.1109/LRA.2025.3641147) | [video](https://youtu.be/FH2H081dvIY?si=S1QOr2jUzNWFeyol)].
 
 ```bibtex
 @article{Mendes_2026,
