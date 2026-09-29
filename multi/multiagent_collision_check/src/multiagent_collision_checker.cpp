@@ -17,6 +17,7 @@
 #ifndef _MULTIAGENT_COLLISON_CHECKER_CPP_
 #define _MULTIAGENT_COLLISON_CHECKER_CPP_
 
+#include <algorithm>
 #include <string>
 #include <ros/ros.h>
 #include <multiagent_collision_check/multiagent_collision_checker.h>
@@ -52,57 +53,61 @@ bool multiagent::isInCollision(const Eigen::Vector4d& state, const double safety
     return false;
 }
 
+// Keeps a fraction inside the segment, 0 at the start and 1 at the end
+double multiagent::clampFraction(const double fraction) {
+    return std::min(std::max(fraction, 0.0), 1.0);
+}
+
+// Closest point on a segment to a point, also for a zero length segment
+Eigen::Vector3d multiagent::closestPointOnSegment(const Eigen::Vector3d& point,
+                                                  const Eigen::Vector3d& segment_start,
+                                                  const Eigen::Vector3d& segment_end) {
+    const Eigen::Vector3d direction = segment_end - segment_start;
+    const double length_squared = direction.squaredNorm();
+    if (length_squared == 0) {
+        return segment_start;
+    }
+    const double fraction = clampFraction((point - segment_start).dot(direction) / length_squared);
+    return segment_start + direction * fraction;
+}
+
 double multiagent::closestDistanceBetweenLines(const Eigen::Vector3d& start1,
                                                const Eigen::Vector3d& end1,
                                                const Eigen::Vector3d& start2,
                                                const Eigen::Vector3d& end2) {
-    Eigen::Vector3d segment1 = end1 - start1;
-    Eigen::Vector3d segment2 = end2 - start2;
-    Eigen::Vector3d segment1normalized = segment1.normalized();
-    Eigen::Vector3d segment2normalized = segment2.normalized();
-    Eigen::Vector3d cross = segment1normalized.cross(segment2normalized);
-    double denominator = pow(cross.norm(), 2.0);
-    if (denominator != 0) {
-        // Lines are not parallel
-        Eigen::Vector3d t = (start2 - start1);
-        double numerator1 = (t.cross(segment2normalized)).dot(cross);
-        double numerator2 = (t.cross(segment1normalized)).dot(cross);
-        double t1 = numerator1 / denominator;
-        double t2 = numerator2 / denominator;
-        Eigen::Vector3d solution1 = start1 + (segment1normalized * t1);
-        Eigen::Vector3d solution2 = start2 + (segment2normalized * t2);
-        // Clamp results to line segments if necessary
-        if (t1 < 0) {
-            solution1 = start1;
-        } else if (t1 > segment1.norm()) {
-            solution1 = end1;
-        }
-        if (t2 < 0) {
-            solution2 = start2;
-        } else if (t2 > segment2.norm()) {
-            solution2 = end2;
-        }
-        return (solution1 - solution2).norm();
+    const Eigen::Vector3d direction1 = end1 - start1;
+    const Eigen::Vector3d direction2 = end2 - start2;
+    const double length1_squared = direction1.squaredNorm();
+    const double length2_squared = direction2.squaredNorm();
+
+    // Zero Length Segments
+    if (length1_squared == 0) {
+        return (closestPointOnSegment(start1, start2, end2) - start1).norm();
     }
-    // Parallel lines
-    double d0 = segment1normalized.dot(start2 - start1);
-    double d = (((d0 * segment1normalized) + start1) - start2).norm();
-    // Overlapping lines?
-    double d1 = segment1normalized.dot(end2 - start1);
-    if (d0 <= 0 && 0 >= d1) {
-        // segment2 before segment1
-        if (fabs(d0) < fabs(d1)) {
-            return (start2 - start1).norm();
-        }
-        return (end2 - start1).norm();
-    } else if (d0 >= segment1.norm() && segment1.norm() <= d1) {
-        // segment2 after segment1
-        if (fabs(d0) < fabs(d1)) {
-            return (start2 - end1).norm();
-        }
-        return (end2, end1).norm();
+    if (length2_squared == 0) {
+        return (closestPointOnSegment(start2, start1, end1) - start2).norm();
     }
-    return d;
+
+    const Eigen::Vector3d start_offset = start1 - start2;
+    const double directions_dot = direction1.dot(direction2);
+    const double offset_along1 = direction1.dot(start_offset);
+    const double offset_along2 = direction2.dot(start_offset);
+
+    // Closest Point of the Infinite Lines on Segment 1, the start for parallel lines
+    const double denominator = length1_squared * length2_squared - directions_dot * directions_dot;
+    double fraction1 = 0.0;
+    if (denominator > 1e-12 * length1_squared * length2_squared) {
+        fraction1 = (directions_dot * offset_along2 - length2_squared * offset_along1) / denominator;
+    }
+    fraction1 = clampFraction(fraction1);
+
+    // Best Point on Segment 2 for It, then Back on Segment 1
+    const double fraction2 = clampFraction((directions_dot * fraction1 + offset_along2) / length2_squared);
+    fraction1 = clampFraction((directions_dot * fraction2 - offset_along1) / length1_squared);
+
+    const Eigen::Vector3d closest1 = start1 + direction1 * fraction1;
+    const Eigen::Vector3d closest2 = start2 + direction2 * fraction2;
+    return (closest1 - closest2).norm();
 }
 
 #endif  // _MULTIAGENT_COLLISON_CHECKER_CPP_

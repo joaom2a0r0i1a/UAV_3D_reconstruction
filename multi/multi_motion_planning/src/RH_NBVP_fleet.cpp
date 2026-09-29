@@ -37,6 +37,11 @@ RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& n
 
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
+    param_loader.loadParam("path/collision_check_resolution", collision_check_resolution_, 0.1);
+    param_loader.loadParam("path/recovery_enabled", recovery_enabled_, true);
+    param_loader.loadParam("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    param_loader.loadParam("path/recovery_min_tree", recovery_min_tree_, 10);
+    param_loader.loadParam("path/recovery_timeout", recovery_timeout_, 12.0);
     param_loader.loadParam("path/lambda", lambda);
 
     // Timer
@@ -92,7 +97,12 @@ RH_NBVP_fleet::RH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& n
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &RH_NBVP_fleet::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &RH_NBVP_fleet::callbackControlManagerDiag, this);
-    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &RH_NBVP_fleet::callbackEvade, this);
+    // Paths of the other UAVs on their own queue, read right after each plan
+    nh_evade_ = nh_private_;
+    nh_evade_.setCallbackQueue(&evade_queue_);
+    mrs_lib::SubscribeHandlerOptions shopts_evade = shopts;
+    shopts_evade.nh = nh_evade_;
+    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts_evade, "evasion_segment_in", &RH_NBVP_fleet::callbackEvade, this);
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &RH_NBVP_fleet::callbackStart, this);
@@ -124,6 +134,17 @@ bool RH_NBVP_fleet::isPathCollisionFree(const std::vector<rrt_star::Node*>& path
     return true;
 }
 
+bool RH_NBVP_fleet::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const {
+    const Eigen::Vector3d d = to - from;
+    const int n = std::max(1, static_cast<int>(std::ceil(d.norm() / collision_check_resolution_)));
+    for (int i = 0; i <= n; ++i) {
+        if (getMapDistance(from + d * (static_cast<double>(i) / n)) < uav_radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void RH_NBVP_fleet::GetTransformation() {
     // From Body Frame to Camera Frame
     auto Message_C_B = transformer_->getTransform(body_frame_id, camera_frame_id, ros::Time(0));
@@ -144,6 +165,7 @@ void RH_NBVP_fleet::GetTransformation() {
 void RH_NBVP_fleet::planStep() {
     best_score_ = 0;
     rrt_star::Node* best_node = nullptr;
+    next_best_node = nullptr;
 
     // Multi-UAV remove previous planned agent path
     int k;
@@ -182,10 +204,29 @@ void RH_NBVP_fleet::planStep() {
     bool isFirstIteration = true;
     int j = 1;
     collision_id_counter_ = 0;
-    if (!prev_best_branch.empty()) {
-        previous_root = std::make_unique<rrt_star::Node>(prev_best_branch[0]);
-    }
+    ros::WallTime plan_start_ = ros::WallTime::now();
     while (j < N_max || best_score_ == 0.0) {
+        // Backtrack When Stuck
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
+            }
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                ROS_WARN("[RH_NBVP_fleet]: Backtracking (%s, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", j, executed_path_.size());
+                best_branch.clear();
+                prev_best_branch.clear();
+                return;
+            }
+            rotate();
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
+        }
+
         for (size_t i = 1; i < prev_best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -252,7 +293,8 @@ void RH_NBVP_fleet::planStep() {
         bool success_collision = false;
         success_collision = isPathCollisionFree(trajectory_segment);
 
-        if (!success_collision || multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
+        if (!success_collision || !isEdgeCollisionFree(new_node->parent->point.head<3>(), new_node->point.head<3>()) ||
+            multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
             //clear_node();
             /*if (multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
                 ROS_INFO("[RH_NBVP_fleet]: In Drone Collision");
@@ -460,6 +502,29 @@ void RH_NBVP_fleet::callbackEvade(const multiagent_collision_check::Segment::Con
     }
 }
 
+// Paths of the other UAVs only
+std::vector<std::vector<Eigen::Vector3d>*> RH_NBVP_fleet::otherSegments() const {
+    std::vector<std::vector<Eigen::Vector3d>*> others;
+    for (size_t i = 0; i < agentsId_.size(); ++i) {
+        if (agentsId_[i] != uav_id) {
+            others.push_back(segments_[i]);
+        }
+    }
+    return others;
+}
+
+bool RH_NBVP_fleet::isPathClearOfOthers(const std::vector<Eigen::Vector3d>& path) const {
+    const std::vector<std::vector<Eigen::Vector3d>*> others = otherSegments();
+    for (size_t i = 1; i < path.size(); ++i) {
+        const Eigen::Vector4d a(path[i - 1].x(), path[i - 1].y(), path[i - 1].z(), 0.0);
+        const Eigen::Vector4d b(path[i].x(), path[i].y(), path[i].z(), 0.0);
+        if (multiagent::isInCollision(a, b, uav_radius, others)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void RH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
@@ -515,11 +580,51 @@ void RH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
+            retreating_ = false;
             planStep();
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
                 break;
+            }
+
+            // Latest Paths of the Other UAVs
+            evade_queue_.callAvailable(ros::WallDuration(0.0));
+
+            // Retreat to Previous Node, if no other UAV is in the way
+            if (retreating_ && !executed_path_.empty()) {
+                if (!isPathClearOfOthers({pose.head<3>(), executed_path_.back().head<3>()})) {
+                    ROS_WARN("[RH_NBVP_fleet]: Retreat blocked by another UAV, rotating instead");
+                    rotate();
+                    break;
+                }
+                retreat_node_ = std::make_unique<rrt_star::Node>(executed_path_.back());
+                retreat_node_->parent = nullptr;
+                next_best_node = retreat_node_.get();
+            }
+
+            if (!next_best_node) {
+                ROS_WARN("[RH_NBVP_fleet]: No node chosen, planning again");
+                break;
+            }
+
+            // Recheck Against the Latest Paths of the Other UAVs
+            if (!retreating_) {
+                const Eigen::Vector3d step_from = next_best_node->parent ? next_best_node->parent->point.head<3>() : pose.head<3>();
+                if (!isPathClearOfOthers({step_from, next_best_node->point.head<3>()})) {
+                    ROS_WARN("[RH_NBVP_fleet]: Path crosses the new path of another UAV, planning again");
+                    best_branch.clear();
+                    prev_best_branch.clear();
+                    break;
+                }
+            }
+
+            // Store Flown Path
+            if (!retreating_) {
+                if (executed_path_.empty() && next_best_node->parent) {
+                    executed_path_.push_back(next_best_node->parent->point);
+                }
+                executed_path_.push_back(next_best_node->point);
             }
 
             iteration_ += 1;
@@ -548,7 +653,13 @@ void RH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
             multiagent_collision_check::Segment segment;
             segment.uav_id = uav_id;
 
-            if (next_best_node && next_best_node->parent) {
+            if (retreating_) {
+                geometry_msgs::Point from;
+                from.x = pose[0];
+                from.y = pose[1];
+                from.z = pose[2];
+                segment.uav_path.push_back(from);
+            } else if (next_best_node && next_best_node->parent) {
                 mrs_msgs::Reference prev_ref;
                 prev_ref.position.x = next_best_node->parent->point[0];
                 prev_ref.position.y = next_best_node->parent->point[1];
@@ -626,6 +737,21 @@ void RH_NBVP_fleet::changeState(const State_t new_state) {
     state_ = new_state;
 }
 
+// Rotates the colors by 120 degrees of hue per UAV, UAV1 keeps the original colors
+void RH_NBVP_fleet::colorForUav(std_msgs::ColorRGBA& color) const {
+    const float r = color.r, g = color.g, b = color.b;
+    const int palette = (uav_id - 1) % 3;
+    if (palette == 1) {
+        color.r = b;
+        color.g = r;
+        color.b = g;
+    } else if (palette == 2) {
+        color.r = g;
+        color.g = b;
+        color.b = r;
+    }
+}
+
 void RH_NBVP_fleet::visualize_node(const Eigen::Vector4d& pos, const std::string& ns) {
     visualization_msgs::Marker n;
     n.header.stamp = ros::Time::now();
@@ -652,6 +778,7 @@ void RH_NBVP_fleet::visualize_node(const Eigen::Vector4d& pos, const std::string
     n.color.g = 0.7;
     n.color.b = 0.2;
     n.color.a = 1;
+    colorForUav(n.color);
 
     node_id_counter_++;
 
@@ -694,6 +821,7 @@ void RH_NBVP_fleet::visualize_edge(rrt_star::Node* node, const std::string& ns) 
     e.color.g = 0.3;
     e.color.b = 0.7;
     e.color.a = 1.0;
+    colorForUav(e.color);
 
     edge_id_counter_++;
 
@@ -738,6 +866,7 @@ void RH_NBVP_fleet::visualize_path(rrt_star::Node* node, const std::string& ns) 
         p.color.g = 0.7;
         p.color.b = 0.3;
         p.color.a = 1.0;
+        colorForUav(p.color);
 
         p.lifetime = ros::Duration(100.0);
         p.frame_locked = false;

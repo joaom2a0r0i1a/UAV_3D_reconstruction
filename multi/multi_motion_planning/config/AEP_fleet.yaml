@@ -29,7 +29,13 @@ camera:
   max_distance: 5   # [m]
 
 path:
-  uav_radius: 1.5     # [m]
-  lambda: 0.5         # (tuning factor)
-  global_lambda: 0.05 # (tuning factor)
+  uav_radius: 1.5                 # [m]
+  waypoint_reach_distance: 0.8    # [m]
+  collision_check_resolution: 0.1 # [m]
+  recovery_enabled: true          # in-planner backtrack on | off
+  recovery_boxed_deadline: 4.0    # [s]
+  recovery_min_tree: 10           # tree size still counted as boxed in
+  recovery_timeout: 12.0          # [s]
+  lambda: 0.5                     # (tuning factor)
+  global_lambda: 0.05             # (tuning factor)
 

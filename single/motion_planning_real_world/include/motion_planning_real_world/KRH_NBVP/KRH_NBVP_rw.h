@@ -10,6 +10,7 @@
 
 #include <geometry_msgs/TwistStamped.h>
 #include <mavros_msgs/PositionTarget.h>
+#include <mavros_msgs/State.h>
 
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
@@ -46,9 +47,17 @@ class KRH_NBVP_rw {
 
     void planStep();
 
+    // Start Offset
+    void captureOffset();
+    void rotate();
+    void retreat(const Eigen::Vector4d& waypoint);
+    void explorationSweep();
+    mavros_msgs::PositionTarget makeSetpoint(const Eigen::Vector4d& waypoint);
+
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
+    void callbackState(const mavros_msgs::State::ConstPtr msg);
     void callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg);
     void callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg);
     void timerMain(const ros::TimerEvent& event);
@@ -163,6 +172,29 @@ class KRH_NBVP_rw {
     int best_trajectory_id_counter_;
     int collision_id_counter_;
     int iteration_;
+
+    // Recovery
+    bool recovery_enabled_ = true;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
+
+    // Exploration Sweep
+    bool exploration_initial_;
+    double exploration_climb_;
+    double exploration_settle_;
+    bool exploration_return_;
+    bool pending_exploration_ = false;
+
+    // Takeoff Reference
+    bool prev_armed_ = false;
+    double ground_z_ = 0.0;
+    bool have_ground_z_ = false;
+    ros::Subscriber sub_state;
+    double rotation_step_deg_;
+    double rotation_settle_;
 
     // Instances
     kino_rrt_star KinoRRTStar;

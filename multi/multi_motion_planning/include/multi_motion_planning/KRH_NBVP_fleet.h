@@ -25,6 +25,7 @@
 #include <Eigen/Core>
 #include <multiagent_collision_check/Segment.h>
 #include <multiagent_collision_check/multiagent_collision_checker.h>
+#include <ros/callback_queue.h>
 #include <rrt_construction/kino_rrt_star_kd.h>
 #include <gain_evaluation/gain_evaluator.h>
 
@@ -60,9 +61,13 @@ class KRH_NBVP_fleet {
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);
+    std::vector<std::vector<Eigen::Vector3d>*> otherSegments() const;
+    bool isPathClearOfOthers(const std::vector<Eigen::Vector3d>& path) const;
     void timerMain(const ros::TimerEvent& event);
 
     void changeState(const State_t new_state);
+
+    void colorForUav(std_msgs::ColorRGBA& color) const;
 
     void visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns);
     void visualize_trajectory(kino_rrt_star::Trajectory* trajectory, const std::string& ns);
@@ -147,16 +152,26 @@ class KRH_NBVP_fleet {
     int max_accel_iterations;
     bool reset_velocity;
 
+    // Recovery
+    bool recovery_enabled_;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
+
     // Multi Drone Collision Avoidance
     std::vector<int> agentsId_;
     std::vector<std::vector<Eigen::Vector3d>*> segments_;
+    ros::CallbackQueue evade_queue_;
+    ros::NodeHandle nh_evade_;
 
     // Tree variables
     //std::vector<std::shared_ptr<rrt_star::Node>> tree;
     std::vector<std::unique_ptr<kino_rrt_star::Trajectory>> best_branch;
-    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory;
-    std::unique_ptr<kino_rrt_star::Trajectory> previous_trajectory_parent_cache_;
     kino_rrt_star::Trajectory* next_best_trajectory = nullptr;
+
+    // Retreat Along Flown Path
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
     Eigen::Vector4d trajectory_point;
 
     // UAV variables

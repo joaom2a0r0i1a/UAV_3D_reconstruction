@@ -47,6 +47,16 @@ KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
     param_loader.loadParam("path/lambda", lambda);
     param_loader.loadParam("path/lambda2", lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
+    nh_private_.param("path/recovery_enabled", recovery_enabled_, true);
+    nh_private_.param("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    nh_private_.param("path/recovery_min_tree", recovery_min_tree_, 10);
+    nh_private_.param("path/recovery_timeout", recovery_timeout_, 12.0);
+    nh_private_.param("rotation/step_deg", rotation_step_deg_, 45.0);
+    nh_private_.param("rotation/settle", rotation_settle_, 1.0);
+    nh_private_.param("exploration/initial", exploration_initial_, true);
+    nh_private_.param("exploration/climb", exploration_climb_, 1.5);
+    nh_private_.param("exploration/settle", exploration_settle_, 5.0);
+    nh_private_.param("exploration/return_to_start", exploration_return_, true);
 
     // Timer
     param_loader.loadParam("timer_main/rate", timer_main_rate);
@@ -100,6 +110,7 @@ KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
     shopts.transport_hints    = ros::TransportHints().tcpNoDelay();
 
     sub_local_pose_diag = mrs_lib::SubscribeHandler<geometry_msgs::PoseStamped>(shopts, "local_pose_in", &KRH_NBVP_rw::callbackLocalPose, this);
+    sub_state = nh_private_.subscribe("state_in", 10, &KRH_NBVP_rw::callbackState, this);
     sub_local_velocity_diag = mrs_lib::SubscribeHandler<geometry_msgs::TwistStamped>(shopts, "local_velocity_in", &KRH_NBVP_rw::callbackLocalVelocity, this);
 
     /* Service Servers */
@@ -186,7 +197,29 @@ void KRH_NBVP_rw::planStep() {
     if (best_branch.size() > 0) {
         previous_trajectory = best_branch[0]->clone();
     }
+    ros::WallTime plan_start_ = ros::WallTime::now();
     while (j < N_max || best_score_ <= 0.0) {
+        // Backtrack When Stuck
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
+            }
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                reset_velocity = true;
+                ROS_WARN("[KRH_NBVP_rw]: Backtracking (%s after %.1fs, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", plan_elapsed, j, executed_path_.size());
+                best_branch.clear();
+                return;
+            }
+            ROS_INFO("[KRH_NBVP_rw]: Backtrack Rotation");
+            rotate();
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
+        }
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -327,6 +360,99 @@ void KRH_NBVP_rw::planStep() {
     }
 }
 
+void KRH_NBVP_rw::captureOffset() {
+    initial_offset = pose.head<3>();
+    // Ground Height at Arming
+    if (have_ground_z_) {
+        initial_offset.z() = ground_z_;
+    } else {
+        initial_offset.z() = 0.0;
+        ROS_WARN(
+            "[KRH_NBVP_rw]: never saw the disarmed to armed edge, using z offset 0. Start the "
+            "planner stack before arming to correct the barometric bias.");
+    }
+
+    geometry_msgs::Point offset_msg;
+    offset_msg.x = initial_offset.x();
+    offset_msg.y = initial_offset.y();
+    offset_msg.z = initial_offset.z();
+    pub_offset.publish(offset_msg);
+
+    ROS_INFO("[KRH_NBVP_rw]: Start offset captured: [%.2f, %.2f, %.2f]", initial_offset.x(), initial_offset.y(), initial_offset.z());
+}
+
+mavros_msgs::PositionTarget KRH_NBVP_rw::makeSetpoint(const Eigen::Vector4d& waypoint) {
+    mavros_msgs::PositionTarget sp;
+    sp.header.frame_id = frame_id;
+    sp.header.stamp = ros::Time::now();
+    // Local NED Frame
+    sp.coordinate_frame = 1;
+    sp.type_mask = mavros_msgs::PositionTarget::IGNORE_VX | mavros_msgs::PositionTarget::IGNORE_VY | mavros_msgs::PositionTarget::IGNORE_VZ | mavros_msgs::PositionTarget::IGNORE_AFX | mavros_msgs::PositionTarget::IGNORE_AFY | mavros_msgs::PositionTarget::IGNORE_AFZ | mavros_msgs::PositionTarget::IGNORE_YAW_RATE;
+    sp.position.x = waypoint[0];
+    sp.position.y = waypoint[1];
+    sp.position.z = waypoint[2];
+    sp.yaw = waypoint[3];
+    return sp;
+}
+
+void KRH_NBVP_rw::rotate() {
+    // Rotate 360 degrees
+    const int steps = std::max(3, (int)std::ceil(360.0 / rotation_step_deg_));
+    const double step = 2.0 * M_PI / steps;
+    for (int s = 1; s <= steps; ++s) {
+        Eigen::Vector4d wp = pose;
+        wp[3] = pose[3] + s * step;
+        pub_setpoint.publish(makeSetpoint(wp));
+        ros::Duration(rotation_settle_).sleep();
+    }
+}
+
+void KRH_NBVP_rw::retreat(const Eigen::Vector4d& waypoint) {
+    // Straight Line to the Previous Node at max_velocity, one setpoint every 0.1 s like the trajectories
+    const Eigen::Vector4d start = pose;
+    const Eigen::Vector3d d = waypoint.head<3>() - start.head<3>();
+    const int steps = std::max(1, (int)std::ceil(d.norm() / (max_velocity * 0.1)));
+    for (int s = 1; s <= steps; ++s) {
+        Eigen::Vector4d wp = waypoint;
+        wp.head<3>() = start.head<3>() + d * ((double)s / steps);
+        pub_setpoint.publish(makeSetpoint(wp));
+        ros::Duration(0.1).sleep();
+    }
+}
+
+void KRH_NBVP_rw::explorationSweep() {
+    // Up, Rotate, Down
+    const Eigen::Vector4d start = pose;
+    const double ceiling = initial_offset[2] + (double)max_z - uav_radius;
+    double z_top = std::min(start[2] + exploration_climb_, ceiling);
+    if (z_top <= start[2] + 0.05) {
+        ROS_WARN("[KRH_NBVP_rw]: Exploration sweep skipped: no headroom (z %.2f, ceiling %.2f).",
+                 start[2], ceiling);
+        return;
+    }
+    ROS_INFO("[KRH_NBVP_rw]: Exploration sweep: up %.2f -> %.2f m, rotate, down.", start[2], z_top);
+
+    Eigen::Vector4d up = start;
+    up[2] = z_top;
+    pub_setpoint.publish(makeSetpoint(up));
+    ros::Duration(exploration_settle_).sleep();
+
+    const int steps = std::max(3, (int)std::ceil(360.0 / rotation_step_deg_));
+    const double step = 2.0 * M_PI / steps;
+    for (int i = 1; i <= steps; ++i) {
+        Eigen::Vector4d wp = up;
+        wp[3] = start[3] + i * step;
+        pub_setpoint.publish(makeSetpoint(wp));
+        ros::Duration(rotation_settle_).sleep();
+    }
+
+    if (exploration_return_) {
+        pub_setpoint.publish(makeSetpoint(start));
+        ros::Duration(exploration_settle_).sleep();
+    }
+    ROS_INFO("[KRH_NBVP_rw]: Exploration sweep done.");
+}
+
 bool KRH_NBVP_rw::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res) {
     if (!is_initialized) {
         res.success = false;
@@ -345,7 +471,9 @@ bool KRH_NBVP_rw::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigg
         return true;
     }
 
+    captureOffset();
     changeState(STATE_PLANNING);
+    pending_exploration_ = exploration_initial_;
 
     res.success = true;
     res.message = "starting";
@@ -396,16 +524,7 @@ bool KRH_NBVP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trig
         res.message = ss.str();
         return true;
     }
-    initial_offset[0] = pose[0];
-    initial_offset[1] = pose[1];
-    initial_offset[2] = pose[2];
-
-    geometry_msgs::Point offset_msg;
-    offset_msg.x = initial_offset[0];
-    offset_msg.y = initial_offset[1];
-    offset_msg.z = initial_offset[2];
-
-    pub_offset.publish(offset_msg);
+    captureOffset();
 
     std::stringstream ss;
     ss << "Getting initial position offset: [" << initial_offset[0] << ", " << initial_offset[1] << ", " << initial_offset[2] << "]";
@@ -413,6 +532,20 @@ bool KRH_NBVP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trig
     res.success = true;
     res.message = ss.str();
     return true;
+}
+
+void KRH_NBVP_rw::callbackState(const mavros_msgs::State::ConstPtr msg) {
+    if (!is_initialized) {
+        return;
+    }
+    // First Arming Only
+    if (msg->armed && !prev_armed_ && sub_local_pose_diag.hasMsg() && !have_ground_z_) {
+        ground_z_ = pose.z();
+        have_ground_z_ = true;
+        ROS_INFO("[KRH_NBVP_rw]: armed on the ground, latching z = %.2f m as the takeoff reference.",
+                 ground_z_);
+    }
+    prev_armed_ = msg->armed;
 }
 
 void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr msg) {
@@ -482,6 +615,12 @@ void KRH_NBVP_rw::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
+            if (pending_exploration_) {
+                pending_exploration_ = false;
+                explorationSweep();
+            }
+
+            retreating_ = false;
             planStep();
             clear_all_voxels();
 
@@ -489,7 +628,25 @@ void KRH_NBVP_rw::timerMain(const ros::TimerEvent& event) {
                 break;
             }
 
+            // Retreat to Previous Node
+            if (retreating_ && !executed_path_.empty()) {
+                iteration_ += 1;
+                retreat(executed_path_.back());
+                changeState(STATE_MOVING);
+                break;
+            }
+
             iteration_ += 1;
+
+            // Store Flown Path
+            const kino_rrt_star::Trajectory* flown_parent = next_best_trajectory->parent;
+            if (executed_path_.empty()) {
+                executed_path_.push_back(flown_parent ? flown_parent->TrajectoryPoints.front()->point : pose);
+            }
+            if (flown_parent && flown_parent->parent) {
+                executed_path_.push_back(flown_parent->TrajectoryPoints.back()->point);
+            }
+            executed_path_.push_back(next_best_trajectory->TrajectoryPoints.back()->point);
 
             visualize_frustum(next_best_trajectory->TrajectoryPoints.back().get());
             visualize_unknown_voxels(next_best_trajectory->TrajectoryPoints.back().get());

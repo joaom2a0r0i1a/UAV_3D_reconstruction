@@ -53,6 +53,10 @@ KAEP_fleet::KAEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
     param_loader.loadParam("path/global_lambda", global_lambda);
     param_loader.loadParam("path/global_lambda2", global_lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
+    param_loader.loadParam("path/recovery_enabled", recovery_enabled_, true);
+    param_loader.loadParam("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    param_loader.loadParam("path/recovery_min_tree", recovery_min_tree_, 10);
+    param_loader.loadParam("path/recovery_timeout", recovery_timeout_, 12.0);
 
     // Timer
     param_loader.loadParam("timer_main/rate", timer_main_rate);
@@ -111,7 +115,12 @@ KAEP_fleet::KAEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &KAEP_fleet::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KAEP_fleet::callbackControlManagerDiag, this);
-    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &KAEP_fleet::callbackEvade, this);
+    // Paths of the other UAVs on their own queue, read right after each plan
+    nh_evade_ = nh_private_;
+    nh_evade_.setCallbackQueue(&evade_queue_);
+    mrs_lib::SubscribeHandlerOptions shopts_evade = shopts;
+    shopts_evade.nh = nh_evade_;
+    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts_evade, "evasion_segment_in", &KAEP_fleet::callbackEvade, this);
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KAEP_fleet::callbackStart, this);
@@ -167,7 +176,13 @@ void KAEP_fleet::GetTransformation() {
 }
 
 void KAEP_fleet::planStep() {
+    goto_global_planning = false;
+    next_best_trajectory = nullptr;
+
     localPlanner();
+    if (retreating_) {
+        return;
+    }
     if (goto_global_planning) {
         // Clear variables from possible previous iterations
         best_global_trajectory = nullptr;
@@ -192,8 +207,11 @@ void KAEP_fleet::planStep() {
         }
         ROS_INFO("[KAEP_fleet]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_trajectory);
-        next_best_trajectory = best_global_trajectory;
         goto_global_planning = false;
+        if (retreating_) {
+            return;
+        }
+        next_best_trajectory = best_global_trajectory;
     }
 }
 
@@ -241,21 +259,27 @@ void KAEP_fleet::localPlanner() {
     int j = 1;
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
-    if (best_branch.size() > 0) {
-        previous_trajectory = best_branch[0]->clone();
-    }
+    ros::WallTime plan_start_ = ros::WallTime::now();
     while (j < N_max || best_score_ <= g_zero) {
-        // Backtrack
-        if (collision_id_counter_ > 10000 * j) {
-            if (previous_trajectory) {
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
-            } else {
-                ROS_INFO("[KAEP_fleet]: Trying the existing Nodes");
-                collision_id_counter_ = 0;
-                break;
+        // Backtrack When Stuck
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
             }
-            return;
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                reset_velocity = true;
+                ROS_WARN("[KAEP_fleet]: Backtracking (%s, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", j, executed_path_.size());
+                best_branch.clear();
+                return;
+            }
+            rotate();
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
         }
 
         // Add previous best branch
@@ -318,8 +342,6 @@ void KAEP_fleet::localPlanner() {
         kino_rrt_star::Trajectory* nearest_trajectory = nullptr;
         KinoRRTStar.findNearestKD(rand_point, nearest_trajectory);
 
-        double max_velocity = 1.0;
-        double max_accel = 1.0;
         int accel_iteration = 0;
         int accel_tries = 0;
         while (accel_iteration < max_accel_iterations && accel_tries < 100 * max_accel_iterations) {
@@ -417,14 +439,10 @@ void KAEP_fleet::localPlanner() {
         visualize_best_trajectory(best_trajectory, ns);
     }
 
+    // First Informative Trajectory, flown part trimmed after the trajectory walk
     for (size_t ki = 1; ki < best_branch.size(); ++ki) {
         if (best_branch[ki]->gain > g_zero) {
             next_best_trajectory = best_branch[ki].get();
-            std::vector<std::unique_ptr<kino_rrt_star::Trajectory>> sliced_branch;
-            for (size_t m = ki - 1; m < best_branch.size(); ++m) {
-                sliced_branch.push_back(std::move(best_branch[m]));
-            }
-            best_branch = std::move(sliced_branch);
             break;
         }
     }
@@ -456,7 +474,30 @@ void KAEP_fleet::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontie
     std::vector<kino_rrt_star::Trajectory*> all_global_goals;
 
     int m = 0;
+    collision_id_counter_ = 0;
+    ros::WallTime gplan_start_ = ros::WallTime::now();
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
+        // Backtrack When Stuck
+        const double gplan_elapsed = (ros::WallTime::now() - gplan_start_).toSec();
+        const bool g_boxed = gplan_elapsed > recovery_boxed_deadline_ && m < recovery_min_tree_;
+        const bool g_timed = gplan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (g_boxed || g_timed)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
+            }
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                reset_velocity = true;
+                ROS_WARN("[KAEP_fleet]: Global backtracking (%s, tree=%d) -> executed node %zu",
+                         g_boxed ? "boxed-in" : "timeout", m, executed_path_.size());
+                return;
+            }
+            ROS_INFO("[KAEP_fleet]: Backtrack Rotation");
+            rotate();
+            gplan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
+        }
+
         Eigen::Vector3d global_rand_point;
         KinoRRTStar.computeSamplingDimensions(bounded_radius, global_rand_point);
         global_rand_point += global_root_point.head(3);
@@ -464,8 +505,6 @@ void KAEP_fleet::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontie
         kino_rrt_star::Trajectory* global_nearest_trajectory = nullptr;
         KinoRRTStar.findNearestKD(global_rand_point, global_nearest_trajectory);
 
-        double max_velocity = 1.0;
-        double max_accel = 1.0;
         int accel_iteration = 0;
         int accel_tries = 0;
         while (accel_iteration < global_max_accel_iterations && accel_tries < 100 * global_max_accel_iterations) {
@@ -534,6 +573,9 @@ void KAEP_fleet::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontier
 bool KAEP_fleet::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, kino_rrt_star::Trajectory* trajectory) {
     // Initialize KD Tree
     goals_tree.clearKDTreePoints();
+    if (GlobalFrontiers.empty()) {
+        return false;
+    }
     for (size_t i = 0; i < GlobalFrontiers.size(); ++i) {
         goals_tree.addKDTreePoint(GlobalFrontiers[i]);
     }
@@ -564,6 +606,11 @@ bool KAEP_fleet::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontie
 
         // Make sure the heading of the last node is correct
         trajectory->TrajectoryPoints.back()->point[3] = result.second;
+
+        if (trajectory->gain < 0.1) {
+            goals_tree.clearKDTreePoints();
+            return false;
+        }
 
         trajectory_point_global.head<3>() = nearest_goal;
         trajectory_point_global[3] = 0.0;
@@ -784,6 +831,29 @@ void KAEP_fleet::callbackEvade(const multiagent_collision_check::Segment::ConstP
     }
 }
 
+// Paths of the other UAVs only
+std::vector<std::vector<Eigen::Vector3d>*> KAEP_fleet::otherSegments() const {
+    std::vector<std::vector<Eigen::Vector3d>*> others;
+    for (size_t i = 0; i < agentsId_.size(); ++i) {
+        if (agentsId_[i] != uav_id) {
+            others.push_back(segments_[i]);
+        }
+    }
+    return others;
+}
+
+bool KAEP_fleet::isPathClearOfOthers(const std::vector<Eigen::Vector3d>& path) const {
+    const std::vector<std::vector<Eigen::Vector3d>*> others = otherSegments();
+    for (size_t i = 1; i < path.size(); ++i) {
+        const Eigen::Vector4d a(path[i - 1].x(), path[i - 1].y(), path[i - 1].z(), 0.0);
+        const Eigen::Vector4d b(path[i].x(), path[i].y(), path[i].z(), 0.0);
+        if (multiagent::isInCollision(a, b, uav_radius, others)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void KAEP_fleet::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
@@ -839,10 +909,58 @@ void KAEP_fleet::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
+            retreating_ = false;
             planStep();
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
+                break;
+            }
+
+            // Latest Paths of the Other UAVs
+            evade_queue_.callAvailable(ros::WallDuration(0.0));
+
+            // Retreat to Previous Node, if no other UAV is in the way
+            if (retreating_ && !executed_path_.empty()) {
+                const Eigen::Vector4d retreat_point = executed_path_.back();
+                if (!isPathClearOfOthers({pose.head<3>(), retreat_point.head<3>()})) {
+                    ROS_WARN("[KAEP_fleet]: Retreat blocked by another UAV, rotating instead");
+                    rotate();
+                    break;
+                }
+
+                iteration_ += 1;
+                current_waypoint_.position.x = retreat_point[0];
+                current_waypoint_.position.y = retreat_point[1];
+                current_waypoint_.position.z = retreat_point[2];
+                current_waypoint_.heading = retreat_point[3];
+
+                multiagent_collision_check::Segment retreat_segment;
+                retreat_segment.uav_id = uav_id;
+                geometry_msgs::Point from, to;
+                from.x = pose[0];
+                from.y = pose[1];
+                from.z = pose[2];
+                to = current_waypoint_.position;
+                retreat_segment.uav_path.push_back(from);
+                retreat_segment.uav_path.push_back(to);
+                pub_evade.publish(retreat_segment);
+
+                mrs_msgs::ReferenceStamped retreat_reference;
+                retreat_reference.header.frame_id = ns + "/" + frame_id;
+                retreat_reference.header.stamp = ros::Time::now();
+                retreat_reference.reference = current_waypoint_;
+                pub_reference.publish(retreat_reference.reference);
+                pub_initial_reference.publish(retreat_reference);
+
+                ros::Duration(1).sleep();
+
+                changeState(STATE_MOVING);
+                break;
+            }
+
+            if (!next_best_trajectory) {
+                ROS_WARN("[KAEP_fleet]: No trajectory chosen, planning again");
                 break;
             }
 
@@ -867,8 +985,11 @@ void KAEP_fleet::timerMain(const ros::TimerEvent& event) {
             srv_trajectory_reference.request.trajectory.dt = 0.1;
 
             mrs_msgs::Reference reference;
+            std::vector<Eigen::Vector4d> segment_ends;
+            const kino_rrt_star::Trajectory* target_trajectory = next_best_trajectory;
 
             while (next_best_trajectory && next_best_trajectory->parent) {
+                segment_ends.push_back(next_best_trajectory->TrajectoryPoints.back()->point);
                 for (int i = next_best_trajectory->TrajectoryPoints.size() - 1; i >= 0; i--) {
                     reference.position.x = next_best_trajectory->TrajectoryPoints[i]->point[0];
                     reference.position.y = next_best_trajectory->TrajectoryPoints[i]->point[1];
@@ -880,6 +1001,32 @@ void KAEP_fleet::timerMain(const ros::TimerEvent& event) {
             }
 
             std::reverse(srv_trajectory_reference.request.trajectory.points.begin(), srv_trajectory_reference.request.trajectory.points.end());
+
+            // Recheck Against the Latest Paths of the Other UAVs
+            std::vector<Eigen::Vector3d> planned_path;
+            for (const auto& point : srv_trajectory_reference.request.trajectory.points) {
+                planned_path.emplace_back(point.position.x, point.position.y, point.position.z);
+            }
+            if (!isPathClearOfOthers(planned_path)) {
+                ROS_WARN("[KAEP_fleet]: Trajectory crosses the new path of another UAV, planning again");
+                best_branch.clear();
+                break;
+            }
+
+            // Store Flown Path
+            if (executed_path_.empty() && next_best_trajectory) {
+                executed_path_.push_back(next_best_trajectory->TrajectoryPoints.back()->point);
+            }
+            executed_path_.insert(executed_path_.end(), segment_ends.rbegin(), segment_ends.rend());
+
+            // Trim Flown Part of Branch
+            for (size_t k = 1; k < best_branch.size(); ++k) {
+                if (best_branch[k].get() == target_trajectory) {
+                    best_branch.erase(best_branch.begin(), best_branch.begin() + (k - 1));
+                    best_branch.front()->parent = nullptr;
+                    break;
+                }
+            }
 
             multiagent_collision_check::Segment segment;
             segment.uav_id = uav_id;
@@ -970,6 +1117,21 @@ void KAEP_fleet::changeState(const State_t new_state) {
     state_ = new_state;
 }
 
+// Rotates the colors by 120 degrees of hue per UAV, UAV1 keeps the original colors
+void KAEP_fleet::colorForUav(std_msgs::ColorRGBA& color) const {
+    const float r = color.r, g = color.g, b = color.b;
+    const int palette = (uav_id - 1) % 3;
+    if (palette == 1) {
+        color.r = b;
+        color.g = r;
+        color.b = g;
+    } else if (palette == 2) {
+        color.r = g;
+        color.g = b;
+        color.b = r;
+    }
+}
+
 void KAEP_fleet::visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns) {
     visualization_msgs::Marker n;
     n.header.stamp = ros::Time::now();
@@ -996,6 +1158,7 @@ void KAEP_fleet::visualize_node(const Eigen::Vector4d& pos, double size, const s
     n.color.g = 0.7;
     n.color.b = 0.2;
     n.color.a = 1;
+    colorForUav(n.color);
 
     node_id_counter_++;
 
@@ -1017,6 +1180,7 @@ void KAEP_fleet::visualize_trajectory(kino_rrt_star::Trajectory* trajectory, con
     trajectory_marker.color.g = 0.3;
     trajectory_marker.color.b = 0.7;
     trajectory_marker.color.a = 1.0;
+    colorForUav(trajectory_marker.color);
 
     trajectory_marker.scale.x = 0.1;
     trajectory_marker.scale.y = 0.1;
@@ -1054,6 +1218,7 @@ void KAEP_fleet::visualize_best_trajectory(kino_rrt_star::Trajectory* trajectory
         best_trajectory_marker.color.g = 0.7;
         best_trajectory_marker.color.b = 0.3;
         best_trajectory_marker.color.a = 1.0;
+        colorForUav(best_trajectory_marker.color);
 
         best_trajectory_marker.scale.x = 0.2;
         best_trajectory_marker.scale.y = 0.2;

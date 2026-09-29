@@ -45,7 +45,7 @@
       <remap from="~local_pose_in" to="/mavros/local_position/pose" />
       <remap from="~velocity_in" to="/mavros/local_position/velocity_local" unless="$(arg kinodynamic)" />
       <remap from="~local_velocity_in" to="/mavros/local_position/velocity_local" if="$(arg kinodynamic)" />
-      <remap from="~state_in" to="/mavros/state" unless="$(arg kinodynamic)" />
+      <remap from="~state_in" to="/mavros/state" />
 
       <!-- Service Clients -->
       <remap from="~setpoint_out" to="/mavros/setpoint_raw/local" />
