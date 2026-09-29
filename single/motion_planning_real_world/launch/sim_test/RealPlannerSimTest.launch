@@ -1,28 +1,41 @@
 <launch>
+  <!-- Real-world planners in the MRS simulator, through mrs_sim_bridge.py instead of mavros -->
+
   <!-- Planner (aep | rhnbvp | kaep | krhnbvp) -->
   <arg name="planner" default="aep" />
   <arg name="name" default="$(eval {'aep':'AEP_rw','rhnbvp':'RH_NBVP_rw','kaep':'KAEP_rw','krhnbvp':'KRH_NBVP_rw'}[arg('planner')])" />
   <arg name="aep_family" default="$(eval arg('planner') in ('aep','kaep'))" />
   <arg name="kinodynamic" default="$(eval arg('planner') in ('kaep','krhnbvp'))" />
 
-  <!-- Gain Variant (yaml | true | false) -->
-  <arg name="marginal_gain" default="yaml" />
-
   <!-- Map -->
-  <arg name="voxel_size" default="0.2" />
-  <arg name="voxels_per_side" default="16" />
+  <arg name="voxel_size" default="$(optenv VOXEL_SIZE 0.2)" />
+  <arg name="voxels_per_side" default="$(optenv VOXELS_PER_SIDE 16)" />
 
   <!-- UAV -->
   <arg name="UAV_NAME" default="$(optenv UAV_NAME uav1)" />
 
   <group ns="$(arg UAV_NAME)">
+    <!-- Bridge -->
+    <node pkg="motion_planning_real_world" type="mrs_sim_bridge.py" name="mrs_sim_bridge" output="screen">
+      <param name="frame_id" value="$(arg UAV_NAME)/world_origin" />
+      <remap from="~uav_state_in" to="estimation_manager/uav_state" />
+      <remap from="~pose_out" to="bridge/local_pose" />
+      <remap from="~velocity_out" to="bridge/velocity" />
+      <remap from="~setpoint_in" to="bridge/setpoint" />
+      <remap from="~reference_out" to="control_manager/reference" />
+    </node>
+
     <node pkg="motion_planning_real_world" type="$(arg name)" name="planner_node" output="screen">
-      <!-- Configuration -->
-      <rosparam file="$(find motion_planning_real_world)/config/GainConfig_rw.yaml" unless="$(arg kinodynamic)" />
-      <rosparam file="$(find gain_evaluation)/config/GainConfig.yaml" if="$(arg kinodynamic)" />
+      <!-- Configuration, school boxes relative to the spawn -->
+      <rosparam file="$(find motion_planning_real_world)/config/GainConfig_rw.yaml" />
       <rosparam file="$(find motion_planning_real_world)/config/$(arg name).yaml" />
-      <param name="evaluation/marginal_gain" value="$(arg marginal_gain)" if="$(eval not kinodynamic and arg('marginal_gain') != 'yaml')" />
+      <rosparam file="$(find motion_planning_real_world)/config/sim_test.yaml" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />
+
+      <!-- Simulator Frames -->
+      <param name="frame_id" value="$(arg UAV_NAME)/world_origin" />
+      <param name="body/frame_id" value="$(arg UAV_NAME)/fcu" />
+      <param name="camera/frame_id" value="$(arg UAV_NAME)/rgbd_front_pitched/aligned_depth_to_color" />
 
       <!-- Voxblox -->
       <remap from="~esdf_map_in" to="voxblox_node/esdf_map_out" />
@@ -42,13 +55,12 @@
       <remap from="~offset_out" to="offset_out" />
 
       <!-- Subscribers -->
-      <remap from="~local_pose_in" to="/mavros/local_position/pose" />
-      <remap from="~velocity_in" to="/mavros/local_position/velocity_local" unless="$(arg kinodynamic)" />
-      <remap from="~local_velocity_in" to="/mavros/local_position/velocity_local" if="$(arg kinodynamic)" />
-      <remap from="~state_in" to="/mavros/state" />
+      <remap from="~local_pose_in" to="bridge/local_pose" />
+      <remap from="~velocity_in" to="bridge/velocity" unless="$(arg kinodynamic)" />
+      <remap from="~local_velocity_in" to="bridge/velocity" if="$(arg kinodynamic)" />
 
       <!-- Service Clients -->
-      <remap from="~setpoint_out" to="/mavros/setpoint_raw/local" />
+      <remap from="~setpoint_out" to="bridge/setpoint" />
       <remap from="~best_node_out" to="cache_nodes/best_node" if="$(arg aep_family)" />
 
       <!-- Service Servers -->

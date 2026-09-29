@@ -46,6 +46,10 @@ KRH_NBVP_fleet::KRH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle&
     param_loader.loadParam("path/lambda", lambda);
     param_loader.loadParam("path/lambda2", lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
+    param_loader.loadParam("path/recovery_enabled", recovery_enabled_, true);
+    param_loader.loadParam("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    param_loader.loadParam("path/recovery_min_tree", recovery_min_tree_, 10);
+    param_loader.loadParam("path/recovery_timeout", recovery_timeout_, 12.0);
 
     // Timer
     param_loader.loadParam("timer_main/rate", timer_main_rate);
@@ -101,7 +105,12 @@ KRH_NBVP_fleet::KRH_NBVP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &KRH_NBVP_fleet::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &KRH_NBVP_fleet::callbackControlManagerDiag, this);
-    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &KRH_NBVP_fleet::callbackEvade, this);
+    // Paths of the other UAVs on their own queue, read right after each plan
+    nh_evade_ = nh_private_;
+    nh_evade_.setCallbackQueue(&evade_queue_);
+    mrs_lib::SubscribeHandlerOptions shopts_evade = shopts;
+    shopts_evade.nh = nh_evade_;
+    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts_evade, "evasion_segment_in", &KRH_NBVP_fleet::callbackEvade, this);
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &KRH_NBVP_fleet::callbackStart, this);
@@ -155,6 +164,7 @@ void KRH_NBVP_fleet::GetTransformation() {
 void KRH_NBVP_fleet::planStep() {
     best_score_ = 0.0;
     kino_rrt_star::Trajectory* best_trajectory = nullptr;
+    next_best_trajectory = nullptr;
 
     double node_size = 0.2;
 
@@ -192,10 +202,29 @@ void KRH_NBVP_fleet::planStep() {
     int j = 1;
     collision_id_counter_ = 0;
     int expanded_num_nodes = 0;
-    if (best_branch.size() > 0) {
-        previous_trajectory = best_branch[0]->clone();
-    }
+    ros::WallTime plan_start_ = ros::WallTime::now();
     while (j < N_max || best_score_ == 0.0) {
+        // Backtrack When Stuck
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
+            }
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                reset_velocity = true;
+                ROS_WARN("[KRH_NBVP_fleet]: Backtracking (%s, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", j, executed_path_.size());
+                best_branch.clear();
+                return;
+            }
+            rotate();
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
+        }
+
         for (size_t i = 1; i < best_branch.size(); ++i) {
             if (isFirstIteration) {
                 isFirstIteration = false;
@@ -498,6 +527,29 @@ void KRH_NBVP_fleet::callbackEvade(const multiagent_collision_check::Segment::Co
     }
 }
 
+// Paths of the other UAVs only
+std::vector<std::vector<Eigen::Vector3d>*> KRH_NBVP_fleet::otherSegments() const {
+    std::vector<std::vector<Eigen::Vector3d>*> others;
+    for (size_t i = 0; i < agentsId_.size(); ++i) {
+        if (agentsId_[i] != uav_id) {
+            others.push_back(segments_[i]);
+        }
+    }
+    return others;
+}
+
+bool KRH_NBVP_fleet::isPathClearOfOthers(const std::vector<Eigen::Vector3d>& path) const {
+    const std::vector<std::vector<Eigen::Vector3d>*> others = otherSegments();
+    for (size_t i = 1; i < path.size(); ++i) {
+        const Eigen::Vector4d a(path[i - 1].x(), path[i - 1].y(), path[i - 1].z(), 0.0);
+        const Eigen::Vector4d b(path[i].x(), path[i].y(), path[i].z(), 0.0);
+        if (multiagent::isInCollision(a, b, uav_radius, others)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void KRH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
@@ -553,10 +605,57 @@ void KRH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
+            retreating_ = false;
             planStep();
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
+                break;
+            }
+
+            // Latest Paths of the Other UAVs
+            evade_queue_.callAvailable(ros::WallDuration(0.0));
+
+            // Retreat to Previous Node, if no other UAV is in the way
+            if (retreating_ && !executed_path_.empty()) {
+                const Eigen::Vector4d retreat_point = executed_path_.back();
+                if (!isPathClearOfOthers({pose.head<3>(), retreat_point.head<3>()})) {
+                    ROS_WARN("[KRH_NBVP_fleet]: Retreat blocked by another UAV, rotating instead");
+                    rotate();
+                    break;
+                }
+
+                iteration_ += 1;
+                current_waypoint_.position.x = retreat_point[0];
+                current_waypoint_.position.y = retreat_point[1];
+                current_waypoint_.position.z = retreat_point[2];
+                current_waypoint_.heading = retreat_point[3];
+
+                multiagent_collision_check::Segment retreat_segment;
+                retreat_segment.uav_id = uav_id;
+                geometry_msgs::Point from;
+                from.x = pose[0];
+                from.y = pose[1];
+                from.z = pose[2];
+                retreat_segment.uav_path.push_back(from);
+                retreat_segment.uav_path.push_back(current_waypoint_.position);
+                pub_evade.publish(retreat_segment);
+
+                mrs_msgs::ReferenceStamped retreat_reference;
+                retreat_reference.header.frame_id = ns + "/" + frame_id;
+                retreat_reference.header.stamp = ros::Time::now();
+                retreat_reference.reference = current_waypoint_;
+                pub_reference.publish(retreat_reference.reference);
+                pub_initial_reference.publish(retreat_reference);
+
+                ros::Duration(1).sleep();
+
+                changeState(STATE_MOVING);
+                break;
+            }
+
+            if (!next_best_trajectory) {
+                ROS_WARN("[KRH_NBVP_fleet]: No trajectory chosen, planning again");
                 break;
             }
 
@@ -581,6 +680,32 @@ void KRH_NBVP_fleet::timerMain(const ros::TimerEvent& event) {
             srv_trajectory_reference.request.trajectory.dt = 0.1;
 
             mrs_msgs::Reference reference;
+
+            // Recheck Against the Latest Paths of the Other UAVs
+            std::vector<Eigen::Vector3d> planned_path;
+            if (next_best_trajectory->parent) {
+                for (const auto& point : next_best_trajectory->parent->TrajectoryPoints) {
+                    planned_path.push_back(point->point.head<3>());
+                }
+            }
+            for (const auto& point : next_best_trajectory->TrajectoryPoints) {
+                planned_path.push_back(point->point.head<3>());
+            }
+            if (!isPathClearOfOthers(planned_path)) {
+                ROS_WARN("[KRH_NBVP_fleet]: Trajectory crosses the new path of another UAV, planning again");
+                best_branch.clear();
+                break;
+            }
+
+            // Store Flown Path
+            const kino_rrt_star::Trajectory* flown_parent = next_best_trajectory->parent;
+            if (executed_path_.empty()) {
+                executed_path_.push_back(flown_parent ? flown_parent->TrajectoryPoints.front()->point : pose);
+            }
+            if (flown_parent && flown_parent->parent) {
+                executed_path_.push_back(flown_parent->TrajectoryPoints.back()->point);
+            }
+            executed_path_.push_back(next_best_trajectory->TrajectoryPoints.back()->point);
 
             if (next_best_trajectory->parent) {
                 for (size_t i = 0; i < next_best_trajectory->parent->TrajectoryPoints.size(); i++) {
@@ -692,6 +817,21 @@ void KRH_NBVP_fleet::changeState(const State_t new_state) {
     state_ = new_state;
 }
 
+// Rotates the colors by 120 degrees of hue per UAV, UAV1 keeps the original colors
+void KRH_NBVP_fleet::colorForUav(std_msgs::ColorRGBA& color) const {
+    const float r = color.r, g = color.g, b = color.b;
+    const int palette = (uav_id - 1) % 3;
+    if (palette == 1) {
+        color.r = b;
+        color.g = r;
+        color.b = g;
+    } else if (palette == 2) {
+        color.r = g;
+        color.g = b;
+        color.b = r;
+    }
+}
+
 void KRH_NBVP_fleet::visualize_node(const Eigen::Vector4d& pos, double size, const std::string& ns) {
     visualization_msgs::Marker n;
     n.header.stamp = ros::Time::now();
@@ -718,6 +858,7 @@ void KRH_NBVP_fleet::visualize_node(const Eigen::Vector4d& pos, double size, con
     n.color.g = 0.7;
     n.color.b = 0.2;
     n.color.a = 1;
+    colorForUav(n.color);
 
     node_id_counter_++;
 
@@ -739,6 +880,7 @@ void KRH_NBVP_fleet::visualize_trajectory(kino_rrt_star::Trajectory* trajectory,
     trajectory_marker.color.g = 0.3;
     trajectory_marker.color.b = 0.7;
     trajectory_marker.color.a = 1.0;
+    colorForUav(trajectory_marker.color);
 
     trajectory_marker.scale.x = 0.1;
     trajectory_marker.scale.y = 0.1;
@@ -776,6 +918,7 @@ void KRH_NBVP_fleet::visualize_best_trajectory(kino_rrt_star::Trajectory* trajec
         best_trajectory_marker.color.g = 0.7;
         best_trajectory_marker.color.b = 0.3;
         best_trajectory_marker.color.a = 1.0;
+        colorForUav(best_trajectory_marker.color);
 
         best_trajectory_marker.scale.x = 0.2;
         best_trajectory_marker.scale.y = 0.2;

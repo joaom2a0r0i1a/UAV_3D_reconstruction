@@ -52,10 +52,24 @@ camera:
   max_distance: 5   # [m]
 
 path:
-  uav_radius: 1.5      # [m]
-  lambda: 0.25         # (tuning factor)
-  lambda2: 0.5         # (tuning factor)
-  global_lambda: 0.025 # (tuning factor)
-  global_lambda2: 0.05 # (tuning factor)
+  uav_radius: 1.5              # [m]
+  lambda: 0.25                 # (tuning factor)
+  lambda2: 0.5                 # (tuning factor)
+  global_lambda: 0.025         # (tuning factor)
+  global_lambda2: 0.05         # (tuning factor)
   max_acceleration_iterations: 3
+  recovery_enabled: true       # in-planner backtrack on | off
+  recovery_boxed_deadline: 4.0 # [s]
+  recovery_min_tree: 10        # tree size still counted as boxed in
+  recovery_timeout: 12.0       # [s]
 
+
+rotation:
+  step_deg: 45.0 # [deg] keep well under 180
+  settle: 1.0    # [s] wait per step
+
+exploration:
+  initial: true         # up, rotate, down before the first plan
+  climb: 1.5            # [m] relative climb
+  settle: 4.0           # [s] after the climb and the return
+  return_to_start: true # back to the start pose after the sweep

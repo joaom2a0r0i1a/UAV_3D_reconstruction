@@ -29,6 +29,11 @@ bool isInCollision(const Eigen::Vector4d& start, const Eigen::Vector4d& end,
 bool isInCollision(const Eigen::Vector4d& state, const double safety_radius,
                    const std::vector<std::vector<Eigen::Vector3d>*>& agent_paths);
 
+double clampFraction(const double fraction);
+
+Eigen::Vector3d closestPointOnSegment(const Eigen::Vector3d& point, const Eigen::Vector3d& segment_start,
+                                      const Eigen::Vector3d& segment_end);
+
 double closestDistanceBetweenLines(const Eigen::Vector3d& start1, const Eigen::Vector3d& end1,
                                    const Eigen::Vector3d& start2, const Eigen::Vector3d& end2);
 }  //namespace multiagent

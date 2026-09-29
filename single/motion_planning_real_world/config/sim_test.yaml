@@ -1,0 +1,17 @@
+# School Sim Test, boxes relative to the spawn at [-22, 0, 0.5]
+
+bounded_box:
+  min_x: -3.0  # [m]
+  max_x: 47.0  # [m]
+  min_y: -20.0 # [m]
+  max_y: 15.0  # [m]
+  min_z: 1.0   # [m]
+  max_z: 20.0  # [m]
+
+gain_evaluation:
+  min_x: 5.0   # [m]
+  max_x: 39.0  # [m]
+  min_y: -12.0 # [m]
+  max_y: 7.0   # [m]
+  min_z: 0.0   # [m]
+  max_z: 14.5  # [m]

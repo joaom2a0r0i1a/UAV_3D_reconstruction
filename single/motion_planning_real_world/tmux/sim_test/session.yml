@@ -1,0 +1,67 @@
+# Do not modify these
+root: ./
+name: realtest
+socket_name: mrs
+attach: false
+tmux_options: -f /etc/ctu-mrs/tmux.conf
+# You can modify these
+pre_window:
+  - export UAV_NAME=uav1; export RUN_TYPE=simulation; export UAV_TYPE=f450; export WORLD_NAME=simulation; export PX4_SIM_SPEED_FACTOR=1.0
+  - export MRS_CONFIG=$(rospack find motion_planning)/tmux/one_drone/config
+  # Real-world planner, values already set in the shell are kept
+  - export PLANNER_KIND=${PLANNER_KIND:-aep} # aep | rhnbvp | kaep | krhnbvp
+startup_window: motion_planner
+windows:
+  - roscore:
+      layout: tiled
+      panes:
+        - roscore
+  - gazebo:
+      layout: tiled
+      panes:
+        - waitForRos; roslaunch mrs_uav_gazebo_simulation simulation.launch world_file:=$(rospack find uav_gazebo_environments)/worlds/grass_plane_school.world gui:=true
+        - waitForGazebo; rosservice call /mrs_drone_spawner/spawn "1 --$UAV_TYPE --pos -22 0 0.5 0 --enable-rangefinder --enable-ground-truth --enable-realsense-front-pitched"
+  - status:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_status status.launch
+  - hw_api:
+      layout: tiled
+      panes:
+        - waitForTime; roslaunch mrs_uav_px4_api api.launch custom_config:=$MRS_CONFIG/hw_api.yaml
+  - core:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_core core.launch
+          platform_config:=`rospack find mrs_uav_gazebo_simulation`/config/mrs_uav_system/$UAV_TYPE.yaml
+          custom_config:=$MRS_CONFIG/custom_config.yaml
+          world_config:=$MRS_CONFIG/world_config.yaml
+          network_config:=$MRS_CONFIG/network_config.yaml
+  - takeoff:
+      layout: tiled
+      panes:
+        - waitForHw; roslaunch mrs_uav_autostart automatic_start.launch custom_config:=$MRS_CONFIG/automatic_start.yaml
+        - 'waitForControl; rosservice call /$UAV_NAME/hw_api/arming 1; sleep 2; rosservice call /$UAV_NAME/hw_api/offboard'
+  - motion_planner:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning_real_world RealPlannerSimTest.launch planner:=$PLANNER_KIND
+        - 'history -s rosservice call /$UAV_NAME/planner_node/start'
+  - cached_nodes:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch cache_nodes cache_rw.launch world_frame:=$UAV_NAME/world_origin frame_id:=$UAV_NAME/world_origin body_frame:=$UAV_NAME/fcu camera_frame:=$UAV_NAME/rgbd_front_pitched/aligned_depth_to_color pose_topic:=/$UAV_NAME/bridge/local_pose
+  - voxblox:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning processed_voxblox.launch
+  - processed_pointclouds:
+      layout: tiled
+      panes:
+        - waitForControl; roslaunch motion_planning depth_to_pointcloud.launch
+  - rviz:
+      layout: tiled
+      panes:
+        - waitForControl; rosrun rviz rviz -d $MRS_CONFIG/custom_rviz.rviz
+        - waitForControl; roslaunch mrs_rviz_plugins load_robot.launch
+        - waitForControl; roslaunch mrs_rviz_plugins rviz_interface.launch

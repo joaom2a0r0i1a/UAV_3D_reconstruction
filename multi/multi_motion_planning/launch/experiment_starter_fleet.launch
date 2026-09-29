@@ -3,7 +3,7 @@
   <arg name="num_uavs" default="3"/>
   <arg name="delay" default="10.0"/>
   <arg name="record_data" default="true"/>
-  <arg name="data_directory" default="/home/joaomendes/motion_workspace/src/data"/>
+  <arg name="data_directory" default="$(eval optenv('EXP_DATA_DIR') or find('motion_planning') + '/data')"/>
   <arg name="data_frequency" default="30.0" />
   <arg name="time_limit" default="10" />
 

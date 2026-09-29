@@ -28,6 +28,7 @@
 #include <Eigen/Core>
 #include <multiagent_collision_check/Segment.h>
 #include <multiagent_collision_check/multiagent_collision_checker.h>
+#include <ros/callback_queue.h>
 #include <rrt_construction/rrt_star_kd.h>
 #include <rrt_construction/kd_tree.h>
 #include <gain_evaluation/gain_evaluator.h>
@@ -51,6 +52,8 @@ class AEP_fleet {
 
     double getMapDistance(const Eigen::Vector3d& position) const;
     bool isPathCollisionFree(const std::vector<rrt_star::Node*>& path) const;
+    bool isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const;
+    bool inBoundingBox(const Eigen::Vector4d& p) const;
     void GetTransformation();
 
     void planStep();
@@ -71,9 +74,13 @@ class AEP_fleet {
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);
+    std::vector<std::vector<Eigen::Vector3d>*> otherSegments() const;
+    bool isPathClearOfOthers(const std::vector<Eigen::Vector3d>& path) const;
     void timerMain(const ros::TimerEvent& event);
 
     void changeState(const State_t new_state);
+
+    void colorForUav(std_msgs::ColorRGBA& color) const;
 
     void visualize_node(const Eigen::Vector4d& pos, const std::string& ns);
     void visualize_edge(rrt_star::Node* node, const std::string& ns);
@@ -154,10 +161,20 @@ class AEP_fleet {
     double uav_radius;
     double lambda;
     double global_lambda;
+    double collision_check_resolution_;
+    double waypoint_reach_distance_;
+
+    // Recovery
+    bool recovery_enabled_;
+    double recovery_boxed_deadline_;
+    int recovery_min_tree_;
+    double recovery_timeout_;
 
     // Multi Drone Collision Avoidance
     std::vector<int> agentsId_;
     std::vector<std::vector<Eigen::Vector3d>*> segments_;
+    ros::CallbackQueue evade_queue_;
+    ros::NodeHandle nh_evade_;
 
     // Bounds Parameters
     // Bounds on the size of the map.
@@ -168,8 +185,14 @@ class AEP_fleet {
 
     // Local Planner variables
     std::vector<std::unique_ptr<rrt_star::Node>> best_branch;
-    std::unique_ptr<rrt_star::Node> previous_root;
+    size_t branch_trim_ = 0;
     rrt_star::Node* next_best_node = nullptr;
+
+    // Retreat Along Flown Path
+    std::vector<Eigen::Vector4d> executed_path_;
+    bool retreating_ = false;
+    bool backtrack = false;
+    std::unique_ptr<rrt_star::Node> retreat_node_;
     Eigen::Vector4d trajectory_point;
 
     // Global Planner variables

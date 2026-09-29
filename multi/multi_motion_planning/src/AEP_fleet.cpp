@@ -41,6 +41,12 @@ AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     // Planner
     param_loader.loadParam("path/uav_radius", uav_radius);
+    param_loader.loadParam("path/collision_check_resolution", collision_check_resolution_, 0.1);
+    param_loader.loadParam("path/waypoint_reach_distance", waypoint_reach_distance_, 0.8);
+    param_loader.loadParam("path/recovery_enabled", recovery_enabled_, true);
+    param_loader.loadParam("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
+    param_loader.loadParam("path/recovery_min_tree", recovery_min_tree_, 10);
+    param_loader.loadParam("path/recovery_timeout", recovery_timeout_, 12.0);
     param_loader.loadParam("path/lambda", lambda);
     param_loader.loadParam("path/global_lambda", global_lambda);
 
@@ -99,7 +105,12 @@ AEP_fleet::AEP_fleet(const ros::NodeHandle& nh, const ros::NodeHandle& nh_privat
 
     sub_uav_state = mrs_lib::SubscribeHandler<mrs_msgs::UavState>(shopts, "uav_state_in", &AEP_fleet::callbackUavState, this);
     sub_control_manager_diag = mrs_lib::SubscribeHandler<mrs_msgs::ControlManagerDiagnostics>(shopts, "control_manager_diag_in", &AEP_fleet::callbackControlManagerDiag, this);
-    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts, "evasion_segment_in", &AEP_fleet::callbackEvade, this);
+    // Paths of the other UAVs on their own queue, read right after each plan
+    nh_evade_ = nh_private_;
+    nh_evade_.setCallbackQueue(&evade_queue_);
+    mrs_lib::SubscribeHandlerOptions shopts_evade = shopts;
+    shopts_evade.nh = nh_evade_;
+    sub_evade = mrs_lib::SubscribeHandler<multiagent_collision_check::Segment>(shopts_evade, "evasion_segment_in", &AEP_fleet::callbackEvade, this);
 
     /* Service Servers */
     ss_start = nh_private_.advertiseService("start_in", &AEP_fleet::callbackStart, this);
@@ -134,6 +145,21 @@ bool AEP_fleet::isPathCollisionFree(const std::vector<rrt_star::Node*>& path) co
     return true;
 }
 
+bool AEP_fleet::isEdgeCollisionFree(const Eigen::Vector3d& from, const Eigen::Vector3d& to) const {
+    const Eigen::Vector3d d = to - from;
+    const int n = std::max(1, static_cast<int>(std::ceil(d.norm() / collision_check_resolution_)));
+    for (int i = 0; i <= n; ++i) {
+        if (getMapDistance(from + d * (static_cast<double>(i) / n)) < uav_radius) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool AEP_fleet::inBoundingBox(const Eigen::Vector4d& p) const {
+    return p[0] >= min_x && p[0] <= max_x && p[1] >= min_y && p[1] <= max_y && p[2] >= min_z && p[2] <= max_z;
+}
+
 void AEP_fleet::GetTransformation() {
     // From Body Frame to Camera Frame
     auto Message_C_B = transformer_->getTransform(body_frame_id, camera_frame_id, ros::Time(0));
@@ -152,7 +178,13 @@ void AEP_fleet::GetTransformation() {
 }
 
 void AEP_fleet::planStep() {
+    goto_global_planning = false;
+    next_best_node = nullptr;
+
     localPlanner();
+    if (retreating_) {
+        return;
+    }
     if (goto_global_planning) {
         // Clear variables from possible previous iterations
         best_global_node = nullptr;
@@ -167,8 +199,12 @@ void AEP_fleet::planStep() {
         }
         ROS_INFO("[AEP_fleet]: Planning Path to Global Frontiers");
         globalPlanner(GlobalFrontiers, best_global_node);
-        next_best_node = best_global_node;
         goto_global_planning = false;
+        if (backtrack) {
+            backtrack = false;
+            return;
+        }
+        next_best_node = best_global_node;
     }
 }
 
@@ -220,22 +256,27 @@ void AEP_fleet::localPlanner() {
     bool isFirstIteration = true;
     int j = 1;
     collision_id_counter_ = 0;
-    if (!best_branch.empty()) {
-        previous_root = std::make_unique<rrt_star::Node>(*best_branch[0]);
-    }
+    ros::WallTime plan_start_ = ros::WallTime::now();
     while (j < N_max || best_score_ <= g_zero) {
-        // Backtrack
-        if (collision_id_counter_ > 10000 * j) {
-            if (previous_root) {
-                //next_best_node = previous_root.get();
-                rotate();
-                changeState(STATE_WAITING_INITIALIZE);
-            } else {
-                ROS_INFO("[AEP_fleet]: Enough");
-                collision_id_counter_ = 0;
-                break;
+        // Backtrack When Stuck
+        const double plan_elapsed = (ros::WallTime::now() - plan_start_).toSec();
+        const bool boxed_in  = plan_elapsed > recovery_boxed_deadline_ && j < recovery_min_tree_;
+        const bool timed_out = plan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (boxed_in || timed_out)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
             }
-            return;
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                ROS_WARN("[AEP_fleet]: Backtracking (%s, tree=%d) -> executed node %zu",
+                         boxed_in ? "boxed-in" : "timeout", j, executed_path_.size());
+                best_branch.clear();
+                branch_trim_ = 0;
+                return;
+            }
+            rotate();
+            plan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
         }
 
         // Add previous best branch
@@ -305,7 +346,8 @@ void AEP_fleet::localPlanner() {
         bool success_collision = false;
         success_collision = isPathCollisionFree(trajectory_segment);
 
-        if (!success_collision || multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
+        if (!success_collision || !isEdgeCollisionFree(new_node->parent->point.head<3>(), new_node->point.head<3>()) ||
+            multiagent::isInCollision(new_node->parent->point, new_node->point, uav_radius, segments_)) {
             //clear_node();
             trajectory_segment.clear();
             collision_id_counter_++;
@@ -357,14 +399,12 @@ void AEP_fleet::localPlanner() {
         visualize_path(best_node, ns);
     }
 
+    // First Informative Node, flown part trimmed after the waypoint walk
+    branch_trim_ = 0;
     for (size_t k = 1; k < best_branch.size(); ++k) {
         if (best_branch[k]->gain > g_zero) {
             next_best_node = best_branch[k].get();
-            std::vector<std::unique_ptr<rrt_star::Node>> sliced_branch;
-            for (size_t m = k - 1; m < best_branch.size(); ++m) {
-                sliced_branch.push_back(std::move(best_branch[m]));
-            }
-            best_branch = std::move(sliced_branch);
+            branch_trim_ = k - 1;
             break;
         }
     }
@@ -387,7 +427,30 @@ void AEP_fleet::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
     std::vector<rrt_star::Node*> all_global_goals;
 
     int m = 0;
+    collision_id_counter_ = 0;
+    ros::WallTime gplan_start_ = ros::WallTime::now();
     while (m < N_min_nodes || all_global_goals.size() <= 0) {
+        // Backtrack When Stuck
+        const double gplan_elapsed = (ros::WallTime::now() - gplan_start_).toSec();
+        const bool g_boxed = gplan_elapsed > recovery_boxed_deadline_ && m < recovery_min_tree_;
+        const bool g_timed = gplan_elapsed > recovery_timeout_;
+        if (recovery_enabled_ && (g_boxed || g_timed)) {
+            if (!executed_path_.empty()) {
+                executed_path_.pop_back();
+            }
+            if (!executed_path_.empty()) {
+                retreating_ = true;
+                backtrack = true;
+                ROS_WARN("[AEP_fleet]: Global backtracking (%s, tree=%d) -> executed node %zu",
+                         g_boxed ? "boxed-in" : "timeout", m, executed_path_.size());
+                return;
+            }
+            ROS_INFO("[AEP_fleet]: Backtrack Rotation");
+            rotate();
+            gplan_start_ = ros::WallTime::now();
+            collision_id_counter_ = 0;
+        }
+
         Eigen::Vector3d rand_point_star;
         RRTStar.computeSamplingDimensions(bounded_radius, rand_point_star);
         rand_point_star += root_ptr->point.head(3);
@@ -398,6 +461,11 @@ void AEP_fleet::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         std::unique_ptr<rrt_star::Node> new_node_star;
         RRTStar.steer_parent(nearest_node_star, rand_point_star, step_size, new_node_star);
 
+        // Stay Inside Bounded Box
+        if (!inBoundingBox(new_node_star->point)) {
+            continue;
+        }
+
         // Collision Check
         std::vector<rrt_star::Node*> trajectory_segment_star;
         trajectory_segment_star.push_back(new_node_star.get());
@@ -405,8 +473,10 @@ void AEP_fleet::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         bool success_collision_star = false;
         success_collision_star = isPathCollisionFree(trajectory_segment_star);
 
-        if (!success_collision_star || multiagent::isInCollision(new_node_star->parent->point, new_node_star->point, uav_radius, segments_)) {
+        if (!success_collision_star || !isEdgeCollisionFree(nearest_node_star->point.head<3>(), new_node_star->point.head<3>()) ||
+            multiagent::isInCollision(new_node_star->parent->point, new_node_star->point, uav_radius, segments_)) {
             trajectory_segment_star.clear();
+            collision_id_counter_++;
             continue;
         }
 
@@ -416,7 +486,13 @@ void AEP_fleet::globalPlanner(const std::vector<Eigen::Vector3d>& GlobalFrontier
         // Add Nodes
         std::vector<rrt_star::Node*> nearby_nodes_star;
         RRTStar.findNearbyKD(new_node_star.get(), radius, nearby_nodes_star);
+        if (nearby_nodes_star.empty()) {
+            nearby_nodes_star.push_back(nearest_node_star);
+        }
         RRTStar.chooseParent(new_node_star.get(), nearby_nodes_star);
+        if (!new_node_star->parent) {
+            continue;
+        }
 
         rrt_star::Node* added_star = RRTStar.addKDTreeNode(std::move(new_node_star));
         RRTStar.rewire(added_star, nearby_nodes_star, radius);
@@ -455,6 +531,10 @@ void AEP_fleet::getGlobalFrontiers(std::vector<Eigen::Vector3d>& GlobalFrontiers
 }
 
 bool AEP_fleet::getGlobalGoal(const std::vector<Eigen::Vector3d>& GlobalFrontiers, rrt_star::Node* node) {
+    if (GlobalFrontiers.empty()) {
+        return false;
+    }
+
     // Initialize KD Tree
     goals_tree.clearKDTreePoints();
     for (size_t i = 0; i < GlobalFrontiers.size(); ++i) {
@@ -713,6 +793,29 @@ void AEP_fleet::callbackEvade(const multiagent_collision_check::Segment::ConstPt
     }
 }
 
+// Paths of the other UAVs only
+std::vector<std::vector<Eigen::Vector3d>*> AEP_fleet::otherSegments() const {
+    std::vector<std::vector<Eigen::Vector3d>*> others;
+    for (size_t i = 0; i < agentsId_.size(); ++i) {
+        if (agentsId_[i] != uav_id) {
+            others.push_back(segments_[i]);
+        }
+    }
+    return others;
+}
+
+bool AEP_fleet::isPathClearOfOthers(const std::vector<Eigen::Vector3d>& path) const {
+    const std::vector<std::vector<Eigen::Vector3d>*> others = otherSegments();
+    for (size_t i = 1; i < path.size(); ++i) {
+        const Eigen::Vector4d a(path[i - 1].x(), path[i - 1].y(), path[i - 1].z(), 0.0);
+        const Eigen::Vector4d b(path[i].x(), path[i].y(), path[i].z(), 0.0);
+        if (multiagent::isInCollision(a, b, uav_radius, others)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void AEP_fleet::timerMain(const ros::TimerEvent& event) {
     if (!is_initialized) {
         return;
@@ -768,10 +871,31 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
             break;
         }
         case STATE_PLANNING: {
+            retreating_ = false;
             planStep();
             clear_all_voxels();
 
             if (state_ != STATE_PLANNING) {
+                break;
+            }
+
+            // Latest Paths of the Other UAVs
+            evade_queue_.callAvailable(ros::WallDuration(0.0));
+
+            // Retreat to Previous Node, if no other UAV is in the way
+            if (retreating_ && !executed_path_.empty()) {
+                if (!isPathClearOfOthers({pose.head<3>(), executed_path_.back().head<3>()})) {
+                    ROS_WARN("[AEP_fleet]: Retreat blocked by another UAV, rotating instead");
+                    rotate();
+                    break;
+                }
+                retreat_node_ = std::make_unique<rrt_star::Node>(executed_path_.back());
+                retreat_node_->parent = nullptr;
+                next_best_node = retreat_node_.get();
+            }
+
+            if (!next_best_node) {
+                ROS_WARN("[AEP_fleet]: No node chosen, planning again");
                 break;
             }
 
@@ -790,22 +914,68 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
             waypoints_.clear();
             waypoint_index_ = 0;
 
-            rrt_star::Node* wp_node = next_best_node;
-            while (wp_node) {
+            while (next_best_node && next_best_node->parent) {
                 mrs_msgs::Reference ref;
-                ref.position.x = wp_node->point[0];
-                ref.position.y = wp_node->point[1];
-                ref.position.z = wp_node->point[2];
-                ref.heading = wp_node->point[3];
+                ref.position.x = next_best_node->point[0];
+                ref.position.y = next_best_node->point[1];
+                ref.position.z = next_best_node->point[2];
+                ref.heading    = next_best_node->point[3];
 
                 waypoints_.push_back(ref);
-                wp_node = wp_node->parent;
+
+                next_best_node = next_best_node->parent;
+            }
+            std::reverse(waypoints_.begin(), waypoints_.end());
+
+            // Retreat Waypoint
+            if (waypoints_.empty() && next_best_node) {
+                mrs_msgs::Reference ref;
+                ref.position.x = next_best_node->point[0];
+                ref.position.y = next_best_node->point[1];
+                ref.position.z = next_best_node->point[2];
+                ref.heading    = next_best_node->point[3];
+                waypoints_.push_back(ref);
             }
 
-            std::reverse(waypoints_.begin(), waypoints_.end());
+            // Recheck Against the Latest Paths of the Other UAVs
+            const Eigen::Vector3d path_start = retreating_ ? pose.head<3>() : next_best_node->point.head<3>();
+            std::vector<Eigen::Vector3d> planned_path;
+            planned_path.push_back(path_start);
+            for (const auto& wp : waypoints_) {
+                planned_path.emplace_back(wp.position.x, wp.position.y, wp.position.z);
+            }
+            if (!isPathClearOfOthers(planned_path)) {
+                ROS_WARN("[AEP_fleet]: Path crosses the new path of another UAV, planning again");
+                best_branch.clear();
+                branch_trim_ = 0;
+                break;
+            }
+
+            // Trim Flown Part of Branch
+            if (branch_trim_ > 0 && branch_trim_ < best_branch.size()) {
+                best_branch.erase(best_branch.begin(), best_branch.begin() + branch_trim_);
+                best_branch.front()->parent = nullptr;
+            }
+            branch_trim_ = 0;
+
+            // Store Flown Path
+            if (!retreating_) {
+                if (executed_path_.empty() && next_best_node) {
+                    executed_path_.emplace_back(next_best_node->point[0], next_best_node->point[1],
+                                                next_best_node->point[2], next_best_node->point[3]);
+                }
+                for (const auto& wp : waypoints_) {
+                    executed_path_.emplace_back(wp.position.x, wp.position.y, wp.position.z, wp.heading);
+                }
+            }
 
             multiagent_collision_check::Segment segment;
             segment.uav_id = uav_id;
+            geometry_msgs::Point from;
+            from.x = path_start[0];
+            from.y = path_start[1];
+            from.z = path_start[2];
+            segment.uav_path.push_back(from);
             for (const auto& wp : waypoints_) {
                 segment.uav_path.push_back(wp.position);
             }
@@ -843,7 +1013,7 @@ void AEP_fleet::timerMain(const ros::TimerEvent& event) {
                          waypoints_.size(),
                          dist, yaw_difference);
 
-                if (waypoint_index_ == wp_index && dist < 0.8 && yaw_difference < 0.4) {
+                if (waypoint_index_ == wp_index && dist < waypoint_reach_distance_ && yaw_difference < 0.4) {
                     waypoint_index_++;
 
                     if (waypoint_index_ >= waypoints_.size()) {
@@ -910,6 +1080,21 @@ void AEP_fleet::changeState(const State_t new_state) {
     state_ = new_state;
 }
 
+// Rotates the colors by 120 degrees of hue per UAV, UAV1 keeps the original colors
+void AEP_fleet::colorForUav(std_msgs::ColorRGBA& color) const {
+    const float r = color.r, g = color.g, b = color.b;
+    const int palette = (uav_id - 1) % 3;
+    if (palette == 1) {
+        color.r = b;
+        color.g = r;
+        color.b = g;
+    } else if (palette == 2) {
+        color.r = g;
+        color.g = b;
+        color.b = r;
+    }
+}
+
 void AEP_fleet::visualize_node(const Eigen::Vector4d& pos, const std::string& ns) {
     visualization_msgs::Marker n;
     n.header.stamp = ros::Time::now();
@@ -936,6 +1121,7 @@ void AEP_fleet::visualize_node(const Eigen::Vector4d& pos, const std::string& ns
     n.color.g = 0.7;
     n.color.b = 0.2;
     n.color.a = 1;
+    colorForUav(n.color);
 
     node_id_counter_++;
 
@@ -979,6 +1165,7 @@ void AEP_fleet::visualize_edge(rrt_star::Node* node, const std::string& ns) {
     e.color.g = 0.3;
     e.color.b = 0.7;
     e.color.a = 1.0;
+    colorForUav(e.color);
 
     edge_id_counter_++;
 
@@ -1023,6 +1210,7 @@ void AEP_fleet::visualize_path(rrt_star::Node* node, const std::string& ns) {
         p.color.g = 0.7;
         p.color.b = 0.3;
         p.color.a = 1.0;
+        colorForUav(p.color);
 
         p.lifetime = ros::Duration(100.0);
         p.frame_locked = false;
