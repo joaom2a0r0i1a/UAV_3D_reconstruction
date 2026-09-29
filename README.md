@@ -27,6 +27,7 @@ This repository has been tested in linux with:
 - ROS Noetic
 - `catkin tools`
 - `catkin_simple`
+- CUDA 11.0 (or newer)
 
 ### 1. Install ROS Noetic (Desktop-Full is recommended). 
 

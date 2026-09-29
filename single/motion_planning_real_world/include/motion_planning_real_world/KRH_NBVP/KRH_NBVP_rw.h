@@ -188,6 +188,12 @@ class KRH_NBVP_rw {
     bool exploration_return_;
     bool pending_exploration_ = false;
 
+    // Pose Sanity
+    ros::Time last_pose_time_;
+    bool have_pose_ = false;
+    double pose_max_distance_;
+    double pose_max_speed_;
+
     // Takeoff Reference
     bool prev_armed_ = false;
     double ground_z_ = 0.0;

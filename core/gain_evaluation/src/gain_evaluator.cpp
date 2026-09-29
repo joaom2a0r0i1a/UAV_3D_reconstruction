@@ -652,7 +652,7 @@ double GainEvaluator::computeFixedGainRaycasting(const Eigen::Vector4d& pose, Ei
                 } else if (node == kFree) {
                     continue;
                 } else if (node == kUnknown) {
-                    g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+                    g += (2 * r * r * dr_ + 1.0 / 6.0 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
                 }
             }
             gain += g;
@@ -721,7 +721,7 @@ std::pair<double, double> GainEvaluator::computeGainRaycasting(const Eigen::Vect
                 } else if (node == kFree) {
                     continue;
                 } else if (node == kUnknown) {
-                    g += (2 * r * r * dr_ + 1 / 6 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
+                    g += (2 * r * r * dr_ + 1.0 / 6.0 * dr_ * dr_ * dr_) * dtheta_rad * sin(phi_rad) * sin(dphi_rad / 2);
                 }
             }
             gain += g;

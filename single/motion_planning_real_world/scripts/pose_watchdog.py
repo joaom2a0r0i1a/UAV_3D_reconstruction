@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Warns on gaps in the mavros local pose
 import rospy
 from geometry_msgs.msg import PoseStamped
