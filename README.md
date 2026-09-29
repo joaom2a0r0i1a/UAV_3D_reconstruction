@@ -230,7 +230,7 @@ the gain benchmark, described in
 # Notes
 - For reproducibility of the results shown in the papers below, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
 - Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments were conducted using:
-  - **Kinodynamic planners and centralized multi-UAV exploration:** Intel® Core™ i9 (14th Gen) CPU and NVIDIA GeForce RTX 4060 GPU
+  - **Kinodynamic planners and centralized multi-UAV exploration:** Intel® Core™ i9-14900K (14th Gen) CPU and NVIDIA GeForce RTX 4060 GPU
   - **Path-dependent marginal gain on the GPU:** Intel® Core™ i7-13650HX (13th Gen) CPU and NVIDIA GeForce RTX 5060 Laptop GPU
 
 # Credits
