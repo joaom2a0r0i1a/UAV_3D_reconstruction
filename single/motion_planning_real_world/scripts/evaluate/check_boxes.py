@@ -33,6 +33,8 @@ def fmt(b):
 gain_f = os.path.join(CFG, 'GainConfig_rw.yaml')
 aep_f = os.path.join(CFG, 'AEP_rw.yaml')
 nbv_f = os.path.join(CFG, 'RH_NBVP_rw.yaml')
+kaep_f = os.path.join(CFG, 'KAEP_rw.yaml')
+krh_f = os.path.join(CFG, 'KRH_NBVP_rw.yaml')
 
 
 # Default from eval_rw.sh
@@ -48,16 +50,21 @@ eval_f = os.path.join(CFG, eval_name)
 
 gain, aep, nbv = box(gain_f, 'gain_evaluation'), box(aep_f,
                                                      'bounded_box'), box(nbv_f, 'bounded_box')
+kaep, krh = box(kaep_f, 'bounded_box'), box(krh_f, 'bounded_box')
 ev = box(eval_f, 'reconstruction_box') if os.path.exists(eval_f) else None
 
 print('  gain     %-34s %s' % (label(gain_f, 'gain_evaluation'), fmt(gain)))
 print('  AEP bbx  %-34s %s' % (label(aep_f, 'bounded_box'), fmt(aep)))
 print('  RH_NBVP bbx  %-34s %s' % (label(nbv_f, 'bounded_box'), fmt(nbv)))
+print('  KAEP bbx  %-34s %s' % (label(kaep_f, 'bounded_box'), fmt(kaep)))
+print('  KRH_NBVP bbx  %-34s %s' % (label(krh_f, 'bounded_box'), fmt(krh)))
 print('  eval     %-34s %s' % (eval_name, fmt(ev)))
 
 bad = []
 if aep != nbv:
     bad.append('AEP and RH_NBVP planner boxes differ')
+if aep != kaep or aep != krh:
+    bad.append('KAEP or KRH_NBVP planner box differs from AEP')
 if ev is None:
     bad.append('eval box %s not found' % eval_name)
 elif ev != gain:

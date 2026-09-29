@@ -35,7 +35,7 @@ The recording profiles and the folder layout are described in `tmux/one_drone_rw
 ## Changing site
 
 Each site needs three boxes, all relative to the takeoff pose: the `bounded_box` in
-`config/AEP_rw.yaml` and `config/RH_NBVP_rw.yaml`, the `gain_evaluation` box in
+`config/AEP_rw.yaml`, `config/RH_NBVP_rw.yaml`, `config/KAEP_rw.yaml` and `config/KRH_NBVP_rw.yaml`, the `gain_evaluation` box in
 `config/GainConfig_rw.yaml`, and the `reconstruction_box` of the site in `config/<Site>.yaml`. The
 evaluation reads the site with `EVAL_CONFIG=<Site>.yaml eval_rw.sh ...`.
 `scripts/evaluate/check_boxes.py` checks that the three agree before a flight.

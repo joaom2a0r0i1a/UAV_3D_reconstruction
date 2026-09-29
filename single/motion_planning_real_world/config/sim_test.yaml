@@ -9,7 +9,7 @@ bounded_box:
   max_z: 20.0  # [m]
 
 gain_evaluation:
-  min_x: 5.0   # [m]
+  min_x: -3.0  # [m]
   max_x: 39.0  # [m]
   min_y: -12.0 # [m]
   max_y: 7.0   # [m]

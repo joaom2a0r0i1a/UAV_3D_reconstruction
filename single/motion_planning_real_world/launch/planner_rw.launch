@@ -18,8 +18,7 @@
   <group ns="$(arg UAV_NAME)">
     <node pkg="motion_planning_real_world" type="$(arg name)" name="planner_node" output="screen">
       <!-- Configuration -->
-      <rosparam file="$(find motion_planning_real_world)/config/GainConfig_rw.yaml" unless="$(arg kinodynamic)" />
-      <rosparam file="$(find gain_evaluation)/config/GainConfig.yaml" if="$(arg kinodynamic)" />
+      <rosparam file="$(find motion_planning_real_world)/config/GainConfig_rw.yaml" />
       <rosparam file="$(find motion_planning_real_world)/config/$(arg name).yaml" />
       <param name="evaluation/marginal_gain" value="$(arg marginal_gain)" if="$(eval not kinodynamic and arg('marginal_gain') != 'yaml')" />
       <param name="uav_namespace" value="$(arg UAV_NAME)" />

@@ -47,6 +47,8 @@ KRH_NBVP_rw::KRH_NBVP_rw(const ros::NodeHandle& nh, const ros::NodeHandle& nh_pr
     param_loader.loadParam("path/lambda", lambda);
     param_loader.loadParam("path/lambda2", lambda2);
     param_loader.loadParam("path/max_acceleration_iterations", max_accel_iterations);
+    nh_private_.param("pose_sanity/max_distance", pose_max_distance_, 500.0);
+    nh_private_.param("pose_sanity/max_speed", pose_max_speed_, 20.0);
     nh_private_.param("path/recovery_enabled", recovery_enabled_, true);
     nh_private_.param("path/recovery_boxed_deadline", recovery_boxed_deadline_, 4.0);
     nh_private_.param("path/recovery_min_tree", recovery_min_tree_, 10);
@@ -460,7 +462,7 @@ bool KRH_NBVP_rw::callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigg
         return true;
     }
 
-    if (!ready_to_plan_) {
+    if (!ready_to_plan_ || !have_pose_) {
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
@@ -514,7 +516,7 @@ bool KRH_NBVP_rw::callbackOffset(std_srvs::Trigger::Request& req, std_srvs::Trig
         return true;
     }
 
-    if (!ready_to_plan_) {
+    if (!ready_to_plan_ || !have_pose_) {
         std::stringstream ss;
         ss << "not ready to plan, missing data";
 
@@ -539,7 +541,7 @@ void KRH_NBVP_rw::callbackState(const mavros_msgs::State::ConstPtr msg) {
         return;
     }
     // First Arming Only
-    if (msg->armed && !prev_armed_ && sub_local_pose_diag.hasMsg() && !have_ground_z_) {
+    if (msg->armed && !prev_armed_ && have_pose_ && !have_ground_z_) {
         ground_z_ = pose.z();
         have_ground_z_ = true;
         ROS_INFO("[KRH_NBVP_rw]: armed on the ground, latching z = %.2f m as the takeoff reference.",
@@ -569,6 +571,26 @@ void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr m
         return;
     }
 
+    // Reject Wild Poses
+    const geometry_msgs::Point& p = uav_local_pose.position;
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) ||
+        std::abs(p.x) > pose_max_distance_ || std::abs(p.y) > pose_max_distance_ ||
+        std::abs(p.z) > pose_max_distance_) {
+        ROS_WARN_THROTTLE(5, "[%s]: implausible pose [%.3g, %.3g, %.3g], skipping.",
+                          "KRH_NBVP_rw", p.x, p.y, p.z);
+        return;
+    }
+    if (have_pose_) {
+        const double dt = (ros::Time::now() - last_pose_time_).toSec();
+        const double jump = std::sqrt(std::pow(p.x - pose[0], 2) + std::pow(p.y - pose[1], 2) +
+                                      std::pow(p.z - pose[2], 2));
+        if (dt > 1e-3 && jump / dt > pose_max_speed_) {
+            ROS_WARN_THROTTLE(5, "[%s]: pose jumped %.2f m in %.3f s, skipping.",
+                              "KRH_NBVP_rw", jump, dt);
+            return;
+        }
+    }
+
     double yaw = 0.0;
     try {
         yaw = mrs_lib::getYaw(uav_local_pose);
@@ -578,6 +600,8 @@ void KRH_NBVP_rw::callbackLocalPose(const geometry_msgs::PoseStamped::ConstPtr m
     }
 
     pose = {uav_local_pose.position.x, uav_local_pose.position.y, uav_local_pose.position.z, yaw};
+    last_pose_time_ = ros::Time::now();
+    have_pose_ = true;
 }
 
 void KRH_NBVP_rw::callbackLocalVelocity(const geometry_msgs::TwistStamped::ConstPtr msg) {
@@ -594,7 +618,14 @@ void KRH_NBVP_rw::timerMain(const ros::TimerEvent& event) {
         return;
     }
 
-    ready_to_plan_ = true;
+    const bool got_local_pose = have_pose_ && (ros::Time::now() - last_pose_time_).toSec() < 2.0;
+
+    if (!got_local_pose) {
+        ROS_INFO_THROTTLE(1.0, "[KRH_NBVP_rw]: waiting for data: LocalPose = FALSE");
+        return;
+    } else {
+        ready_to_plan_ = true;
+    }
 
     std_msgs::Bool starter;
     starter.data = true;
