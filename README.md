@@ -232,7 +232,7 @@ the gain benchmark, described in
 - For reproducibility of the results shown in the papers below, ensure you are using the specified versions of **MRS** and the **customized Voxblox** repository linked above.
 - Performance may vary depending on your hardware (slower hardware may lead to worse results). The experiments were conducted using:
   - **Kinodynamic planners and centralized multi-UAV exploration:** Intel® Core™ i9-14900K (14th Gen) CPU and NVIDIA GeForce RTX 4060 GPU
-  - **Path-dependent marginal gain on the GPU:** Intel® Core™ i7-13650HX (13th Gen) CPU and NVIDIA GeForce RTX 5060 Laptop GPU
+  - **Path-dependent marginal gain:** Intel® Core™ i7-13650HX (13th Gen) CPU and NVIDIA GeForce RTX 5060 Laptop GPU
 
 # Credits
 
@@ -255,16 +255,32 @@ If you use this work, please cite the corresponding paper.
 ```
 
 **Centralized multi-UAV exploration**, presented at the IEEE International Conference on Advanced
-Robotics and Mechatronics (ICARM) 2026. The IEEE Xplore entry is not yet available.
+Robotics and Mechatronics (ICARM) 2026 [[arXiv](https://arxiv.org/abs/2609.40208)]. The IEEE Xplore entry is not yet available.
 
 ```bibtex
 @inproceedings{Mendes_ICARM_2026,
-  author    = {Mendes, Jo{\~a}o F{\'e}lix and Basiri, Meysam and Ventura, Rodrigo},
-  title     = {Centralized Multi-UAV Exploration and 3D Reconstruction Using Single-UAV
-               Planners},
-  booktitle = {IEEE International Conference on Advanced Robotics and Mechatronics (ICARM)},
-  year      = {2026}
+  author        = {Mendes, Jo{\~a}o F{\'e}lix and Basiri, Meysam and Ventura, Rodrigo},
+  title         = {Centralized Multi-UAV Exploration and 3D Reconstruction Using Single-UAV
+                   Planners},
+  booktitle     = {IEEE International Conference on Advanced Robotics and Mechatronics (ICARM)},
+  year          = {2026},
+  eprint        = {2609.40208},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO}
 }
 ```
 
-**Path-dependent marginal gain on the GPU**, submitted to ICRA and under review.
+**Path-dependent marginal gain**, submitted to ICRA and under review [[arXiv](https://arxiv.org/abs/2609.40297)].
+
+```bibtex
+@misc{Mendes_arXiv_2026,
+  author        = {Mendes, Jo{\~a}o F{\'e}lix and Ventura, Rodrigo and Basiri, Meysam},
+  title         = {GPU-Accelerated Path-Dependent Marginal Information Gain for Autonomous
+                   Exploration},
+  year          = {2026},
+  eprint        = {2609.40297},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2609.40297}
+}
+```
