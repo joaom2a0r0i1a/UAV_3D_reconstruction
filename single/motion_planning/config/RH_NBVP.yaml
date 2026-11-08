@@ -20,7 +20,7 @@ rrt:
   tolerance: 0.5       # [m]
 
 evaluation:
-  marginal_gain: true   # marginal | absolute gain
+  marginal_gain: false  # marginal | absolute gain
   optimize_yaw: true    # best yaw per node | sampled yaw
   compute: "gpu"        # "gpu" | "cpu"
   marginal_split: false # split | fused GPU kernel
