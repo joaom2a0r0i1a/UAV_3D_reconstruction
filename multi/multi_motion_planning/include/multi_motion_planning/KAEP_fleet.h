@@ -23,7 +23,6 @@
 
 #include <cache_nodes/Node.h>
 #include <cache_nodes/BestNode.h>
-#include <cache_nodes/Reevaluate.h>
 
 #include <minkindr_conversions/kindr_msg.h>
 
@@ -72,7 +71,6 @@ class KAEP_fleet {
 
     bool callbackStart(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
     bool callbackStop(std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& res);
-    //bool callbackReevaluate(cache_nodes::Reevaluate::Request& req, cache_nodes::Reevaluate::Response& res);
     void callbackControlManagerDiag(const mrs_msgs::ControlManagerDiagnostics::ConstPtr msg);
     void callbackUavState(const mrs_msgs::UavState::ConstPtr msg);
     void callbackEvade(const multiagent_collision_check::Segment::ConstPtr msg);

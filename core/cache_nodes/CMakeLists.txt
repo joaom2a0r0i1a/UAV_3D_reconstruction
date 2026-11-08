@@ -43,9 +43,7 @@ add_message_files(
 add_service_files(
    DIRECTORY srv
    FILES
-   Query.srv
    BestNode.srv
-   Reevaluate.srv
 )
 
 ## Generate added messages and services with any dependencies listed here
