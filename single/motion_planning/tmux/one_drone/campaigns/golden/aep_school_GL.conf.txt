@@ -1,0 +1,28 @@
+### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
+==========================================================
+[TIME] CAMPAIGN aep_school_GL.conf: world=school planner=aep N=10 T=1850s voxel=0.2m early_stop=true
+[TIME] conditions: 2  keep=multi_series_aep_school_GL
+==========================================================
+[TIME] world -> school (grass_plane_school.world, spawn -22 0 0.5 0, uav_radius=1.5, AEP N=50/300, RH_NBVP N=50/300)
+[TIME] planner -> aep
+[TIME] AEP gain=abs (marginal_gain=false)
+[TIME] AEP objective=rate_L
+[TIME] AEP node-set, N_max=250 N_termination=500 N_min_nodes=500
+[TIME] PREFLIGHT OK, school / aep
+[TIME] ===== SCH_AEP_GL_abs START (target N=10 x 1850s, early_stop=true, spec=SCH_AEP_GL_abs:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "SCH_AEP_GL_abs" "10" "1850" "SCH_AEP_GL_abs:false:false:gpu:false:false"
+[TIME] AEP gain=marg (marginal_gain=true)
+[TIME] AEP objective=rate_L
+[TIME] AEP node-set, N_max=250 N_termination=500 N_min_nodes=500
+[TIME] PREFLIGHT OK, school / aep
+[TIME] ===== SCH_AEP_GL_marg START (target N=10 x 1850s, early_stop=true, spec=SCH_AEP_GL_marg:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "SCH_AEP_GL_marg" "10" "1850" "SCH_AEP_GL_marg:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school) ===
+       DRY: eval stage-1 SCH_AEP_GL_abs (target_directory=data/SCH_AEP_GL_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 SCH_AEP_GL_marg (target_directory=data/SCH_AEP_GL_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-2 multi_series series_labels=SCH_AEP_GL_abs,SCH_AEP_GL_marg -> mv multi_series_evaluation -> multi_series_aep_school_GL
+
+### DRY-RUN diffs (temp copies vs repo) ###
+[TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_AEP_SCHOOL_GL.txt ===

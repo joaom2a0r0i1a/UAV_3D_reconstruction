@@ -1,0 +1,24 @@
+### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
+==========================================================
+[TIME] CAMPAIGN nbvp_school_yawopt.conf: world=school planner=nbvp N=10 T=1850s voxel=0.2m early_stop=true
+[TIME] conditions: 2  keep=multi_series_nbvp_school_yawopt
+==========================================================
+[TIME] world -> school (grass_plane_school.world, spawn -22 0 0.5 0, uav_radius=1.5, AEP N=50/300, RH_NBVP N=50/300)
+[TIME] planner -> rhnbvp
+[TIME] RH_NBVP optimize_yaw=true N_max=1000 N_term=1500 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_abs_yaw START (target N=10 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_abs_yaw" "10" "1850" "RH_NBVP_abs_yaw:false:false:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=1000 N_term=1500 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_marg_yaw START (target N=10 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_marg_yaw" "10" "1850" "RH_NBVP_marg_yaw:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school) ===
+       DRY: eval stage-1 RH_NBVP_abs_yaw (target_directory=data/RH_NBVP_abs_yaw gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 RH_NBVP_marg_yaw (target_directory=data/RH_NBVP_marg_yaw gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-2 multi_series series_labels=RH_NBVP_abs_yaw,RH_NBVP_marg_yaw -> mv multi_series_evaluation -> multi_series_nbvp_school_yawopt
+
+### DRY-RUN diffs (temp copies vs repo) ###
+[TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_RH_NBVP_SCHOOL_YAWOPT.txt ===

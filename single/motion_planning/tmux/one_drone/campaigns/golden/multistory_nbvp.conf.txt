@@ -1,0 +1,24 @@
+### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
+==========================================================
+[TIME] CAMPAIGN multistory_nbvp.conf: world=multistory planner=nbvp N=10 T=2150s voxel=0.1m early_stop=true
+[TIME] conditions: 2  keep=multi_series_multistory_nbvp
+==========================================================
+[TIME] world -> multistory (grass_plane_multistory.world, spawn 0 0 1.0 1.57, uav_radius=0.5, AEP N=400/1600, RH_NBVP N=400/1600)
+[TIME] planner -> rhnbvp
+[TIME] RH_NBVP optimize_yaw=true N_max=400 N_term=1600 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, multistory / nbvp
+[TIME] ===== MS_RH_NBVP_abs START (target N=10 x 2150s, early_stop=true, spec=MS_RH_NBVP_abs:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
+            bash ./supervise_runs.sh "MS_RH_NBVP_abs" "10" "2150" "MS_RH_NBVP_abs:false:false:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=400 N_term=1600 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, multistory / nbvp
+[TIME] ===== MS_RH_NBVP_marg START (target N=10 x 2150s, early_stop=true, spec=MS_RH_NBVP_marg:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
+            bash ./supervise_runs.sh "MS_RH_NBVP_marg" "10" "2150" "MS_RH_NBVP_marg:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (multistory GT=multistory) ===
+       DRY: eval stage-1 MS_RH_NBVP_abs (target_directory=data/MS_RH_NBVP_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply cfg=multistory)
+       DRY: eval stage-1 MS_RH_NBVP_marg (target_directory=data/MS_RH_NBVP_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply cfg=multistory)
+       DRY: eval stage-2 multi_series series_labels=MS_RH_NBVP_abs,MS_RH_NBVP_marg -> mv multi_series_evaluation -> multi_series_multistory_nbvp
+
+### DRY-RUN diffs (temp copies vs repo) ###
+[TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_MULTISTORY_RH_NBVP.txt ===

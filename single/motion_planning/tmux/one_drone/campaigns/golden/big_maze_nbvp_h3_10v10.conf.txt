@@ -1,0 +1,24 @@
+### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
+==========================================================
+[TIME] CAMPAIGN big_maze_nbvp_h3_10v10.conf: world=big_maze planner=nbvp N=10 T=2750s voxel=0.1m early_stop=true
+[TIME] conditions: 2  keep=multi_series_big_maze_nbvp_h3
+==========================================================
+[TIME] world -> big_maze (big_maze.world, spawn 0 0 0.5 0, uav_radius=0.8, AEP N=250/1000, RH_NBVP N=250/1000)
+[TIME] planner -> rhnbvp
+[TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=1000 step=1.5 fixed_step=false objective=expdecay horizon=3
+[TIME] PREFLIGHT OK, big_maze / nbvp
+[TIME] ===== BIG_MAZE_RH_NBVP_H3_marg START (target N=10 x 2750s, early_stop=true, spec=BIG_MAZE_RH_NBVP_H3_marg:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
+            bash ./supervise_runs.sh "BIG_MAZE_RH_NBVP_H3_marg" "10" "2750" "BIG_MAZE_RH_NBVP_H3_marg:false:true:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=1000 step=1.5 fixed_step=false objective=expdecay horizon=3
+[TIME] PREFLIGHT OK, big_maze / nbvp
+[TIME] ===== BIG_MAZE_RH_NBVP_H3_abs START (target N=10 x 2750s, early_stop=true, spec=BIG_MAZE_RH_NBVP_H3_abs:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
+            bash ./supervise_runs.sh "BIG_MAZE_RH_NBVP_H3_abs" "10" "2750" "BIG_MAZE_RH_NBVP_H3_abs:false:false:gpu:false:false"
+[TIME] === EVAL stage-1 per label (big_maze GT=big_maze) ===
+       DRY: eval stage-1 BIG_MAZE_RH_NBVP_H3_marg (target_directory=data/BIG_MAZE_RH_NBVP_H3_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply cfg=big_maze)
+       DRY: eval stage-1 BIG_MAZE_RH_NBVP_H3_abs (target_directory=data/BIG_MAZE_RH_NBVP_H3_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply cfg=big_maze)
+       DRY: eval stage-2 multi_series series_labels=BIG_MAZE_RH_NBVP_H3_marg,BIG_MAZE_RH_NBVP_H3_abs -> mv multi_series_evaluation -> multi_series_big_maze_nbvp_h3
+
+### DRY-RUN diffs (temp copies vs repo) ###
+[TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_BIG_MAZE_RH_NBVP_H3.txt ===

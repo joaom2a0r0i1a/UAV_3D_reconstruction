@@ -1,0 +1,48 @@
+### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
+==========================================================
+[TIME] CAMPAIGN nbvp_school_nmax_sweep.conf: world=school planner=nbvp N=5 T=1850s voxel=0.2m early_stop=true
+[TIME] conditions: 6  keep=multi_series_nbvp_nmax_sweep
+==========================================================
+[TIME] world -> school (grass_plane_school.world, spawn -22 0 0.5 0, uav_radius=1.5, AEP N=50/300, RH_NBVP N=50/300)
+[TIME] planner -> rhnbvp
+[TIME] RH_NBVP optimize_yaw=true N_max=500 N_term=1000 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_abs_yaw_n500 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw_n500:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_abs_yaw_n500" "5" "1850" "RH_NBVP_abs_yaw_n500:false:false:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=500 N_term=1000 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_marg_yaw_n500 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw_n500:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_marg_yaw_n500" "5" "1850" "RH_NBVP_marg_yaw_n500:false:true:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=500 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_abs_yaw_n250 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw_n250:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_abs_yaw_n250" "5" "1850" "RH_NBVP_abs_yaw_n250:false:false:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=500 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_marg_yaw_n250 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw_n250:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_marg_yaw_n250" "5" "1850" "RH_NBVP_marg_yaw_n250:false:true:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=50 N_term=600 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_abs_yaw_n50 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw_n50:false:false:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_abs_yaw_n50" "5" "1850" "RH_NBVP_abs_yaw_n50:false:false:gpu:false:false"
+[TIME] RH_NBVP optimize_yaw=true N_max=50 N_term=600 step=1.0 fixed_step=false objective=expdecay horizon=1
+[TIME] PREFLIGHT OK, school / nbvp
+[TIME] ===== RH_NBVP_marg_yaw_n50 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw_n50:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            bash ./supervise_runs.sh "RH_NBVP_marg_yaw_n50" "5" "1850" "RH_NBVP_marg_yaw_n50:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school) ===
+       DRY: eval stage-1 RH_NBVP_abs_yaw_n500 (target_directory=data/RH_NBVP_abs_yaw_n500 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 RH_NBVP_marg_yaw_n500 (target_directory=data/RH_NBVP_marg_yaw_n500 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 RH_NBVP_abs_yaw_n250 (target_directory=data/RH_NBVP_abs_yaw_n250 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 RH_NBVP_marg_yaw_n250 (target_directory=data/RH_NBVP_marg_yaw_n250 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 RH_NBVP_abs_yaw_n50 (target_directory=data/RH_NBVP_abs_yaw_n50 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-1 RH_NBVP_marg_yaw_n50 (target_directory=data/RH_NBVP_marg_yaw_n50 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
+       DRY: eval stage-2 multi_series series_labels=RH_NBVP_abs_yaw_n500,RH_NBVP_marg_yaw_n500,RH_NBVP_abs_yaw_n250,RH_NBVP_marg_yaw_n250,RH_NBVP_abs_yaw_n50,RH_NBVP_marg_yaw_n50 -> mv multi_series_evaluation -> multi_series_nbvp_nmax_sweep
+
+### DRY-RUN diffs (temp copies vs repo) ###
+[TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_RH_NBVP_SCHOOL_NMAX_SWEEP.txt ===
