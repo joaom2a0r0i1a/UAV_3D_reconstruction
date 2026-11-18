@@ -1,6 +1,6 @@
 # Campaign files for `run_campaign.sh`
 
-One parameterized driver (`../run_campaign.sh`) + `../lib_campaign.sh` run every experiment
+One parameterized driver (`../run_campaign.sh`, with its world tables and run supervisor) runs every experiment
 campaign. Each campaign is a small sourced-bash file here. Settings reach the stack as
 environment variables, no config file is edited.
 
@@ -24,7 +24,7 @@ nothing in the repo.
 
 | field | values | meaning |
 |-------|--------|---------|
-| `WORLD` | `school` \| `police` \| `warehouse` \| `multistory` \| `big_maze` | world, spawn and regions from `uav_gazebo_environments/config/<world>.yaml`, plus the per-world planner tables in `lib_campaign.sh` |
+| `WORLD` | `school` \| `police` \| `warehouse` \| `multistory` \| `big_maze` \| `maze` | world, spawn and regions from `uav_gazebo_environments/config/<world>.yaml`, plus the per-world planner tables in `run_campaign.sh` |
 | `PLANNER` | `aep` \| `nbvp` \| `kaep` \| `krhnbvp` | planner launched by `planner.launch` |
 | `N` | int | target **good** runs per condition (supervise tops up to this) |
 | `T` | seconds | wall-clock kill per run, empty = world time limit + 50 s |
@@ -69,6 +69,7 @@ nothing in the repo.
 | `big_maze_aep.conf`, `big_maze_nbvp.conf` | big maze, absolute vs marginal |
 | `big_maze_nbvp_GL.conf` | big maze RH-NBVP, rate_L objective |
 | `big_maze_nbvp_h3_10v10.conf`, `big_maze_nbvp_h5.conf` | big maze RH-NBVP execution horizon 3 and 5 |
+| `maze_aep.conf`, `maze_nbvp.conf` | maze (RA-L values), one marginal run each, volume eval, early stop |
 
-Shared infra: `run_experiments.sh`, `supervise_runs.sh`, `environment.sh`, `session.yml`,
+Shared infra: `run_experiments.sh`, `environment.sh`, `session.yml`,
 `start.sh`, `kill.sh`.

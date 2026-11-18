@@ -2,6 +2,7 @@
 
 import csv
 import datetime
+import functools
 import os
 import re
 import shutil
@@ -14,7 +15,16 @@ import rospy
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from std_srvs.srv import Empty
-from scipy.interpolate import interp1d
+
+
+def first_crossing(unknown, x, y):
+    # First time the unknown curve reaches y, in time order, linear from the previous sample; nan when never reached
+    for i, u in enumerate(unknown):
+        if u <= y:
+            if i == 0:
+                return x[0]
+            return x[i - 1] + (unknown[i - 1] - y) * (x[i] - x[i - 1]) / (unknown[i - 1] - u)
+    return np.nan
 
 
 class EvalPlotting(object):
@@ -416,18 +426,11 @@ class EvalPlotting(object):
                 axes[0, 1].set_ylim(0, 100)
 
                 # Unreached milestone gives nan
-                interp_function = interp1d(unknown,
-                                           x_minutes,
-                                           bounds_error=False,
-                                           fill_value=np.nan)
-                std_interp_function_1 = interp1d(unknown - 100 * std_devs['UnknownVoxels'],
-                                                 x_minutes,
-                                                 bounds_error=False,
-                                                 fill_value=np.nan)
-                std_interp_function_2 = interp1d(unknown + 100 * std_devs['UnknownVoxels'],
-                                                 x_minutes,
-                                                 bounds_error=False,
-                                                 fill_value=np.nan)
+                interp_function = functools.partial(first_crossing, unknown, x_minutes)
+                std_interp_function_1 = functools.partial(first_crossing,
+                                                          unknown - 100 * std_devs['UnknownVoxels'], x_minutes)
+                std_interp_function_2 = functools.partial(first_crossing,
+                                                          unknown + 100 * std_devs['UnknownVoxels'], x_minutes)
                 y_value_25 = 75
                 y_value_50 = 50
                 y_value_95 = 5
@@ -482,18 +485,9 @@ class EvalPlotting(object):
                 axes[0, 1].set_ylabel('Unexplored Map Volume [%]')
                 axes[0, 1].set_ylim(0, 100)
 
-                interp_function = interp1d(unknown,
-                                           x_minutes,
-                                           bounds_error=False,
-                                           fill_value=np.nan)
-                std_interp_function_1 = interp1d(unknown - std_deviations,
-                                                 x_minutes,
-                                                 bounds_error=False,
-                                                 fill_value=np.nan)
-                std_interp_function_2 = interp1d(unknown + std_deviations,
-                                                 x_minutes,
-                                                 bounds_error=False,
-                                                 fill_value=np.nan)
+                interp_function = functools.partial(first_crossing, unknown, x_minutes)
+                std_interp_function_1 = functools.partial(first_crossing, unknown - std_deviations, x_minutes)
+                std_interp_function_2 = functools.partial(first_crossing, unknown + std_deviations, x_minutes)
                 y_value_25 = 75
                 y_value_50 = 50
                 y_value_95 = 5

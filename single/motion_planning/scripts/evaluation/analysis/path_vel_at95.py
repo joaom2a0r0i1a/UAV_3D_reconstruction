@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # Path length and velocity up to the 95% milestone
-# Usage: MP=<motion_planning> [BOX=4000] [FRAC=0.95] path_vel_at95.py <label> [<label> ...]
+# Usage: MP=<motion_planning> [MODE=volume|gt] [BOX=4000] [FRAC=0.95] [UNOBS_PCT=0.0] path_vel_at95.py <label> [<label> ...]
+# MODE=volume thresholds the Volume column against FRAC*BOX; MODE=gt thresholds known = 1 - UnknownVoxels,
+# compensated by UNOBS_PCT as eval_plotting_node.py:409-412 does, against FRAC
 import os, glob, math, re, datetime, sys
 import rosbag
 
@@ -8,6 +10,8 @@ import rosbag
 DATA = os.path.join(os.environ['MP'], 'data')
 BOX  = float(os.environ.get('BOX', '4000'))
 FRAC = float(os.environ.get('FRAC', '0.95'))
+MODE = os.environ.get('MODE', 'volume')
+UNOBS = float(os.environ.get('UNOBS_PCT', '0.0'))
 TOPIC = '/uav1/estimation_manager/uav_state'
 DT = 0.2
 MATCH_S = 180.0
@@ -15,11 +19,11 @@ MATCH_S = 180.0
 
 
 def t95_of(csv):
-    thr = FRAC * BOX
+    thr = FRAC if MODE == 'gt' else FRAC * BOX
     with open(csv) as f:
         rows = [r.strip().split(',') for r in f if r.strip()]
-    data = [(float(r[1]), float(r[9])) for r in rows[2:]
-            if len(r) >= 10 and r[1].replace('.', '', 1).isdigit()]
+    data = [(float(r[1]), 1.0 - max((float(r[7]) - UNOBS) / (1.0 - UNOBS), 0.0) if MODE == 'gt' else float(r[9]))
+            for r in rows[2:] if len(r) >= 10 and r[1].replace('.', '', 1).isdigit()]
     for i, (t, v) in enumerate(data):
         if v >= thr:
             if i == 0:
@@ -74,7 +78,7 @@ for L in sys.argv[1:]:
     vels = []
     t95s = []
     print('=' * 74)
-    print(f'### {L}   ({FRAC * 100:.0f}% of {BOX:.0f} m^3 box)')
+    print(f'### {L}   ({FRAC * 100:.0f}% known, GT mode)' if MODE == 'gt' else f'### {L}   ({FRAC * 100:.0f}% of {BOX:.0f} m^3 box)')
     for r in runs:
         t95 = t95_of(os.path.join(r, 'voxblox_data.csv'))
         if t95 is None:

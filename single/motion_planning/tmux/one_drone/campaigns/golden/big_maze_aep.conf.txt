@@ -10,17 +10,17 @@
 [TIME] PREFLIGHT OK, big_maze / aep
 [TIME] ===== BIG_MAZE_AEP_abs START (target N=3 x 2750s, early_stop=true, spec=BIG_MAZE_AEP_abs:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
-            bash ./supervise_runs.sh "BIG_MAZE_AEP_abs" "3" "2750" "BIG_MAZE_AEP_abs:false:false:gpu:false:false"
+            supervise "BIG_MAZE_AEP_abs" "3" "2750" "BIG_MAZE_AEP_abs:false:false:gpu:false:false"
 [TIME] AEP gain=marg (marginal_gain=true)
 [TIME] AEP objective=expdecay
 [TIME] PREFLIGHT OK, big_maze / aep
 [TIME] ===== BIG_MAZE_AEP_marg START (target N=3 x 2750s, early_stop=true, spec=BIG_MAZE_AEP_marg:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
-            bash ./supervise_runs.sh "BIG_MAZE_AEP_marg" "3" "2750" "BIG_MAZE_AEP_marg:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (big_maze GT=big_maze) ===
-       DRY: eval stage-1 BIG_MAZE_AEP_abs (target_directory=data/BIG_MAZE_AEP_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply cfg=big_maze)
-       DRY: eval stage-1 BIG_MAZE_AEP_marg (target_directory=data/BIG_MAZE_AEP_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply cfg=big_maze)
-       DRY: eval stage-2 multi_series series_labels=BIG_MAZE_AEP_abs,BIG_MAZE_AEP_marg -> mv multi_series_evaluation -> multi_series_big_maze_aep
+            supervise "BIG_MAZE_AEP_marg" "3" "2750" "BIG_MAZE_AEP_marg:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (big_maze GT=big_maze eval_mode=volume evaluate=false evaluate_volume=true) ===
+       DRY: eval stage-1 BIG_MAZE_AEP_abs (target_directory=data/BIG_MAZE_AEP_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply cfg=big_maze eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-1 BIG_MAZE_AEP_marg (target_directory=data/BIG_MAZE_AEP_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/big_maze.ply cfg=big_maze eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-2 multi_series series_labels=BIG_MAZE_AEP_abs,BIG_MAZE_AEP_marg eval_mode=volume evaluate=false evaluate_volume=true -> mv multi_series_evaluation -> multi_series_big_maze_aep
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_BIG_MAZE_AEP.txt ===

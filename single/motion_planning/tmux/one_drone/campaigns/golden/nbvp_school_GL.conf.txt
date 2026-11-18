@@ -9,16 +9,16 @@
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== SCH_RH_NBVP_GL_abs START (target N=10 x 1850s, early_stop=true, spec=SCH_RH_NBVP_GL_abs:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "SCH_RH_NBVP_GL_abs" "10" "1850" "SCH_RH_NBVP_GL_abs:false:false:gpu:false:false"
+            supervise "SCH_RH_NBVP_GL_abs" "10" "1850" "SCH_RH_NBVP_GL_abs:false:false:gpu:false:false"
 [TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=500 step=2.0 fixed_step=false objective=rate_L horizon=1
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== SCH_RH_NBVP_GL_marg START (target N=10 x 1850s, early_stop=true, spec=SCH_RH_NBVP_GL_marg:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "SCH_RH_NBVP_GL_marg" "10" "1850" "SCH_RH_NBVP_GL_marg:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (school GT=school) ===
-       DRY: eval stage-1 SCH_RH_NBVP_GL_abs (target_directory=data/SCH_RH_NBVP_GL_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-1 SCH_RH_NBVP_GL_marg (target_directory=data/SCH_RH_NBVP_GL_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-2 multi_series series_labels=SCH_RH_NBVP_GL_abs,SCH_RH_NBVP_GL_marg -> mv multi_series_evaluation -> multi_series_nbvp_school_GL
+            supervise "SCH_RH_NBVP_GL_marg" "10" "1850" "SCH_RH_NBVP_GL_marg:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school eval_mode=gt evaluate=true evaluate_volume=false) ===
+       DRY: eval stage-1 SCH_RH_NBVP_GL_abs (target_directory=data/SCH_RH_NBVP_GL_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-1 SCH_RH_NBVP_GL_marg (target_directory=data/SCH_RH_NBVP_GL_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-2 multi_series series_labels=SCH_RH_NBVP_GL_abs,SCH_RH_NBVP_GL_marg eval_mode=gt evaluate=true evaluate_volume=false -> mv multi_series_evaluation -> multi_series_nbvp_school_GL
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_RH_NBVP_SCHOOL_GL.txt ===

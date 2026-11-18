@@ -9,28 +9,28 @@
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== RH_NBVP_marg_yaw_n250_fs START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw_n250_fs:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "RH_NBVP_marg_yaw_n250_fs" "5" "1850" "RH_NBVP_marg_yaw_n250_fs:false:true:gpu:false:false"
+            supervise "RH_NBVP_marg_yaw_n250_fs" "5" "1850" "RH_NBVP_marg_yaw_n250_fs:false:true:gpu:false:false"
 [TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=500 step=2.0 fixed_step=true objective=expdecay horizon=1
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== RH_NBVP_abs_yaw_n250_fs START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw_n250_fs:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "RH_NBVP_abs_yaw_n250_fs" "5" "1850" "RH_NBVP_abs_yaw_n250_fs:false:false:gpu:false:false"
+            supervise "RH_NBVP_abs_yaw_n250_fs" "5" "1850" "RH_NBVP_abs_yaw_n250_fs:false:false:gpu:false:false"
 [TIME] RH_NBVP optimize_yaw=true N_max=50 N_term=600 step=1.0 fixed_step=false objective=expdecay horizon=1
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== RH_NBVP_marg_yaw_n50_s10 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw_n50_s10:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "RH_NBVP_marg_yaw_n50_s10" "5" "1850" "RH_NBVP_marg_yaw_n50_s10:false:true:gpu:false:false"
+            supervise "RH_NBVP_marg_yaw_n50_s10" "5" "1850" "RH_NBVP_marg_yaw_n50_s10:false:true:gpu:false:false"
 [TIME] RH_NBVP optimize_yaw=true N_max=50 N_term=600 step=1.0 fixed_step=false objective=expdecay horizon=1
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== RH_NBVP_abs_yaw_n50_s10 START (target N=5 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw_n50_s10:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "RH_NBVP_abs_yaw_n50_s10" "5" "1850" "RH_NBVP_abs_yaw_n50_s10:false:false:gpu:false:false"
-[TIME] === EVAL stage-1 per label (school GT=school) ===
-       DRY: eval stage-1 RH_NBVP_marg_yaw_n250_fs (target_directory=data/RH_NBVP_marg_yaw_n250_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-1 RH_NBVP_abs_yaw_n250_fs (target_directory=data/RH_NBVP_abs_yaw_n250_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-1 RH_NBVP_marg_yaw_n50_s10 (target_directory=data/RH_NBVP_marg_yaw_n50_s10 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-1 RH_NBVP_abs_yaw_n50_s10 (target_directory=data/RH_NBVP_abs_yaw_n50_s10 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-2 multi_series series_labels=RH_NBVP_marg_yaw_n250_fs,RH_NBVP_abs_yaw_n250_fs,RH_NBVP_marg_yaw_n50_s10,RH_NBVP_abs_yaw_n50_s10 -> mv multi_series_evaluation -> multi_series_nbvp_step_fixed
+            supervise "RH_NBVP_abs_yaw_n50_s10" "5" "1850" "RH_NBVP_abs_yaw_n50_s10:false:false:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school eval_mode=gt evaluate=true evaluate_volume=false) ===
+       DRY: eval stage-1 RH_NBVP_marg_yaw_n250_fs (target_directory=data/RH_NBVP_marg_yaw_n250_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-1 RH_NBVP_abs_yaw_n250_fs (target_directory=data/RH_NBVP_abs_yaw_n250_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-1 RH_NBVP_marg_yaw_n50_s10 (target_directory=data/RH_NBVP_marg_yaw_n50_s10 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-1 RH_NBVP_abs_yaw_n50_s10 (target_directory=data/RH_NBVP_abs_yaw_n50_s10 gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-2 multi_series series_labels=RH_NBVP_marg_yaw_n250_fs,RH_NBVP_abs_yaw_n250_fs,RH_NBVP_marg_yaw_n50_s10,RH_NBVP_abs_yaw_n50_s10 eval_mode=gt evaluate=true evaluate_volume=false -> mv multi_series_evaluation -> multi_series_nbvp_step_fixed
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_RH_NBVP_STEP_FIXED.txt ===

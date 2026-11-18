@@ -1,0 +1,19 @@
+### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
+==========================================================
+[TIME] CAMPAIGN maze_aep.conf: world=maze planner=aep N=1 T=650s voxel=0.2m early_stop=true
+[TIME] conditions: 1  keep=multi_series_maze_aep
+==========================================================
+[TIME] world -> maze (grass_plane_maze.world, spawn 8.5 7.5 0.5 3.14, uav_radius=0.7, AEP N=50/300, RH_NBVP N=50/300)
+[TIME] planner -> aep
+[TIME] AEP gain=marg (marginal_gain=true)
+[TIME] AEP objective=expdecay
+[TIME] PREFLIGHT OK, maze / aep
+[TIME] ===== MAZE_AEP START (target N=1 x 650s, early_stop=true, spec=MAZE_AEP:false:true:gpu:false:false) =====
+       DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
+            supervise "MAZE_AEP" "1" "650" "MAZE_AEP:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (maze GT=maze eval_mode=volume evaluate=false evaluate_volume=true) ===
+       DRY: eval stage-1 MAZE_AEP (target_directory=data/MAZE_AEP gt=$(rospack find uav_gazebo_environments)/ground_truth/maze.ply cfg=maze eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-2 multi_series series_labels=MAZE_AEP eval_mode=volume evaluate=false evaluate_volume=true -> mv multi_series_evaluation -> multi_series_maze_aep
+
+### DRY-RUN diffs (temp copies vs repo) ###
+[TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_MAZE_AEP.txt ===

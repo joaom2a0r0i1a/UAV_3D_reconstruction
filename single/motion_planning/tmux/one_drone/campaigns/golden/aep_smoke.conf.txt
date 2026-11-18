@@ -1,6 +1,6 @@
 ### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
 ==========================================================
-[TIME] CAMPAIGN aep_smoke.conf: world=school planner=aep N=1 T=360s voxel=0.2m early_stop=false
+[TIME] CAMPAIGN aep_smoke.conf: world=school planner=aep N=1 T=410s voxel=0.2m early_stop=false
 [TIME] conditions: 1  keep=multi_series_smoke_aep
 ==========================================================
 [TIME] world -> school (grass_plane_school.world, spawn -22 0 0.5 0, uav_radius=1.5, AEP N=50/300, RH_NBVP N=50/300)
@@ -8,12 +8,12 @@
 [TIME] AEP gain=marg (marginal_gain=true)
 [TIME] AEP objective=expdecay
 [TIME] PREFLIGHT OK, school / aep
-[TIME] ===== SMOKE_AEP START (target N=1 x 360s, early_stop=false, spec=SMOKE_AEP:false:true:gpu:false:false) =====
+[TIME] ===== SMOKE_AEP START (target N=1 x 410s, early_stop=false, spec=SMOKE_AEP:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=false AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "SMOKE_AEP" "1" "360" "SMOKE_AEP:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (school GT=school) ===
-       DRY: eval stage-1 SMOKE_AEP (target_directory=data/SMOKE_AEP gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-2 multi_series series_labels=SMOKE_AEP -> mv multi_series_evaluation -> multi_series_smoke_aep
+            supervise "SMOKE_AEP" "1" "410" "SMOKE_AEP:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school eval_mode=gt evaluate=true evaluate_volume=false) ===
+       DRY: eval stage-1 SMOKE_AEP (target_directory=data/SMOKE_AEP gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-2 multi_series series_labels=SMOKE_AEP eval_mode=gt evaluate=true evaluate_volume=false -> mv multi_series_evaluation -> multi_series_smoke_aep
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_SMOKE_AEP.txt ===

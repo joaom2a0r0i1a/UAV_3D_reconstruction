@@ -357,7 +357,8 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
         tsdf_layer->getAllAllocatedBlocks(&blocks);
         const size_t vps = tsdf_layer->voxels_per_side();
         const size_t num_voxels_per_block = vps * vps * vps;
-        const double dv = std::pow(tsdf_layer->voxel_size(), 3);
+        const double vs = tsdf_layer->voxel_size();
+        const double dv = std::pow(vs, 3);
         for (voxblox::BlockIndex& index : blocks) {
             // Iterate over all voxels in said blocks.
             voxblox::Block<voxblox::TsdfVoxel>& block =
@@ -370,20 +371,15 @@ std::string EvaluationNode::evaluateSingle(std::string map_name,
                     block.computeCoordinatesFromLinearIndex(linear_index);
                 if (voxel.weight < min_weight) {
                     continue;
-                } else if (voxel_center.x() < p_target_bounding_volume_[0]) {
-                    continue;
-                } else if (voxel_center.x() > p_target_bounding_volume_[1]) {
-                    continue;
-                } else if (voxel_center.y() < p_target_bounding_volume_[2]) {
-                    continue;
-                } else if (voxel_center.y() > p_target_bounding_volume_[3]) {
-                    continue;
-                } else if (voxel_center.z() < p_target_bounding_volume_[4]) {
-                    continue;
-                } else if (voxel_center.z() > p_target_bounding_volume_[5]) {
-                    continue;
                 }
-                volume += dv;
+                // Count the fraction of the voxel inside the box, per axis overlap over voxel size
+                double fraction = 1.0;
+                for (int axis = 0; axis < 3; ++axis) {
+                    const double lo = std::max(voxel_center[axis] - vs / 2, p_target_bounding_volume_[2 * axis]);
+                    const double hi = std::min(voxel_center[axis] + vs / 2, p_target_bounding_volume_[2 * axis + 1]);
+                    fraction *= std::max(0.0, hi - lo) / vs;
+                }
+                volume += dv * fraction;
             }
         }
     }

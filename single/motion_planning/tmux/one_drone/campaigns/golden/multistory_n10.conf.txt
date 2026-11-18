@@ -10,17 +10,17 @@
 [TIME] PREFLIGHT OK, multistory / aep
 [TIME] ===== MS_abs_RRT START (target N=10 x 2150s, early_stop=true, spec=MS_abs_RRT:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "MS_abs_RRT" "10" "2150" "MS_abs_RRT:false:false:gpu:false:false"
+            supervise "MS_abs_RRT" "10" "2150" "MS_abs_RRT:false:false:gpu:false:false"
 [TIME] AEP gain=marg (marginal_gain=true)
 [TIME] AEP objective=expdecay
 [TIME] PREFLIGHT OK, multistory / aep
 [TIME] ===== MS_marg_R1A START (target N=10 x 2150s, early_stop=true, spec=MS_marg_R1A:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "MS_marg_R1A" "10" "2150" "MS_marg_R1A:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (multistory GT=multistory) ===
-       DRY: eval stage-1 MS_abs_RRT (target_directory=data/MS_abs_RRT gt=$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply cfg=multistory)
-       DRY: eval stage-1 MS_marg_R1A (target_directory=data/MS_marg_R1A gt=$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply cfg=multistory)
-       DRY: eval stage-2 multi_series series_labels=MS_abs_RRT,MS_marg_R1A -> mv multi_series_evaluation -> multi_series_multistory
+            supervise "MS_marg_R1A" "10" "2150" "MS_marg_R1A:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (multistory GT=multistory eval_mode=volume evaluate=false evaluate_volume=true) ===
+       DRY: eval stage-1 MS_abs_RRT (target_directory=data/MS_abs_RRT gt=$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply cfg=multistory eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-1 MS_marg_R1A (target_directory=data/MS_marg_R1A gt=$(rospack find uav_gazebo_environments)/ground_truth/multistory.ply cfg=multistory eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-2 multi_series series_labels=MS_abs_RRT,MS_marg_R1A eval_mode=volume evaluate=false evaluate_volume=true -> mv multi_series_evaluation -> multi_series_multistory
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_MULTISTORY_N10.txt ===

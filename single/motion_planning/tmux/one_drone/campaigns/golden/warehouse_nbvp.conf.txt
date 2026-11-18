@@ -9,16 +9,16 @@
 [TIME] PREFLIGHT OK, warehouse / nbvp
 [TIME] ===== WH_RH_NBVP_abs START (target N=10 x 2750s, early_stop=true, spec=WH_RH_NBVP_abs:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
-            bash ./supervise_runs.sh "WH_RH_NBVP_abs" "10" "2750" "WH_RH_NBVP_abs:false:false:gpu:false:false"
+            supervise "WH_RH_NBVP_abs" "10" "2750" "WH_RH_NBVP_abs:false:false:gpu:false:false"
 [TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=1000 step=1.5 fixed_step=false objective=expdecay horizon=1
 [TIME] PREFLIGHT OK, warehouse / nbvp
 [TIME] ===== WH_RH_NBVP_marg START (target N=10 x 2750s, early_stop=true, spec=WH_RH_NBVP_marg:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=70.0 \
-            bash ./supervise_runs.sh "WH_RH_NBVP_marg" "10" "2750" "WH_RH_NBVP_marg:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (warehouse GT=warehouse) ===
-       DRY: eval stage-1 WH_RH_NBVP_abs (target_directory=data/WH_RH_NBVP_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/warehouse.ply cfg=warehouse)
-       DRY: eval stage-1 WH_RH_NBVP_marg (target_directory=data/WH_RH_NBVP_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/warehouse.ply cfg=warehouse)
-       DRY: eval stage-2 multi_series series_labels=WH_RH_NBVP_abs,WH_RH_NBVP_marg -> mv multi_series_evaluation -> multi_series_warehouse_nbvp
+            supervise "WH_RH_NBVP_marg" "10" "2750" "WH_RH_NBVP_marg:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (warehouse GT=warehouse eval_mode=volume evaluate=false evaluate_volume=true) ===
+       DRY: eval stage-1 WH_RH_NBVP_abs (target_directory=data/WH_RH_NBVP_abs gt=$(rospack find uav_gazebo_environments)/ground_truth/warehouse.ply cfg=warehouse eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-1 WH_RH_NBVP_marg (target_directory=data/WH_RH_NBVP_marg gt=$(rospack find uav_gazebo_environments)/ground_truth/warehouse.ply cfg=warehouse eval_mode=volume evaluate=false evaluate_volume=true)
+       DRY: eval stage-2 multi_series series_labels=WH_RH_NBVP_abs,WH_RH_NBVP_marg eval_mode=volume evaluate=false evaluate_volume=true -> mv multi_series_evaluation -> multi_series_warehouse_nbvp
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_WAREHOUSE_RH_NBVP.txt ===

@@ -9,16 +9,16 @@
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== RH_NBVP_abs_yaw_n50_fs START (target N=10 x 1850s, early_stop=true, spec=RH_NBVP_abs_yaw_n50_fs:false:false:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "RH_NBVP_abs_yaw_n50_fs" "10" "1850" "RH_NBVP_abs_yaw_n50_fs:false:false:gpu:false:false"
+            supervise "RH_NBVP_abs_yaw_n50_fs" "10" "1850" "RH_NBVP_abs_yaw_n50_fs:false:false:gpu:false:false"
 [TIME] RH_NBVP optimize_yaw=true N_max=50 N_term=300 step=2.0 fixed_step=true objective=expdecay horizon=1
 [TIME] PREFLIGHT OK, school / nbvp
 [TIME] ===== RH_NBVP_marg_yaw_n50_fs START (target N=10 x 1850s, early_stop=true, spec=RH_NBVP_marg_yaw_n50_fs:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=true AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "RH_NBVP_marg_yaw_n50_fs" "10" "1850" "RH_NBVP_marg_yaw_n50_fs:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (school GT=school) ===
-       DRY: eval stage-1 RH_NBVP_abs_yaw_n50_fs (target_directory=data/RH_NBVP_abs_yaw_n50_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-1 RH_NBVP_marg_yaw_n50_fs (target_directory=data/RH_NBVP_marg_yaw_n50_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-2 multi_series series_labels=RH_NBVP_abs_yaw_n50_fs,RH_NBVP_marg_yaw_n50_fs -> mv multi_series_evaluation -> multi_series_school_nbvp_fs_50_300
+            supervise "RH_NBVP_marg_yaw_n50_fs" "10" "1850" "RH_NBVP_marg_yaw_n50_fs:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school eval_mode=gt evaluate=true evaluate_volume=false) ===
+       DRY: eval stage-1 RH_NBVP_abs_yaw_n50_fs (target_directory=data/RH_NBVP_abs_yaw_n50_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-1 RH_NBVP_marg_yaw_n50_fs (target_directory=data/RH_NBVP_marg_yaw_n50_fs gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-2 multi_series series_labels=RH_NBVP_abs_yaw_n50_fs,RH_NBVP_marg_yaw_n50_fs eval_mode=gt evaluate=true evaluate_volume=false -> mv multi_series_evaluation -> multi_series_school_nbvp_fs_50_300
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_SCHOOL_RH_NBVP_FS_50_300.txt ===

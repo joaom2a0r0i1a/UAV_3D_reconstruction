@@ -1,18 +1,18 @@
 ### DRY-RUN — editing temp copies in <TMPD>, no launches, no real writes ###
 ==========================================================
-[TIME] CAMPAIGN nbvp_smoke.conf: world=school planner=nbvp N=1 T=360s voxel=0.2m early_stop=false
+[TIME] CAMPAIGN nbvp_smoke.conf: world=school planner=nbvp N=1 T=410s voxel=0.2m early_stop=false
 [TIME] conditions: 1  keep=multi_series_smoke_nbvp
 ==========================================================
 [TIME] world -> school (grass_plane_school.world, spawn -22 0 0.5 0, uav_radius=1.5, AEP N=50/300, RH_NBVP N=50/300)
 [TIME] planner -> rhnbvp
 [TIME] RH_NBVP optimize_yaw=true N_max=250 N_term=500 step=2.0 fixed_step=false objective=rate_L horizon=1
 [TIME] PREFLIGHT OK, school / nbvp
-[TIME] ===== SMOKE_RH_NBVP START (target N=1 x 360s, early_stop=false, spec=SMOKE_RH_NBVP:false:true:gpu:false:false) =====
+[TIME] ===== SMOKE_RH_NBVP START (target N=1 x 410s, early_stop=false, spec=SMOKE_RH_NBVP:false:true:gpu:false:false) =====
        DRY: AEP_EARLY_STOP=false AEP_EARLY_STOP_GRACE=60.0 \
-            bash ./supervise_runs.sh "SMOKE_RH_NBVP" "1" "360" "SMOKE_RH_NBVP:false:true:gpu:false:false"
-[TIME] === EVAL stage-1 per label (school GT=school) ===
-       DRY: eval stage-1 SMOKE_RH_NBVP (target_directory=data/SMOKE_RH_NBVP gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school)
-       DRY: eval stage-2 multi_series series_labels=SMOKE_RH_NBVP -> mv multi_series_evaluation -> multi_series_smoke_nbvp
+            supervise "SMOKE_RH_NBVP" "1" "410" "SMOKE_RH_NBVP:false:true:gpu:false:false"
+[TIME] === EVAL stage-1 per label (school GT=school eval_mode=gt evaluate=true evaluate_volume=false) ===
+       DRY: eval stage-1 SMOKE_RH_NBVP (target_directory=data/SMOKE_RH_NBVP gt=$(rospack find uav_gazebo_environments)/ground_truth/school.ply cfg=school eval_mode=gt evaluate=true evaluate_volume=false)
+       DRY: eval stage-2 multi_series series_labels=SMOKE_RH_NBVP eval_mode=gt evaluate=true evaluate_volume=false -> mv multi_series_evaluation -> multi_series_smoke_nbvp
 
 ### DRY-RUN diffs (temp copies vs repo) ###
 [TIME] === CAMPAIGN DONE — summary at <TMPD>/DECISION_SUMMARY_SMOKE_RH_NBVP.txt ===
