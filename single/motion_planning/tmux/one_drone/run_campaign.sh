@@ -95,7 +95,7 @@ SUMMARY="$LOGDIR/$SUMMARY"
 # Settings reach the stack as environment variables, no config file is edited
 log(){ echo "[$(date +%H:%M:%S)] $*"; }
 die(){ echo "[$(date +%H:%M:%S)] FATAL: $*" >&2; exit 1; }
-LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---- World Tables ----
 ALL_WORLDS="school police warehouse multistory big_maze maze"
@@ -170,7 +170,7 @@ world_eval_mode(){ case "$1" in
 set_world(){
   local w="$1"
   export PLANNER_ENV="$w"
-  source "$LIB_DIR/environment.sh"
+  source "$SCRIPT_DIR/environment.sh"
   [ -n "$PLANNER_WORLD_FILE" ] || die "unknown world '$w'"
   export PLANNER_UAV_RADIUS="$(world_uav_radius "$w")"
   export PLANNER_G_ZERO="$(world_g_zero "$w")"
